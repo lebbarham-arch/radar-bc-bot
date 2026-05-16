@@ -232,7 +232,7 @@ async function newPage(browser) {
 async function login(page) {
   log("🔐 Connexion au portail...");
   try {
-    await page.goto(CFG.loginUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(CFG.loginUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
     await randDelay(1000, 2000);
 
     // Remplit login
@@ -292,7 +292,7 @@ async function scrapeAllBCs(page) {
       : `${CFG.listUrl}?page=${pageNum}`;
 
     try {
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
       await randDelay(800, 2000);
 
       // Scroll humain
@@ -364,7 +364,7 @@ async function scrapeAllBCs(page) {
 // Clique sur les accordéons JS pour révéler les articles
 async function scrapeBCDetail(page, bc) {
   try {
-    await page.goto(bc.url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(bc.url, { waitUntil: "domcontentloaded", timeout: 15000 });
     await randDelay(600, 1500);
 
     // ── Clique sur TOUS les accordéons pour révéler les articles ──
@@ -557,8 +557,14 @@ async function scanClient(page, client, allBCs) {
   log(`    📊 Analysés: ${analyzed} | Correspondances: ${found} | Envoyés: ${sent}`);
 }
 
+// ── Verrou anti-concurrence ───────────────────────────────────────
+let _scanning = false;
+
 // ── Scan global ──────────────────────────────────────────────────
 async function runGlobalScan() {
+  if (_scanning) { log("⏭️  Scan précédent encore en cours, skip."); return; }
+  _scanning = true;
+
   const now = new Date().toLocaleString("fr-MA", { timeZone: "Africa/Casablanca" });
   log(`\n${"═".repeat(60)}`);
   log(`🔍 SCAN GLOBAL — ${now}`);
@@ -612,7 +618,8 @@ async function runGlobalScan() {
     log(`❌ Erreur Puppeteer: ${e.message}`);
     if (e.stack) log(e.stack.split("\n").slice(0, 3).join("\n"));
   } finally {
-    if (browser) await browser.close();
+    if (browser) await browser.close().catch(() => {});
+    _scanning = false;
     log("\n✅ Scan global terminé.");
   }
 }
@@ -626,29 +633,4 @@ console.log(`
 ║   ✓ Accordéons JS dépliés : tous les articles lus          ║
 ║   ✓ 4 critères : région / organisme / titre / contenu      ║
 ║   ✓ Logique OU : 1 critère suffit pour alerter             ║
-║   ✓ Anti-doublons Supabase                                  ║
-║   ✓ WhatsApp : CallMeBot / Twilio / Meta                   ║
-║   ✓ Cron : toutes les heures (Africa/Casablanca)           ║
-╚══════════════════════════════════════════════════════════════╝
-`);
-
-const missing = [];
-if (!CFG.sbUrl)  missing.push("SUPABASE_URL");
-if (!CFG.sbKey)  missing.push("SUPABASE_KEY");
-if (missing.length) {
-  console.error("❌ Variables manquantes dans .env :");
-  missing.forEach(v => console.error(`   ${v}=...`));
-  process.exit(1);
-}
-
-if (!CFG.login || !CFG.password) {
-  log("⚠️  PORTAL_LOGIN / PORTAL_PASSWORD non définis — scan public uniquement");
-} else {
-  log(`✓ Portail: ${CFG.login}`);
-}
-log(`✓ Supabase: ${CFG.sbUrl}`);
-
-// Scan immédiat au démarrage puis toutes les heures
-runGlobalScan();
-cron.schedule("0 * * * *", runGlobalScan, { timezone: "Africa/Casablanca" });
-log("⏰ Cron actif — scan toutes les heures (Africa/Casablanca)\n");
+║   ✓ Anti-doublons Supabase 
