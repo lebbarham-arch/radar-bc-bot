@@ -127,6 +127,23 @@ const db = {
     }).catch(() => {}),
 };
 
+// ── Telegram ──────────────────────────────────────────────────────
+async function sendTelegram(client, msg) {
+  const token  = client.tg_token;
+  const chatId = client.tg_chat_id;
+  if (!token || !chatId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "HTML" }),
+    });
+    log(`  📨 Telegram → ${chatId}`);
+  } catch (e) {
+    log(`  ⚠️  Telegram erreur: ${e.message}`);
+  }
+}
+
 // ── WhatsApp ─────────────────────────────────────────────────────
 async function sendWhatsApp(client, msg) {
   const num = (client.phone || "").replace(/\D/g, "");
@@ -525,11 +542,13 @@ async function scanClient(page, client, allBCs) {
 
     // Nouveau BC → envoie WhatsApp
     const matched = getMatchedCriteres(bc, criteres);
-    log(`      ✅ MATCH [${matched.map(c=>c.valeur).join(", ")}] → WhatsApp`);
+    log(`      ✅ MATCH [${matched.map(c=>c.valeur).join(", ")}] → Notification`);
     sentIds.add(bcId);
     sent++;
 
-    await sendWhatsApp(client, buildMessage(bc, matched));
+    const msg = buildMessage(bc, matched);
+    await sendWhatsApp(client, msg);
+    await sendTelegram(client, msg);
     await db.markSent(client.id, bcId, matched[0]?.type || "", matched[0]?.valeur || "", bc);
     await delay(2000);
   }
