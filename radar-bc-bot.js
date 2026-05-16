@@ -659,32 +659,4 @@ cron.schedule("0 * * * *", runGlobalScan, {
 });
 log("⏰ Cron actif — scan toutes les heures (Africa/Casablanca)\n");
 
-// ── Premier scan immédiat au démarrage ────────────────────────────
-runGlobalScan();
-║   ✓ WhatsApp : CallMeBot / Twilio / Meta                   ║
-║   ✓ Telegram : notifications instantanées                  ║
-║   ✓ Cron : toutes les heures (Africa/Casablanca)           ║
-╚══════════════════════════════════════════════════════════════╝
-`);
-
-// ── Vérification variables ────────────────────────────────────────
-const missing = [];
-if (!CFG.sbUrl)  missing.push("SUPABASE_URL");
-if (!CFG.sbKey)  missing.push("SUPABASE_KEY");
-if (missing.length) {
-  console.error(`\n❌ Variables manquantes dans .env :\n  ${missing.map(k => k + "=...").join("\n  ")}`);
-  process.exit(1);
-}
-
-log(`✓ Portail: ${CFG.login || "(public)"}`);
-log(`✓ Supabase: ${CFG.sbUrl}`);
-log("");
-
-// ── Cron toutes les heures ────────────────────────────────────────
-cron.schedule("0 * * * *", runGlobalScan, {
-  timezone: "Africa/Casablanca",
-});
-log("⏰ Cron actif — scan toutes les heures (Africa/Casablanca)\n");
-
-// ── Premier scan immédiat au démarrage ────────────────────────────
-runGlobalScan();
+// ── Premier scan immédiat au démarrage ──────────────────────�
