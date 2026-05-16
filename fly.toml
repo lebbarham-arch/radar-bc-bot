@@ -1,0 +1,13 @@
+[build]
+  dockerfile = "Dockerfile"
+
+app = "radar-bc-bot"
+primary_region = "cdg"
+
+[env]
+  NODE_ENV = "production"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

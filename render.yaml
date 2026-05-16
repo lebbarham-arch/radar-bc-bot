@@ -1,0 +1,11 @@
+services:
+  - type: worker
+    name: radar-bc-bot
+    runtime: node
+    buildCommand: npm install
+    startCommand: node radar-bc-bot.js
+    envVars:
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: "false"
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=512"
