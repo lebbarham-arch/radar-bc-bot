@@ -1,0 +1,19 @@
+{
+  "name": "radar-bc-bot",
+  "version": "3.0.0",
+  "description": "Radar BC - Scan profond marchespublics.gov.ma",
+  "main": "radar-bc-bot.js",
+  "scripts": {
+    "start": "node radar-bc-bot.js"
+  },
+  "dependencies": {
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "node-cron": "^3.0.3",
+    "node-fetch": "^2.7.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

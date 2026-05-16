@@ -1,0 +1,13 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "node radar-bc-bot.js"
+restartPolicyType = "always"
+
+[nixpacks]
+aptPkgs = ["chromium", "chromium-sandbox", "fonts-freefont-ttf", "libxss1"]
+
+[environments.production.variables]
+PUPPETEER_EXECUTABLE_PATH = "/usr/bin/chromium"
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
