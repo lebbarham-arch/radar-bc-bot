@@ -20,7 +20,7 @@ const CFG = {
   bcListUrl:  "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
   bcLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
   // MP - Marchés Publics (Appels d'Offres)
-  mpListUrl:  "https://www.marchespublics.gov.ma/ao/entreprise/consultation/",
+  mpListUrl:  "https://www.marchespublics.gov.ma/pmmp/?lang=fr",
   mpLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
 };
 
@@ -324,16 +324,20 @@ async function loginPortal(page, loginUrl) {
 // ============================================================
 async function scrapeOnePage(browser, baseUrl, pageNum) {
   const isBDC  = baseUrl.includes("/bdc/");
-  const isPMMP = baseUrl.includes("/pmmp/") || baseUrl.includes("pmmp") || baseUrl.includes("EntrepriseAdvancedSearch") || baseUrl.includes("EntrepriseConsultation") || (baseUrl.includes("index.php") && !baseUrl.includes("/bdc/"));
-  // PMMP uses ?lang=fr so pagination must use & not ?
+  const isSPIP = baseUrl.includes("/pmmp/");
+  const isPMMP = isSPIP || baseUrl.includes("pmmp") || baseUrl.includes("EntrepriseAdvancedSearch") || baseUrl.includes("EntrepriseConsultation") || (baseUrl.includes("index.php") && !baseUrl.includes("/bdc/"));
+  // SPIP: pagination via debut_articles=N (offset par 10), pas page=N
+  // BDC:  pagination via ?page=N
+  const SPIP_PER_PAGE = 10;
   const url = pageNum === 1 ? baseUrl :
+    isSPIP ? baseUrl + (baseUrl.includes("?") ? "&" : "?") + "debut_articles=" + ((pageNum - 1) * SPIP_PER_PAGE) :
     baseUrl + (baseUrl.includes("?") ? "&" : "?") + "page=" + pageNum;
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt > 0) { log("  Page " + pageNum + " retry..."); await delay(3000); }
     let pg;
     try {
       pg = await newPage(browser);
-      await pg.goto(url, { waitUntil: "domcontentloaded", timeout: 35000 });
+      await pg.goto(url, { waitUntil: "domcontentloaded", timeout: isBDC ? 35000 : 55000 });
       await delay(200 + Math.floor(Math.random() * 250));
       const result = await pg.evaluate((baseUrl, isBDC, isPMMP) => {
         const items = [], seen = new Set();
@@ -346,13 +350,13 @@ async function scrapeOnePage(browser, baseUrl, pageNum) {
                      .map(a => a.getAttribute("href"))
                      .filter(h => h && !h.startsWith("#") && h.length > 3)
                      .slice(0, 50),
-          html:    document.body.innerHTML.replace(/\s+/g," ").slice(0, 3000),
+          html:    document.body.innerHTML.replace(/\s+/g," ").slice(0, 5000),
         } : null;
 
         if (isPMMP) {
           // Portail PMMP/SPIP : liens vers fiches AO
           // Patterns possibles: refConsultation=XXX, EntrepriseDownloadAvisJAL, /show/XXX
-          const sel = "a[href*='refConsultation'],a[href*='EntrepriseDownloadAvisJAL'],a[href*='EntrepriseConsultation'],a[href*='/show/']";
+          const sel = "a[href*='refConsultation'],a[href*='EntrepriseDownloadAvisJAL'],a[href*='EntrepriseConsultation'],a[href*='/show/'],a[href*='spip.php?article'],a[href*='-ao-'],a[href*='appel-offres'],a[href*='consultation']";
           document.querySelectorAll(sel).forEach(link => {
             const href = link.getAttribute("href") || "";
             let id = "";
