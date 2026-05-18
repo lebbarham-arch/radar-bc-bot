@@ -458,29 +458,30 @@ async function scrapeAllMPs(browser) {
     log("  Formulaire URL: " + formInfo.url);
     log("  Formulaire inputs: " + JSON.stringify(formInfo.inputs));
 
-    // 3. Soumettre le formulaire (recherche vide = tous les AO en cours)
-    // Essayer plusieurs selecteurs pour le bouton Rechercher
-    const submitSelectors = [
-      "input[name*='echercher']", "input[name*='Rechercher']",
-      "input[name*='recherche']", "input[name*='search']",
-      "input[name*='Search']",   "input[name*='valider']",
-      "input[name*='ok'][type='image']", "input[name*='OK'][type='image']",
-      "input[type='submit']",    "button[type='submit']",
-    ];
-    let submitted = false;
-    for (const sel of submitSelectors) {
-      const btn = await pg.$(sel);
-      if (btn) {
-        log("  Soumission via: " + sel);
-        await btn.click();
-        try {
-          await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 });
-          submitted = true;
-        } catch(e) { log("  waitForNav: " + e.message.split("\n")[0]); submitted = true; }
-        break;
-      }
-    }
-    if (!submitted) log("  Aucun bouton submit trouve - on lit la page telle quelle");
+    // 3. Soumettre le formulaire via JS (bypass "not clickable" Puppeteer)
+    // PRADO: on met PRADO_POSTBACK_TARGET = nom du bouton puis on soumet le form
+    // Le seul submit visible est buttonRefresh (actualise/recherche les resultats)
+    log("  Soumission formulaire PRADO via JS...");
+    const submitted = await pg.evaluate(() => {
+      // Trouver le bon bouton submit (rechercher / buttonRefresh)
+      const allSubmits = [...document.querySelectorAll("input[type='submit'],input[type='image']")]
+        .filter(el => el.name && !el.name.includes("flagImg") && !el.name.includes("quickSearch") && !el.name.includes("imageOk"));
+      const btn = allSubmits.find(el => /echerch|search|Search|refresh|Refresh|valider|Valider|ok|OK/i.test(el.name))
+                || allSubmits[0];
+      if (!btn) return null;
+      // Definir PRADO postback target
+      const target = document.getElementById("PRADO_POSTBACK_TARGET");
+      if (target) target.value = btn.name;
+      // Soumettre le formulaire
+      const form = document.forms[0] || document.querySelector("form");
+      if (form) { form.submit(); return btn.name; }
+      // Fallback: clic JS direct
+      btn.click(); return btn.name + " (click)";
+    });
+    log("  Soumission: " + (submitted || "echec - aucun form/btn"));
+    try {
+      await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 35000 });
+    } catch(e) { log("  waitForNav: " + e.message.split("\n")[0]); }
     await delay(1000);
 
     // 4. Paginer et extraire les AOs
