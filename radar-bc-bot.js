@@ -20,7 +20,7 @@ const CFG = {
   bcListUrl:  "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
   bcLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
   // MP - Marchés Publics (Appels d'Offres)
-  mpListUrl:  "https://www.marchespublics.gov.ma/entreprise/consultation/",
+  mpListUrl:  "https://www.marchespublics.gov.ma/pmmp/?lang=fr",
   mpLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
 };
 
@@ -323,7 +323,11 @@ async function loginPortal(page, loginUrl) {
 // SCRAPER GENERIQUE (BC + MP partagent la meme logique)
 // ============================================================
 async function scrapeOnePage(browser, baseUrl, pageNum) {
-  const url = pageNum === 1 ? baseUrl : baseUrl + "?page=" + pageNum;
+  const isBDC  = baseUrl.includes("/bdc/");
+  const isPMMP = baseUrl.includes("/pmmp/") || baseUrl.includes("pmmp");
+  // PMMP uses ?lang=fr so pagination must use & not ?
+  const url = pageNum === 1 ? baseUrl :
+    baseUrl + (baseUrl.includes("?") ? "&" : "?") + "page=" + pageNum;
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt > 0) { log("  Page " + pageNum + " retry..."); await delay(3000); }
     let pg;
@@ -331,44 +335,86 @@ async function scrapeOnePage(browser, baseUrl, pageNum) {
       pg = await newPage(browser);
       await pg.goto(url, { waitUntil: "domcontentloaded", timeout: 35000 });
       await delay(200 + Math.floor(Math.random() * 250));
-      const result = await pg.evaluate((baseUrl) => {
+      const result = await pg.evaluate((baseUrl, isBDC, isPMMP) => {
         const items = [], seen = new Set();
-        // DEBUG MP : capturer les infos de la page
-        const _debug = baseUrl.includes("/entreprise/consultation") && !baseUrl.includes("/bdc/") ? {
-          title: document.title,
-          url: window.location.href,
-          hrefs: [...document.querySelectorAll("a[href]")]
-            .map(a => a.getAttribute("href")).filter(h => h && !h.startsWith("#") && h.length > 3).slice(0, 40),
+        const base  = new URL(baseUrl).origin;
+        // DEBUG pour pages non-BC
+        const _debug = !isBDC ? {
+          title:   document.title,
+          url:     window.location.href,
+          hrefs:   [...document.querySelectorAll("a[href]")]
+                     .map(a => a.getAttribute("href"))
+                     .filter(h => h && !h.startsWith("#") && h.length > 3)
+                     .slice(0, 50),
+          html:    document.body.innerHTML.replace(/\s+/g," ").slice(0, 3000),
         } : null;
-        document.querySelectorAll("a[href*='/show/']").forEach(link => {
-          const href = link.getAttribute("href") || "";
-          const idM  = href.match(/\/show\/(\d+)/);
-          if (!idM) return;
-          const id = idM[1];
-          if (seen.has(id)) return; seen.add(id);
-          const row   = link.closest("tr,.avis-item,li,article,div.row,.consultation-row");
-          const txt   = row ? row.innerText : link.innerText;
-          const lines = txt.split("\n").map(l => l.trim()).filter(Boolean);
-          const dates = [...txt.matchAll(/(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2})?)/g)].map(m => m[1]);
-          const base  = new URL(baseUrl).origin;
-          items.push({
-            id,
-            reference:   lines[0] || "",
-            objet:       lines[1] || lines[0] || link.textContent.trim(),
-            organisme:   lines[2] || "",
-            date_limite: dates.length ? dates[dates.length - 1] : "",
-            lieu:        lines.find(l => l.length > 5 && !l.match(/^\d{2}\//)) || "",
-            wilaya:      "",
-            url: href.startsWith("http") ? href : base + (href.startsWith("/") ? href : "/bdc/entreprise/consultation/show/" + id),
+
+        if (isPMMP) {
+          // Portail PMMP/SPIP : liens vers fiches AO
+          // Patterns possibles: refConsultation=XXX, EntrepriseDownloadAvisJAL, /show/XXX
+          const sel = "a[href*='refConsultation'],a[href*='EntrepriseDownloadAvisJAL'],a[href*='EntrepriseConsultation'],a[href*='/show/']";
+          document.querySelectorAll(sel).forEach(link => {
+            const href = link.getAttribute("href") || "";
+            let id = "";
+            const refM  = href.match(/refConsultation[=]([^&\s]+)/);
+            const avisM = href.match(/idAvis[=]([^&\s]+)/);
+            const showM = href.match(/\/show\/(\d+)/);
+            if (refM)       id = refM[1];
+            else if (avisM) id = avisM[1];
+            else if (showM) id = showM[1];
+            if (!id || seen.has(id)) return;
+            seen.add(id);
+            const row   = link.closest("tr,.avis-item,li,article,div.row,.consultation-row,.ao-item,.marche-item");
+            const txt   = row ? row.innerText : link.innerText;
+            const lines = txt.split("\n").map(l => l.trim()).filter(Boolean);
+            const dates = [...txt.matchAll(/(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2})?)/g)].map(m => m[1]);
+            const fullUrl = href.startsWith("http") ? href : base + (href.startsWith("/") ? href : "/" + href);
+            items.push({
+              id,
+              reference:   lines[0] || "",
+              objet:       lines[1] || lines[0] || link.textContent.trim(),
+              organisme:   lines[2] || "",
+              date_limite: dates.length ? dates[dates.length - 1] : "",
+              lieu:        lines.find(l => l.length > 5 && !l.match(/^\d{2}\//)) || "",
+              wilaya:      "",
+              url:         fullUrl,
+            });
           });
-        });
-        const nextEl = document.querySelector("a.next,a[rel='next'],.pagination li:last-child:not(.disabled) a,li.next:not(.disabled) a");
+        } else {
+          // BC (et ancien AO) : liens /show/XXXXX
+          document.querySelectorAll("a[href*='/show/']").forEach(link => {
+            const href = link.getAttribute("href") || "";
+            const idM  = href.match(/\/show\/(\d+)/);
+            if (!idM) return;
+            const id = idM[1];
+            if (seen.has(id)) return; seen.add(id);
+            const row   = link.closest("tr,.avis-item,li,article,div.row,.consultation-row");
+            const txt   = row ? row.innerText : link.innerText;
+            const lines = txt.split("\n").map(l => l.trim()).filter(Boolean);
+            const dates = [...txt.matchAll(/(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2})?)/g)].map(m => m[1]);
+            items.push({
+              id,
+              reference:   lines[0] || "",
+              objet:       lines[1] || lines[0] || link.textContent.trim(),
+              organisme:   lines[2] || "",
+              date_limite: dates.length ? dates[dates.length - 1] : "",
+              lieu:        lines.find(l => l.length > 5 && !l.match(/^\d{2}\//)) || "",
+              wilaya:      "",
+              url: href.startsWith("http") ? href : base + (href.startsWith("/") ? href : "/bdc/entreprise/consultation/show/" + id),
+            });
+          });
+        }
+        const nextEl = document.querySelector("a.next,a[rel='next'],.pagination li:last-child:not(.disabled) a,li.next:not(.disabled) a,a.suivant,li.suivant:not(.disabled) a");
         return { items, hasNext: !!nextEl && items.length > 0, _debug };
-      }, baseUrl);
+      }, baseUrl, isBDC, isPMMP);
+
       if (result._debug) {
         log("  DEBUG MP page title: " + result._debug.title);
         log("  DEBUG MP page url:   " + result._debug.url);
-        log("  DEBUG MP hrefs: " + JSON.stringify(result._debug.hrefs.slice(0, 20)));
+        log("  DEBUG MP hrefs: " + JSON.stringify((result._debug.hrefs || []).slice(0, 20)));
+        if (result.items.length === 0 && result._debug.html) {
+          log("  DEBUG MP html: " + result._debug.html.slice(0, 600));
+        }
       }
       await pg.close().catch(() => {});
       return result;
@@ -791,31 +837,23 @@ async function runGlobalScanMP() {
       const lp = await newPage(browser);
       const loggedIn = await loginPortal(lp, CFG.mpLoginUrl);
       if (loggedIn) {
-        // Trouver l'URL reelle de la liste AO depuis la page d'accueil authentifiee
+        // Logger le contenu du dashboard pour trouver l'URL AO
         try {
-          const foundUrl = await lp.evaluate(() => {
-            const links = [...document.querySelectorAll("a[href]")];
-            // Chercher un lien vers les consultations/AO dans le menu
-            const aoLink = links.find(a =>
-              /consultation|appel.*offr|marche.*public|avis.*appel/i.test((a.textContent || "") + (a.href || "")) &&
-              !/(bdc|bon.*commande|deconnex|logout|accueil)/i.test(a.href || "")
-            );
-            if (aoLink) return aoLink.href;
-            // Fallback: chercher index.php?page=*Consultation* ou *AvisAppel*
-            const prado = links.find(a => /page=.*[Cc]onsultation|page=.*[Aa]vis/i.test(a.href || ""));
-            return prado ? prado.href : null;
-          });
-          if (foundUrl) {
-            log("  URL AO trouvee: " + foundUrl);
-            mpListUrl = foundUrl;
-          } else {
-            log("  URL AO non trouvee dans homepage - liste des liens:");
-            const allLinks = await lp.evaluate(() =>
-              [...document.querySelectorAll("a[href]")].map(a => a.href).filter(h => h.includes("marchespublics")).slice(0, 20)
-            );
-            log("  " + JSON.stringify(allLinks));
-          }
-        } catch(e) { log("  Erreur detection URL AO: " + e.message); }
+          await delay(2000);
+          const dashInfo = await lp.evaluate(() => ({
+            url: window.location.href,
+            title: document.title,
+            links: [...document.querySelectorAll("a[href]")]
+              .map(a => ({ text: (a.textContent||"").trim().slice(0,40), href: a.getAttribute("href")||"" }))
+              .filter(l => l.href && l.href.length > 2 && !l.href.startsWith("#"))
+              .slice(0, 30),
+            bodySnippet: (document.body ? document.body.innerText : "").slice(0, 500),
+          }));
+          log("  Dashboard URL: " + dashInfo.url);
+          log("  Dashboard title: " + dashInfo.title);
+          log("  Dashboard liens: " + JSON.stringify(dashInfo.links));
+          log("  Dashboard texte: " + dashInfo.bodySnippet.replace(/\n/g," ").slice(0,200));
+        } catch(e) { log("  Erreur dashboard: " + e.message); }
       }
       await lp.close().catch(() => {});
     }
@@ -855,7 +893,7 @@ async function runGlobalScanMP() {
 // DEMARRAGE
 // ============================================================
 console.log("================================================");
-console.log("  RADAR BC + MARCHES PUBLICS - Bot v6.14");
+console.log("  RADAR BC + MARCHES PUBLICS - Bot v6.15");
 console.log("  Scan BC  : toutes les 2h (a l'heure pile)");
 console.log("  Scan MP  : toutes les 2h (a la demi-heure)");
 console.log("  contenu  : scan profond bodyText + articles");
