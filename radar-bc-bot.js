@@ -504,6 +504,9 @@ async function scrapeAllMPs(browser) {
           else if (avisM) id = avisM[1];
           else if (showM) id = showM[1];
           if (!id || seenIds.has(id)) return;
+          // Ignorer les IDs Base64 (doublons) et les liens panier
+          if (/^[A-Za-z0-9+/]{8,}={0,2}$/.test(id) && !/^\d+$/.test(id)) return;
+          if (href.includes("popUpGestionPanier") || href.includes("panier")) return;
           seenIds.add(id);
           const row   = link.closest("tr,.avis-item,li,article,div.row,.consultation-row,.ao-item");
           const txt   = row ? row.innerText : link.innerText;
@@ -756,29 +759,35 @@ async function scrapeBCDetail(page, bc) {
 
 // ============================================================
 // TELECHARGEMENT & ANALYSE DAO (ZIP avec BDP/CPS)
+// Utilise page.evaluate(fetch) pour partager la session Puppeteer
 // ============================================================
 async function downloadDAO(page, daoUrl) {
   if (!pdfParse) return { articles: [], bodyText: "" };
   try {
-    const cookies = await page.cookies();
-    const cookieStr = cookies.map(c => c.name + "=" + c.value).join("; ");
-    const resp = await fetch(daoUrl, {
-      headers: {
-        "Cookie":     cookieStr,
-        "Referer":    page.url(),
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept":     "application/zip,application/pdf,application/octet-stream,*/*",
-      },
-      timeout: 45000,
-    });
-    if (!resp.ok) {
-      log("  DAO fetch " + resp.status + " url: " + daoUrl.slice(0, 80));
+    log("  DAO tentative: " + daoUrl.slice(0, 100));
+    // Fetch dans le contexte navigateur = meme session PRADO, pas besoin de copier les cookies
+    const result = await page.evaluate(async (url) => {
+      try {
+        const resp = await fetch(url, {
+          credentials: "include",
+          headers: { "Accept": "application/zip,application/pdf,application/octet-stream,*/*" },
+        });
+        if (!resp.ok) return { ok: false, status: resp.status, ct: "" };
+        const ct = resp.headers.get("content-type") || "";
+        const ab = await resp.arrayBuffer();
+        return { ok: true, status: resp.status, ct, data: Array.from(new Uint8Array(ab)) };
+      } catch (e) { return { ok: false, status: 0, ct: "", err: e.message }; }
+    }, daoUrl);
+
+    if (!result.ok) {
+      log("  DAO " + result.status + (result.err ? " err:" + result.err : "") + " url: " + daoUrl.slice(0, 80));
       return { articles: [], bodyText: "" };
     }
-    const buffer = await resp.buffer();
+    const buffer = Buffer.from(result.data);
     if (!buffer || buffer.length < 100) return { articles: [], bodyText: "" };
+    log("  DAO recu " + Math.round(buffer.length / 1024) + " KB ct=" + (result.ct || "?").slice(0, 40));
 
-    const ct     = (resp.headers.get("content-type") || "").toLowerCase();
+    const ct     = (result.ct || "").toLowerCase();
     const isZip  = ct.includes("zip") || ct.includes("octet-stream") ||
                    (buffer[0] === 0x50 && buffer[1] === 0x4B); // PK magic
     const isPdf  = ct.includes("pdf") || (buffer[0] === 0x25 && buffer[1] === 0x50); // %P magic
@@ -930,7 +939,12 @@ async function scrapeMPDetail(page, mp) {
     });
 
     log("  MP " + mp.id + ": ZIP=" + (d.zipLinks||[]).length + " PDF=" + (d.pdfLinks||[]).length +
-        " HTML=" + (d.htmlArticles||[]).length + " articles");
+        " HTML=" + (d.htmlArticles||[]).length + " articles | page: " + (d.pageUrl||"").slice(0,70));
+    if ((d.bodyText||"").length < 200) {
+      log("  MP " + mp.id + " popup vide! bodyText=" + (d.bodyText||"").slice(0,100));
+    } else {
+      log("  MP " + mp.id + " popup ok: " + (d.bodyText||"").slice(0,120).replace(/\s+/g," "));
+    }
 
     // Construire les URLs DAO a tenter
     const daoUrls = [...(d.zipLinks || [])];
