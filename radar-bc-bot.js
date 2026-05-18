@@ -20,7 +20,7 @@ const CFG = {
   bcListUrl:  "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
   bcLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
   // MP - Marchés Publics (Appels d'Offres)
-  mpListUrl:  "https://www.marchespublics.gov.ma/pmmp/?lang=fr",
+  mpListUrl:  "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseAdvancedSearch&AllCons&EnCours&searchAnnCons",
   mpLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
 };
 
@@ -428,6 +428,105 @@ async function scrapeOnePage(browser, baseUrl, pageNum) {
     }
   }
   return { items: [], hasNext: false, failed: true };
+}
+
+
+// ============================================================
+// SCRAPING LISTE MP (PRADO - pagination par clic, pas par URL)
+// ============================================================
+async function scrapeAllMPs(browser) {
+  const all = [], seen = new Set();
+  let pg;
+  try {
+    pg = await newPage(browser);
+    log("  Chargement page AO: " + CFG.mpListUrl);
+    await pg.goto(CFG.mpListUrl, { waitUntil: "domcontentloaded", timeout: 55000 });
+    await delay(1000);
+
+    let pageNum = 0;
+    while (pageNum < 200) {
+      pageNum++;
+      // Extraire les AOs de la page courante
+      const result = await pg.evaluate(() => {
+        const items = [], seen = new Set();
+        const base = window.location.origin;
+        const sel = "a[href*='refConsultation'],a[href*='EntrepriseDownloadAvisJAL'],a[href*='/show/']";
+        document.querySelectorAll(sel).forEach(link => {
+          const href = link.getAttribute("href") || "";
+          let id = "";
+          const refM  = href.match(/refConsultation[=]([^&\s]+)/);
+          const avisM = href.match(/idAvis[=]([^&\s]+)/);
+          const showM = href.match(/\/show\/(\d+)/);
+          if (refM)       id = refM[1];
+          else if (avisM) id = avisM[1];
+          else if (showM) id = showM[1];
+          if (!id || seen.has(id)) return;
+          seen.add(id);
+          const row   = link.closest("tr,.avis-item,li,article,div.row,.consultation-row,.ao-item");
+          const txt   = row ? row.innerText : link.innerText;
+          const lines = txt.split("\n").map(l => l.trim()).filter(Boolean);
+          const dates = [...txt.matchAll(/(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2})?)/g)].map(m => m[1]);
+          const fullUrl = href.startsWith("http") ? href : base + (href.startsWith("/") ? href : "/" + href);
+          items.push({
+            id, reference: lines[0] || "",
+            objet:       lines[1] || lines[0] || link.textContent.trim(),
+            organisme:   lines[2] || "",
+            date_limite: dates.length ? dates[dates.length - 1] : "",
+            lieu:        lines.find(l => l.length > 5 && !l.match(/^\d{2}\//)) || "",
+            wilaya:      "",
+            url: fullUrl,
+          });
+        });
+        // Pagination PRADO : bouton suivant
+        const nextSel = "a.next,a[rel='next'],.pagination a:last-child:not(.disabled),.suivant:not(.disabled) a,input[name*='suivant'],a[id*='suivant'],a[id*='next'],a[id*='Next'],span.next a,li.next:not(.disabled) a,td.next a";
+        const nextEl  = document.querySelector(nextSel);
+        // Debug: titre + nb items + snippet html
+        const _debug = {
+          title:   document.title,
+          url:     window.location.href,
+          items:   items.length,
+          nextEl:  nextEl ? (nextEl.textContent||"").trim().slice(0,30) : null,
+          html:    document.body.innerHTML.replace(/\s+/g," ").slice(0, 3000),
+        };
+        return { items, hasNext: !!nextEl, _debug };
+      });
+
+      log("  Page " + pageNum + ": " + result.items.length + " AO" +
+        (result._debug.nextEl ? " | next: [" + result._debug.nextEl + "]" : " | pas de suivant"));
+
+      if (pageNum === 1) {
+        log("  DEBUG MP title: " + result._debug.title);
+        log("  DEBUG MP url:   " + result._debug.url);
+        if (result.items.length === 0) {
+          log("  DEBUG MP html:  " + result._debug.html.slice(0, 800));
+        }
+      }
+
+      // Ajouter les nouveaux items
+      for (const item of result.items) {
+        if (!seen.has(item.id)) { seen.add(item.id); all.push(item); }
+      }
+
+      if (!result.hasNext || result.items.length === 0) break;
+
+      // Cliquer sur "suivant" (pagination PRADO)
+      try {
+        const nextSel = "a.next,a[rel='next'],.pagination a:last-child:not(.disabled),.suivant:not(.disabled) a,input[name*='suivant'],a[id*='suivant'],a[id*='next'],a[id*='Next'],span.next a,li.next:not(.disabled) a,td.next a";
+        await pg.click(nextSel);
+        await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 45000 });
+        await delay(500);
+      } catch(e) {
+        log("  Pagination MP: " + e.message.split("\n")[0]);
+        break;
+      }
+    }
+  } catch(e) {
+    log("  scrapeAllMPs erreur: " + e.message.split("\n")[0]);
+  } finally {
+    if (pg) await pg.close().catch(() => {});
+  }
+  log("  " + all.length + " MP sur le portail");
+  return all;
 }
 
 async function scrapeAllItems(browser, baseUrl, label) {
@@ -861,7 +960,7 @@ async function runGlobalScanMP() {
       }
       await lp.close().catch(() => {});
     }
-    const allMPs = await scrapeAllItems(browser, mpListUrl, "MP");
+    const allMPs = await scrapeAllMPs(browser);
     if (!allMPs.length) { log("Aucun MP recupere."); return; }
     const vusIds   = await db.getMPVusIds();
     const newMPs   = allMPs.filter(mp => !vusIds.has(mp.id));
