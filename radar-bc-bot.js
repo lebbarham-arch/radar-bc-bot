@@ -332,6 +332,14 @@ async function scrapeOnePage(browser, baseUrl, pageNum) {
       await pg.goto(url, { waitUntil: "domcontentloaded", timeout: 35000 });
       await delay(200 + Math.floor(Math.random() * 250));
       const result = await pg.evaluate((baseUrl) => {
+        // DEBUG MP : lister les liens de la page pour trouver la bonne structure
+        if (baseUrl.includes("/entreprise/consultation") && !baseUrl.includes("/bdc/")) {
+          const allHrefs = [...document.querySelectorAll("a[href]")]
+            .map(a => a.getAttribute("href")).filter(h => h && !h.startsWith("#")).slice(0, 30);
+          console.log("DEBUG_MP_HREFS:" + JSON.stringify(allHrefs));
+          console.log("DEBUG_MP_TITLE:" + document.title);
+          console.log("DEBUG_MP_URL:" + window.location.href);
+        }
         const items = [], seen = new Set();
         document.querySelectorAll("a[href*='/show/']").forEach(link => {
           const href = link.getAttribute("href") || "";
