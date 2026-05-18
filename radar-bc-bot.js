@@ -447,7 +447,7 @@ async function scrapeAllMPs(browser) {
 
     // 2. Lister TOUS les boutons submit/image sans limite pour trouver le vrai Rechercher
     const formInfo = await pg.evaluate(() => {
-      const skip = ["flagImg","quickSearch","imageOk","selectedGeo","displayDomaine","displayQualif","selectedAgrements"];
+      const skip = ["flagImg","quickSearch","imageOk","selectedGeo","displayDomaine","displayQualif","selectedAgrements","buttonRefresh","boutonClear"];
       const allBtns = [...document.querySelectorAll("input[type='submit'],input[type='image'],button")]
         .map(el => ({ name: el.name||"", id: el.id||"", val: (el.value||el.textContent||"").trim().slice(0,30) }))
         .filter(el => (el.name || el.id) && !skip.some(s => el.name.includes(s)));
@@ -463,10 +463,12 @@ async function scrapeAllMPs(browser) {
     // 3. Soumettre via PRADO avec le vrai bouton Rechercher (exclu: buttonRefresh, helpers)
     log("  Soumission PRADO...");
     const submitted = await pg.evaluate(() => {
-      const skip = ["flagImg","quickSearch","imageOk","selectedGeo","displayDomaine","displayQualif","selectedAgrements","buttonRefresh"];
+      const skip = ["flagImg","quickSearch","imageOk","selectedGeo","displayDomaine","displayQualif","selectedAgrements","buttonRefresh","boutonClear","Clear","Reset","effacer","Effacer"];
       const allBtns = [...document.querySelectorAll("input[type='submit'],input[type='image'],button")]
         .filter(el => el.name && !skip.some(s => el.name.includes(s)));
-      const searchBtn = allBtns.find(el => /recherch|search|lancer|valider|bouton|ok/i.test(el.name + (el.value||"")))
+      // Logger les boutons restants pour debug
+      console.log("BTNS_RESTANTS:" + JSON.stringify(allBtns.map(b => b.name)));
+      const searchBtn = allBtns.find(el => /recherch|search|lancer|valider|Recherch|Search/i.test(el.name + (el.value||el.textContent||"")))
                      || allBtns[0];
       if (!searchBtn) return null;
       const target = document.getElementById("PRADO_POSTBACK_TARGET");
