@@ -332,15 +332,14 @@ async function scrapeOnePage(browser, baseUrl, pageNum) {
       await pg.goto(url, { waitUntil: "domcontentloaded", timeout: 35000 });
       await delay(200 + Math.floor(Math.random() * 250));
       const result = await pg.evaluate((baseUrl) => {
-        // DEBUG MP : lister les liens de la page pour trouver la bonne structure
-        if (baseUrl.includes("/entreprise/consultation") && !baseUrl.includes("/bdc/")) {
-          const allHrefs = [...document.querySelectorAll("a[href]")]
-            .map(a => a.getAttribute("href")).filter(h => h && !h.startsWith("#")).slice(0, 30);
-          console.log("DEBUG_MP_HREFS:" + JSON.stringify(allHrefs));
-          console.log("DEBUG_MP_TITLE:" + document.title);
-          console.log("DEBUG_MP_URL:" + window.location.href);
-        }
         const items = [], seen = new Set();
+        // DEBUG MP : capturer les infos de la page
+        const _debug = baseUrl.includes("/entreprise/consultation") && !baseUrl.includes("/bdc/") ? {
+          title: document.title,
+          url: window.location.href,
+          hrefs: [...document.querySelectorAll("a[href]")]
+            .map(a => a.getAttribute("href")).filter(h => h && !h.startsWith("#") && h.length > 3).slice(0, 40),
+        } : null;
         document.querySelectorAll("a[href*='/show/']").forEach(link => {
           const href = link.getAttribute("href") || "";
           const idM  = href.match(/\/show\/(\d+)/);
@@ -364,8 +363,13 @@ async function scrapeOnePage(browser, baseUrl, pageNum) {
           });
         });
         const nextEl = document.querySelector("a.next,a[rel='next'],.pagination li:last-child:not(.disabled) a,li.next:not(.disabled) a");
-        return { items, hasNext: !!nextEl && items.length > 0 };
+        return { items, hasNext: !!nextEl && items.length > 0, _debug };
       }, baseUrl);
+      if (result._debug) {
+        log("  DEBUG MP page title: " + result._debug.title);
+        log("  DEBUG MP page url:   " + result._debug.url);
+        log("  DEBUG MP hrefs: " + JSON.stringify(result._debug.hrefs.slice(0, 20)));
+      }
       await pg.close().catch(() => {});
       return result;
     } catch (e) {
@@ -843,7 +847,7 @@ log("Telegram: " + (CFG.tgToken ? "token OK" : "non configure"));
 cron.schedule("0 */2 * * *", runGlobalScanBC, { timezone: "Africa/Casablanca" });
 // Cron MP : toutes les 2h a la demi-heure (00:30, 02:30, 04:30, ...)
 cron.schedule("30 */2 * * *", runGlobalScanMP, { timezone: "Africa/Casablanca" });
-log("Crons: BC a l'heure pile, MP a la demi-heure. Toutes les 2h.");
+log("Crons: BC a l\'heure pile, MP a la demi-heure. Toutes les 2h.");
 
 // Lancer les deux scans au demarrage
 runGlobalScanBC();
