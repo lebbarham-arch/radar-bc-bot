@@ -1185,12 +1185,9 @@ log("Supabase: " + CFG.sbUrl);
 log("Portail: " + (CFG.login || "(public)"));
 log("Telegram: " + (CFG.tgToken ? "token OK" : "non configure"));
 
-// Cron BC : toutes les 2h a l'heure pile  (00:00, 02:00, 04:00, ...)
-cron.schedule("0 */2 * * *", runGlobalScanBC, { timezone: "Africa/Casablanca" });
-// Cron MP : toutes les 2h a la demi-heure (00:30, 02:30, 04:30, ...)
-cron.schedule("0 1,3,5,7,9,11,13,15,17,19,21,23 * * *", runGlobalScanMP, { timezone: "Africa/Casablanca" });
-log("Crons: BC heures paires (0h,2h,...), MP heures impaires (1h,3h,...). Jamais en meme temps.");
+// Cron MP : toutes les 2h
+cron.schedule("0 */2 * * *", runGlobalScanMP, { timezone: "Africa/Casablanca" });
+log("Mode MP uniquement. Cron: toutes les 2h.");
 
-// Au boot: BC immediatement, MP apres 8 minutes (laisse BC finir)
-runGlobalScanBC();
-delay(8 * 60 * 1000).then(() => runGlobalScanMP());
+// Scan MP au demarrage
+runGlobalScanMP();
