@@ -858,14 +858,15 @@ async function downloadDAO(page, daoUrl) {
 // ============================================================
 async function scrapeMPDetail(page, mp) {
   try {
-    await page.goto(mp.url, { waitUntil: "domcontentloaded", timeout: 35000 });
-    await delay(300 + Math.floor(Math.random() * 400));
+    // networkidle2 = attend que PRADO finisse de charger le contenu dynamique
+    await page.goto(mp.url, { waitUntil: "networkidle2", timeout: 45000 });
+    await delay(800 + Math.floor(Math.random() * 400));
     await page.evaluate(async () => {
       document.querySelectorAll(".accordion-toggle,.collapse-toggle,[data-toggle='collapse'],[data-bs-toggle='collapse'],.panel-heading a,.card-header button,button.accordion-button,summary").forEach(el => {
         try { el.click(); } catch (e) {}
       });
       document.querySelectorAll("details").forEach(d => { d.open = true; });
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 800));
     });
 
     // Extraire infos HTML + liens ZIP/PDF
@@ -919,6 +920,11 @@ async function scrapeMPDetail(page, mp) {
       const pdfLinks = allLinks.filter(l => isDocLink(l) && /\.pdf$/i.test(l.href));
       const orgM     = window.location.href.match(/orgAcronyme[=]([^&\s]+)/);
       const refM     = window.location.href.match(/refConsultation[=]([^&\s]+)/);
+      // Logger tous les liens pour diagnostic
+      const allHrefs = [...document.querySelectorAll("a[href]")]
+        .map(a => ({ t: (a.textContent||"").trim().slice(0,30), h: a.getAttribute("href")||"" }))
+        .filter(l => l.h && l.h.length > 2 && !l.h.startsWith("#"))
+        .slice(0, 20);
       return {
         reference:  get(".reference,#reference,.num-ao,.numero-ao,h2") || document.title.replace(/.*#/, "").trim(),
         objet:      get(".objet,#objet,h1,.panel-title,.intitule,.titre-ao"),
@@ -935,6 +941,7 @@ async function scrapeMPDetail(page, mp) {
         refConsultation: refM ? refM[1] : "",
         bodyText,
         pageUrl: window.location.href,
+        allHrefs,
       };
     });
 
@@ -942,8 +949,9 @@ async function scrapeMPDetail(page, mp) {
         " HTML=" + (d.htmlArticles||[]).length + " articles | page: " + (d.pageUrl||"").slice(0,70));
     if ((d.bodyText||"").length < 200) {
       log("  MP " + mp.id + " popup vide! bodyText=" + (d.bodyText||"").slice(0,100));
+      log("  MP " + mp.id + " liens popup: " + JSON.stringify((d.allHrefs||[]).slice(0,8)));
     } else {
-      log("  MP " + mp.id + " popup ok: " + (d.bodyText||"").slice(0,120).replace(/\s+/g," "));
+      log("  MP " + mp.id + " popup ok (" + (d.bodyText||"").length + " chars): " + (d.bodyText||"").slice(0,150).replace(/\s+/g," "));
     }
 
     // Construire les URLs DAO a tenter
