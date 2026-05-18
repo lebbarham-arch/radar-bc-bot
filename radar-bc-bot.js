@@ -20,7 +20,7 @@ const CFG = {
   bcListUrl:  "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
   bcLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
   // MP - Marchés Publics (Appels d'Offres)
-  mpListUrl:  "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseAccueilAuthentifie",
+  mpListUrl:  "https://www.marchespublics.gov.ma/ao/entreprise/consultation/",
   mpLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
 };
 
@@ -916,5 +916,6 @@ cron.schedule("0 1,3,5,7,9,11,13,15,17,19,21,23 * * *", runGlobalScanMP, { timez
 log("Crons: BC heures paires (0h,2h,...), MP heures impaires (1h,3h,...). Jamais en meme temps.");
 
 // Lancer les deux scans au demarrage
-runGlobalScanBC();
-setTimeout(runGlobalScanMP, 30000); // TEST: MP demarre 30s apres BC
+// TEST: BC desactive au boot pour tester MP seul
+// runGlobalScanBC();
+setTimeout(runGlobalScanMP, 5000); // TEST: MP seul, 5s apres boot
