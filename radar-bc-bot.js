@@ -445,40 +445,37 @@ async function scrapeAllMPs(browser) {
     await pg.goto(CFG.mpListUrl, { waitUntil: "domcontentloaded", timeout: 55000 });
     await delay(1500);
 
-    // 2. Logger tous les inputs pour diagnostic
-    const formInfo = await pg.evaluate(() => ({
-      url:    window.location.href,
-      title:  document.title,
-      inputs: [...document.querySelectorAll("input,select,button,textarea")]
-        .map(el => ({ tag: el.tagName, type: el.type||"", name: el.name||"", id: el.id||"", value: el.value ? "(val)" : "" }))
-        .filter(el => el.name || el.id)
-        .slice(0, 40),
-      html: document.body.innerHTML.replace(/\s+/g," ").slice(0, 2000),
-    }));
-    log("  Formulaire URL: " + formInfo.url);
-    log("  Formulaire inputs: " + JSON.stringify(formInfo.inputs));
-
-    // 3. Soumettre le formulaire via JS (bypass "not clickable" Puppeteer)
-    // PRADO: on met PRADO_POSTBACK_TARGET = nom du bouton puis on soumet le form
-    // Le seul submit visible est buttonRefresh (actualise/recherche les resultats)
-    log("  Soumission formulaire PRADO via JS...");
-    const submitted = await pg.evaluate(() => {
-      // Trouver le bon bouton submit (rechercher / buttonRefresh)
-      const allSubmits = [...document.querySelectorAll("input[type='submit'],input[type='image']")]
-        .filter(el => el.name && !el.name.includes("flagImg") && !el.name.includes("quickSearch") && !el.name.includes("imageOk"));
-      const btn = allSubmits.find(el => /echerch|search|Search|refresh|Refresh|valider|Valider|ok|OK/i.test(el.name))
-                || allSubmits[0];
-      if (!btn) return null;
-      // Definir PRADO postback target
-      const target = document.getElementById("PRADO_POSTBACK_TARGET");
-      if (target) target.value = btn.name;
-      // Soumettre le formulaire
-      const form = document.forms[0] || document.querySelector("form");
-      if (form) { form.submit(); return btn.name; }
-      // Fallback: clic JS direct
-      btn.click(); return btn.name + " (click)";
+    // 2. Lister TOUS les boutons submit/image sans limite pour trouver le vrai Rechercher
+    const formInfo = await pg.evaluate(() => {
+      const skip = ["flagImg","quickSearch","imageOk","selectedGeo","displayDomaine","displayQualif","selectedAgrements"];
+      const allBtns = [...document.querySelectorAll("input[type='submit'],input[type='image'],button")]
+        .map(el => ({ name: el.name||"", id: el.id||"", val: (el.value||el.textContent||"").trim().slice(0,30) }))
+        .filter(el => (el.name || el.id) && !skip.some(s => el.name.includes(s)));
+      const allLinks = [...document.querySelectorAll("a[onclick]")]
+        .map(a => ({ text: (a.textContent||"").trim().slice(0,30), onclick: (a.getAttribute("onclick")||"").slice(0,80) }))
+        .slice(0, 15);
+      return { url: window.location.href, buttons: allBtns, links: allLinks };
     });
-    log("  Soumission: " + (submitted || "echec - aucun form/btn"));
+    log("  Formulaire URL: " + formInfo.url);
+    log("  Tous boutons: " + JSON.stringify(formInfo.buttons));
+    log("  Liens onclick: " + JSON.stringify(formInfo.links));
+
+    // 3. Soumettre via PRADO avec le vrai bouton Rechercher (exclu: buttonRefresh, helpers)
+    log("  Soumission PRADO...");
+    const submitted = await pg.evaluate(() => {
+      const skip = ["flagImg","quickSearch","imageOk","selectedGeo","displayDomaine","displayQualif","selectedAgrements","buttonRefresh"];
+      const allBtns = [...document.querySelectorAll("input[type='submit'],input[type='image'],button")]
+        .filter(el => el.name && !skip.some(s => el.name.includes(s)));
+      const searchBtn = allBtns.find(el => /recherch|search|lancer|valider|bouton|ok/i.test(el.name + (el.value||"")))
+                     || allBtns[0];
+      if (!searchBtn) return null;
+      const target = document.getElementById("PRADO_POSTBACK_TARGET");
+      if (target) target.value = searchBtn.name;
+      const form = document.forms[0] || document.querySelector("form");
+      if (form) { form.submit(); return searchBtn.name; }
+      searchBtn.click(); return searchBtn.name + "(click)";
+    });
+    log("  Soumission: " + (submitted || "echec - aucun bouton"));
     try {
       await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 35000 });
     } catch(e) { log("  waitForNav: " + e.message.split("\n")[0]); }
