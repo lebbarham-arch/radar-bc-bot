@@ -20,7 +20,7 @@ const CFG = {
   bcListUrl:  "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
   bcLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
   // MP - Marchés Publics (Appels d'Offres)
-  mpListUrl:  "https://www.marchespublics.gov.ma/pmmp/?lang=fr",
+  mpListUrl:  "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseAdvancedSearch",
   mpLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
 };
 
@@ -324,7 +324,7 @@ async function loginPortal(page, loginUrl) {
 // ============================================================
 async function scrapeOnePage(browser, baseUrl, pageNum) {
   const isBDC  = baseUrl.includes("/bdc/");
-  const isPMMP = baseUrl.includes("/pmmp/") || baseUrl.includes("pmmp");
+  const isPMMP = baseUrl.includes("/pmmp/") || baseUrl.includes("pmmp") || baseUrl.includes("EntrepriseAdvancedSearch") || baseUrl.includes("EntrepriseConsultation") || (baseUrl.includes("index.php") && !baseUrl.includes("/bdc/"));
   // PMMP uses ?lang=fr so pagination must use & not ?
   const url = pageNum === 1 ? baseUrl :
     baseUrl + (baseUrl.includes("?") ? "&" : "?") + "page=" + pageNum;
@@ -893,7 +893,7 @@ async function runGlobalScanMP() {
 // DEMARRAGE
 // ============================================================
 console.log("================================================");
-console.log("  RADAR BC + MARCHES PUBLICS - Bot v6.15");
+console.log("  RADAR BC + MARCHES PUBLICS - Bot v6.16");
 console.log("  Scan BC  : toutes les 2h (a l'heure pile)");
 console.log("  Scan MP  : toutes les 2h (a la demi-heure)");
 console.log("  contenu  : scan profond bodyText + articles");
