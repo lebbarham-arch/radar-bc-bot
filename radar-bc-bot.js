@@ -786,12 +786,40 @@ async function runGlobalScanMP() {
   let browser;
   try {
     browser = await launchBrowser();
+    let mpListUrl = CFG.mpListUrl;
     if (CFG.login && CFG.password) {
       const lp = await newPage(browser);
-      await loginPortal(lp, CFG.mpLoginUrl);
+      const loggedIn = await loginPortal(lp, CFG.mpLoginUrl);
+      if (loggedIn) {
+        // Trouver l'URL reelle de la liste AO depuis la page d'accueil authentifiee
+        try {
+          const foundUrl = await lp.evaluate(() => {
+            const links = [...document.querySelectorAll("a[href]")];
+            // Chercher un lien vers les consultations/AO dans le menu
+            const aoLink = links.find(a =>
+              /consultation|appel.*offr|marche.*public|avis.*appel/i.test((a.textContent || "") + (a.href || "")) &&
+              !/(bdc|bon.*commande|deconnex|logout|accueil)/i.test(a.href || "")
+            );
+            if (aoLink) return aoLink.href;
+            // Fallback: chercher index.php?page=*Consultation* ou *AvisAppel*
+            const prado = links.find(a => /page=.*[Cc]onsultation|page=.*[Aa]vis/i.test(a.href || ""));
+            return prado ? prado.href : null;
+          });
+          if (foundUrl) {
+            log("  URL AO trouvee: " + foundUrl);
+            mpListUrl = foundUrl;
+          } else {
+            log("  URL AO non trouvee dans homepage - liste des liens:");
+            const allLinks = await lp.evaluate(() =>
+              [...document.querySelectorAll("a[href]")].map(a => a.href).filter(h => h.includes("marchespublics")).slice(0, 20)
+            );
+            log("  " + JSON.stringify(allLinks));
+          }
+        } catch(e) { log("  Erreur detection URL AO: " + e.message); }
+      }
       await lp.close().catch(() => {});
     }
-    const allMPs = await scrapeAllItems(browser, CFG.mpListUrl, "MP");
+    const allMPs = await scrapeAllItems(browser, mpListUrl, "MP");
     if (!allMPs.length) { log("Aucun MP recupere."); return; }
     const vusIds   = await db.getMPVusIds();
     const newMPs   = allMPs.filter(mp => !vusIds.has(mp.id));
@@ -827,10 +855,10 @@ async function runGlobalScanMP() {
 // DEMARRAGE
 // ============================================================
 console.log("================================================");
-console.log("  RADAR BC + MARCHES PUBLICS - Bot v6.13");
+console.log("  RADAR BC + MARCHES PUBLICS - Bot v6.14");
 console.log("  Scan BC  : toutes les 2h (a l'heure pile)");
 console.log("  Scan MP  : toutes les 2h (a la demi-heure)");
-console.log("  contenu  : articles/lots depuis PDF (Bordereau > CPS)");
+console.log("  contenu  : scan profond bodyText + articles");
 console.log("  Frontiere de mot : eau != carreaux");
 console.log("================================================");
 
@@ -847,7 +875,7 @@ log("Telegram: " + (CFG.tgToken ? "token OK" : "non configure"));
 cron.schedule("0 */2 * * *", runGlobalScanBC, { timezone: "Africa/Casablanca" });
 // Cron MP : toutes les 2h a la demi-heure (00:30, 02:30, 04:30, ...)
 cron.schedule("30 */2 * * *", runGlobalScanMP, { timezone: "Africa/Casablanca" });
-log("Crons: BC a l\'heure pile, MP a la demi-heure. Toutes les 2h.");
+log("Crons: BC a l'heure pile, MP a la demi-heure. Toutes les 2h.");
 
 // Lancer les deux scans au demarrage
 runGlobalScanBC();
