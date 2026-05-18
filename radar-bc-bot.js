@@ -1191,8 +1191,6 @@ cron.schedule("0 */2 * * *", runGlobalScanBC, { timezone: "Africa/Casablanca" })
 cron.schedule("0 1,3,5,7,9,11,13,15,17,19,21,23 * * *", runGlobalScanMP, { timezone: "Africa/Casablanca" });
 log("Crons: BC heures paires (0h,2h,...), MP heures impaires (1h,3h,...). Jamais en meme temps.");
 
-// Lancer les deux scans au demarrage
-// BC demarre immediatement au boot
+// Au boot: BC immediatement, MP apres 8 minutes (laisse BC finir)
 runGlobalScanBC();
-// MP: pas de demarrage au boot - cron seulement (heures impaires, jamais en meme temps que BC)
-// Pour forcer un scan MP manuel: redeploy avec delai court
+delay(8 * 60 * 1000).then(() => runGlobalScanMP());
