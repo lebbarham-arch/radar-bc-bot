@@ -432,25 +432,65 @@ async function scrapeOnePage(browser, baseUrl, pageNum) {
 
 
 // ============================================================
-// SCRAPING LISTE MP (PRADO - pagination par clic, pas par URL)
+// SCRAPING LISTE MP (PRADO - soumettre formulaire + pagination clic)
 // ============================================================
 async function scrapeAllMPs(browser) {
   const all = [], seen = new Set();
   let pg;
   try {
     pg = await newPage(browser);
-    log("  Chargement page AO: " + CFG.mpListUrl);
+
+    // 1. Charger la page de recherche
+    log("  Chargement formulaire AO...");
     await pg.goto(CFG.mpListUrl, { waitUntil: "domcontentloaded", timeout: 55000 });
+    await delay(1500);
+
+    // 2. Logger tous les inputs pour diagnostic
+    const formInfo = await pg.evaluate(() => ({
+      url:    window.location.href,
+      title:  document.title,
+      inputs: [...document.querySelectorAll("input,select,button,textarea")]
+        .map(el => ({ tag: el.tagName, type: el.type||"", name: el.name||"", id: el.id||"", value: el.value ? "(val)" : "" }))
+        .filter(el => el.name || el.id)
+        .slice(0, 40),
+      html: document.body.innerHTML.replace(/\s+/g," ").slice(0, 2000),
+    }));
+    log("  Formulaire URL: " + formInfo.url);
+    log("  Formulaire inputs: " + JSON.stringify(formInfo.inputs));
+
+    // 3. Soumettre le formulaire (recherche vide = tous les AO en cours)
+    // Essayer plusieurs selecteurs pour le bouton Rechercher
+    const submitSelectors = [
+      "input[name*='echercher']", "input[name*='Rechercher']",
+      "input[name*='recherche']", "input[name*='search']",
+      "input[name*='Search']",   "input[name*='valider']",
+      "input[name*='ok'][type='image']", "input[name*='OK'][type='image']",
+      "input[type='submit']",    "button[type='submit']",
+    ];
+    let submitted = false;
+    for (const sel of submitSelectors) {
+      const btn = await pg.$(sel);
+      if (btn) {
+        log("  Soumission via: " + sel);
+        await btn.click();
+        try {
+          await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 });
+          submitted = true;
+        } catch(e) { log("  waitForNav: " + e.message.split("\n")[0]); submitted = true; }
+        break;
+      }
+    }
+    if (!submitted) log("  Aucun bouton submit trouve - on lit la page telle quelle");
     await delay(1000);
 
+    // 4. Paginer et extraire les AOs
     let pageNum = 0;
     while (pageNum < 200) {
       pageNum++;
-      // Extraire les AOs de la page courante
       const result = await pg.evaluate(() => {
-        const items = [], seen = new Set();
-        const base = window.location.origin;
-        const sel = "a[href*='refConsultation'],a[href*='EntrepriseDownloadAvisJAL'],a[href*='/show/']";
+        const items = [], seenIds = new Set();
+        const base  = window.location.origin;
+        const sel   = "a[href*='refConsultation'],a[href*='EntrepriseDownloadAvisJAL'],a[href*='/show/']";
         document.querySelectorAll(sel).forEach(link => {
           const href = link.getAttribute("href") || "";
           let id = "";
@@ -460,8 +500,8 @@ async function scrapeAllMPs(browser) {
           if (refM)       id = refM[1];
           else if (avisM) id = avisM[1];
           else if (showM) id = showM[1];
-          if (!id || seen.has(id)) return;
-          seen.add(id);
+          if (!id || seenIds.has(id)) return;
+          seenIds.add(id);
           const row   = link.closest("tr,.avis-item,li,article,div.row,.consultation-row,.ao-item");
           const txt   = row ? row.innerText : link.innerText;
           const lines = txt.split("\n").map(l => l.trim()).filter(Boolean);
@@ -473,52 +513,38 @@ async function scrapeAllMPs(browser) {
             organisme:   lines[2] || "",
             date_limite: dates.length ? dates[dates.length - 1] : "",
             lieu:        lines.find(l => l.length > 5 && !l.match(/^\d{2}\//)) || "",
-            wilaya:      "",
-            url: fullUrl,
+            wilaya:      "", url: fullUrl,
           });
         });
-        // Pagination PRADO : bouton suivant
-        const nextSel = "a.next,a[rel='next'],.pagination a:last-child:not(.disabled),.suivant:not(.disabled) a,input[name*='suivant'],a[id*='suivant'],a[id*='next'],a[id*='Next'],span.next a,li.next:not(.disabled) a,td.next a";
+        const nextSel = "a.next,a[rel='next'],.pagination a:last-child:not(.disabled),.suivant:not(.disabled) a,a[id*='suivant'],a[id*='next'],li.next:not(.disabled) a,td.next a,a[title*='uivant'],a[title*='Next']";
         const nextEl  = document.querySelector(nextSel);
-        // Debug: titre + nb items + snippet html
-        const _debug = {
-          title:   document.title,
-          url:     window.location.href,
-          items:   items.length,
-          nextEl:  nextEl ? (nextEl.textContent||"").trim().slice(0,30) : null,
-          html:    document.body.innerHTML.replace(/\s+/g," ").slice(0, 3000),
+        return {
+          items, hasNext: !!nextEl,
+          nextText: nextEl ? (nextEl.textContent||"").trim().slice(0,20) : null,
+          url:   window.location.href,
+          title: document.title,
+          html:  items.length === 0 ? document.body.innerHTML.replace(/\s+/g," ").slice(0, 1500) : "",
         };
-        return { items, hasNext: !!nextEl, _debug };
       });
 
       log("  Page " + pageNum + ": " + result.items.length + " AO" +
-        (result._debug.nextEl ? " | next: [" + result._debug.nextEl + "]" : " | pas de suivant"));
-
-      if (pageNum === 1) {
-        log("  DEBUG MP title: " + result._debug.title);
-        log("  DEBUG MP url:   " + result._debug.url);
-        if (result.items.length === 0) {
-          log("  DEBUG MP html:  " + result._debug.html.slice(0, 800));
-        }
+        (result.nextText ? " | next: [" + result.nextText + "]" : " | fin"));
+      if (pageNum <= 2 && result.items.length === 0) {
+        log("  DEBUG url: " + result.url);
+        log("  DEBUG html: " + (result.html||"").slice(0, 600));
       }
 
-      // Ajouter les nouveaux items
       for (const item of result.items) {
         if (!seen.has(item.id)) { seen.add(item.id); all.push(item); }
       }
-
       if (!result.hasNext || result.items.length === 0) break;
 
-      // Cliquer sur "suivant" (pagination PRADO)
       try {
-        const nextSel = "a.next,a[rel='next'],.pagination a:last-child:not(.disabled),.suivant:not(.disabled) a,input[name*='suivant'],a[id*='suivant'],a[id*='next'],a[id*='Next'],span.next a,li.next:not(.disabled) a,td.next a";
+        const nextSel = "a.next,a[rel='next'],.pagination a:last-child:not(.disabled),.suivant:not(.disabled) a,a[id*='suivant'],a[id*='next'],li.next:not(.disabled) a,td.next a,a[title*='uivant'],a[title*='Next']";
         await pg.click(nextSel);
         await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 45000 });
         await delay(500);
-      } catch(e) {
-        log("  Pagination MP: " + e.message.split("\n")[0]);
-        break;
-      }
+      } catch(e) { log("  Pagination: " + e.message.split("\n")[0]); break; }
     }
   } catch(e) {
     log("  scrapeAllMPs erreur: " + e.message.split("\n")[0]);
