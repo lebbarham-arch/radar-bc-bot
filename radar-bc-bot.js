@@ -509,14 +509,28 @@ async function scrapeAllMPs(browser) {
           const txt   = row ? row.innerText : link.innerText;
           const lines = txt.split("\n").map(l => l.trim()).filter(Boolean);
           const dates = [...txt.matchAll(/(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2})?)/g)].map(m => m[1]);
-          const fullUrl = href.startsWith("http") ? href : base + (href.startsWith("/") ? href : "/" + href);
+          // Extraire l'URL reelle depuis javascript:popUp('url','yes')
+          let fullUrl = href, orgAcronyme = "";
+          const popM = href.match(/popUp\s*\(\s*['"]([^'"]+)/i);
+          if (popM) {
+            const inner = popM[1].replace(/&lang=\w*$/, "").replace(/&lang=$/, "");
+            fullUrl = inner.startsWith("http") ? inner : base + "/" + inner.replace(/^\//, "");
+            const oM = inner.match(/orgA(?:ccronyme|cronyme|cronymr)[=]([^&\s'"]+)/i);
+            if (oM) orgAcronyme = oM[1];
+          } else if (!href.startsWith("http")) {
+            fullUrl = base + (href.startsWith("/") ? href : "/" + href);
+          }
+          if (!orgAcronyme) {
+            const oM = href.match(/orgA(?:ccronyme|cronyme|cronymr)[=]([^&\s'"]+)/i);
+            if (oM) orgAcronyme = oM[1];
+          }
           items.push({
             id, reference: lines[0] || "",
             objet:       lines[1] || lines[0] || link.textContent.trim(),
             organisme:   lines[2] || "",
             date_limite: dates.length ? dates[dates.length - 1] : "",
             lieu:        lines.find(l => l.length > 5 && !l.match(/^\d{2}\//)) || "",
-            wilaya:      "", url: fullUrl,
+            wilaya: "", url: fullUrl, orgAcronyme,
           });
         });
         const nextSel = "a.next,a[rel='next'],.pagination a:last-child:not(.disabled),.suivant:not(.disabled) a,a[id*='suivant'],a[id*='next'],li.next:not(.disabled) a,td.next a,a[title*='uivant'],a[title*='Next'],a[href*='javascript'][onclick*='Page'],.paginationControls a:last-child,table.pagination td:last-child a,tfoot a";
@@ -920,13 +934,14 @@ async function scrapeMPDetail(page, mp) {
 
     // Construire les URLs DAO a tenter
     const daoUrls = [...(d.zipLinks || [])];
-    // URL directe DownloadDAO si refConsultation disponible
+    // URL directe DownloadDAO - priorite: extrait de la page, sinon de l'objet mp (URL popUp)
     const refC = d.refConsultation || mp.id;
-    const org  = d.orgAcronyme || "";
+    const org  = d.orgAcronyme || mp.orgAcronyme || "";
     if (refC) {
-      const base = "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseDownloadDAO";
-      daoUrls.push(base + "&refConsultation=" + refC + (org ? "&orgAcronyme=" + org : ""));
+      const daoBase = "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseDownloadDAO";
+      daoUrls.push(daoBase + "&refConsultation=" + refC + (org ? "&orgAcronyme=" + org : ""));
     }
+    log("  MP " + mp.id + " org=" + org + " daoUrls=" + daoUrls.length);
     // Aussi essayer liens PDF (BDP/CPS en priorite)
     const sortedPDFs = [
       ...(d.pdfLinks || []).filter(u => /bordereau|bdp|bpu/i.test(u)),
@@ -1137,16 +1152,18 @@ async function runGlobalScanMP() {
     if (!allMPs.length) { log("Aucun MP recupere."); return; }
     const vusIds   = await db.getMPVusIds();
     const newMPs   = allMPs.filter(mp => !vusIds.has(mp.id));
-    log(newMPs.length + " nouveaux MP | " + (allMPs.length - newMPs.length) + " deja connus");
+    const knownMPs = allMPs.filter(mp =>  vusIds.has(mp.id));
+    log(newMPs.length + " nouveaux MP | " + knownMPs.length + " deja connus");
     const newDetailed = await loadDetails(browser, newMPs, "MP nouveaux", true);
     log("\nMatching clients MP...");
     for (const client of clients) {
-      const sentIds    = await db.getMPSentIds(client.id);
+      const sentIds     = await db.getMPSentIds(client.id);
       const isNewClient = sentIds.size === 0 && vusIds.size > 0;
       if (isNewClient) {
-        log("  [" + client.nom + "] NOUVEAU CLIENT MP - scan initial...");
-        const historical = await db.getMPVusMPData();
-        await matchClient(client, [...historical, ...newDetailed], "scan initial", "mp");
+        log("  [" + client.nom + "] NOUVEAU CLIENT MP - scan initial (chargement " + allMPs.length + " fiches)...");
+        // Charger les details FRAIS de tous les MPs (pas la DB qui n'a pas d'articles)
+        const knownDetailed = await loadDetails(browser, knownMPs, "scan initial", true);
+        await matchClient(client, [...knownDetailed, ...newDetailed], "scan initial", "mp");
       } else {
         await matchClient(client, newDetailed, "nouveaux MP", "mp");
       }
