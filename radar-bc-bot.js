@@ -7,6 +7,8 @@ const cron      = require("node-cron");
 const fetch     = require("node-fetch");
 let pdfParse;
 try { pdfParse = require("pdf-parse"); } catch(e) { pdfParse = null; }
+let AdmZip;
+try { AdmZip = require("adm-zip"); } catch(e) { AdmZip = null; }
 
 puppeteer.use(Stealth());
 
@@ -457,27 +459,28 @@ async function scrapeAllMPs(browser) {
       return { url: window.location.href, buttons: allBtns, links: allLinks };
     });
     log("  Formulaire URL: " + formInfo.url);
-    log("  Tous boutons: " + JSON.stringify(formInfo.buttons));
-    log("  Liens onclick: " + JSON.stringify(formInfo.links));
 
-    // 3. Soumettre via PRADO avec le vrai bouton Rechercher (exclu: buttonRefresh, helpers)
-    log("  Soumission PRADO...");
+    // 3. Soumettre via PRADO - bouton lancerRecherche (nom confirme)
+    log("  Soumission recherche AO...");
     const submitted = await pg.evaluate(() => {
-      const skip = ["flagImg","quickSearch","imageOk","selectedGeo","displayDomaine","displayQualif","selectedAgrements","buttonRefresh","boutonClear","Clear","Reset","effacer","Effacer"];
-      const allBtns = [...document.querySelectorAll("input[type='submit'],input[type='image'],button")]
-        .filter(el => el.name && !skip.some(s => el.name.includes(s)));
-      // Logger les boutons restants pour debug
-      console.log("BTNS_RESTANTS:" + JSON.stringify(allBtns.map(b => b.name)));
-      const searchBtn = allBtns.find(el => /recherch|search|lancer|valider|Recherch|Search/i.test(el.name + (el.value||el.textContent||"")))
-                     || allBtns[0];
-      if (!searchBtn) return null;
       const target = document.getElementById("PRADO_POSTBACK_TARGET");
-      if (target) target.value = searchBtn.name;
+      // Essayer lancerRecherche en premier (nom confirme), puis fallback
+      const btnName = (() => {
+        const names = ["ctl0$CONTENU_PAGE$AdvancedSearch$lancerRecherche","ctl0$CONTENU_PAGE$AdvancedSearch$boutonRechercher","ctl0$CONTENU_PAGE$AdvancedSearch$rechercherButton"];
+        for (const n of names) { if (document.querySelector("input[name='" + n + "'],button[name='" + n + "']")) return n; }
+        // Fallback: premier bouton non-skip
+        const skip = ["flagImg","quickSearch","imageOk","selectedGeo","displayDomaine","displayQualif","selectedAgrements","buttonRefresh","boutonClear"];
+        const all = [...document.querySelectorAll("input[type='submit'],input[type='image'],button")]
+          .filter(el => el.name && !skip.some(s => el.name.includes(s)));
+        return all.length ? all[all.length - 1].name : null; // dernier = souvent Rechercher
+      })();
+      if (!btnName) return null;
+      if (target) target.value = btnName;
       const form = document.forms[0] || document.querySelector("form");
-      if (form) { form.submit(); return searchBtn.name; }
-      searchBtn.click(); return searchBtn.name + "(click)";
+      if (form) { form.submit(); return btnName; }
+      return null;
     });
-    log("  Soumission: " + (submitted || "echec - aucun bouton"));
+    log("  Soumission: " + (submitted || "echec"));
     try {
       await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 35000 });
     } catch(e) { log("  waitForNav: " + e.message.split("\n")[0]); }
@@ -516,11 +519,16 @@ async function scrapeAllMPs(browser) {
             wilaya:      "", url: fullUrl,
           });
         });
-        const nextSel = "a.next,a[rel='next'],.pagination a:last-child:not(.disabled),.suivant:not(.disabled) a,a[id*='suivant'],a[id*='next'],li.next:not(.disabled) a,td.next a,a[title*='uivant'],a[title*='Next']";
-        const nextEl  = document.querySelector(nextSel);
+        const nextSel = "a.next,a[rel='next'],.pagination a:last-child:not(.disabled),.suivant:not(.disabled) a,a[id*='suivant'],a[id*='next'],li.next:not(.disabled) a,td.next a,a[title*='uivant'],a[title*='Next'],a[href*='javascript'][onclick*='Page'],.paginationControls a:last-child,table.pagination td:last-child a,tfoot a";
+        // Aussi chercher liens de pagination PRADO (numeros de pages)
+        const currentPage = document.querySelector(".currentPage,.pagination .active,span.selectedPage");
+        const allPageLinks = [...document.querySelectorAll("a[href*='javascript'],a[onclick*='Page']")]
+          .filter(a => /^\d+$/.test((a.textContent||"").trim()) || /suivant|next|>/i.test((a.textContent||"").trim()));
+        const nextEl  = document.querySelector(nextSel) || (allPageLinks.length > 1 ? allPageLinks[allPageLinks.length-1] : null);
         return {
           items, hasNext: !!nextEl,
           nextText: nextEl ? (nextEl.textContent||"").trim().slice(0,20) : null,
+          paginationLinks: allPageLinks.map(a => (a.textContent||"").trim()).slice(0,10),
           url:   window.location.href,
           title: document.title,
           html:  items.length === 0 ? document.body.innerHTML.replace(/\s+/g," ").slice(0, 1500) : "",
@@ -528,10 +536,15 @@ async function scrapeAllMPs(browser) {
       });
 
       log("  Page " + pageNum + ": " + result.items.length + " AO" +
-        (result.nextText ? " | next: [" + result.nextText + "]" : " | fin"));
+        (result.nextText ? " | next: [" + result.nextText + "]" : " | fin") +
+        (result.paginationLinks && result.paginationLinks.length ? " | pages: " + JSON.stringify(result.paginationLinks) : ""));
       if (pageNum <= 2 && result.items.length === 0) {
         log("  DEBUG url: " + result.url);
         log("  DEBUG html: " + (result.html||"").slice(0, 600));
+      }
+      if (pageNum === 1 && result.items.length > 0) {
+        log("  Exemple AO url: " + (result.items[0]||{}).url);
+        log("  Exemple AO objet: " + (result.items[0]||{}).objet);
       }
 
       for (const item of result.items) {
@@ -540,8 +553,16 @@ async function scrapeAllMPs(browser) {
       if (!result.hasNext || result.items.length === 0) break;
 
       try {
-        const nextSel = "a.next,a[rel='next'],.pagination a:last-child:not(.disabled),.suivant:not(.disabled) a,a[id*='suivant'],a[id*='next'],li.next:not(.disabled) a,td.next a,a[title*='uivant'],a[title*='Next']";
-        await pg.click(nextSel);
+        const nextSel = "a.next,a[rel='next'],.pagination a:last-child:not(.disabled),.suivant:not(.disabled) a,a[id*='suivant'],a[id*='next'],li.next:not(.disabled) a,td.next a,a[title*='uivant'],a[title*='Next'],a[href*='javascript'][onclick*='Page'],.paginationControls a:last-child,tfoot a";
+        const allPgLinks = await pg.$$("a[href*='javascript'],a[onclick*='Page']");
+        const numericLinks = [];
+        for (const a of allPgLinks) {
+          const txt = (await a.evaluate(el => el.textContent||"")).trim();
+          if (/^\d+$/.test(txt) || /suivant|next|>/i.test(txt)) numericLinks.push(a);
+        }
+        const nextBtn = await pg.$(nextSel) || (numericLinks.length > 1 ? numericLinks[numericLinks.length-1] : null);
+        if (!nextBtn) { log("  Pagination: aucun bouton suivant"); break; }
+        await nextBtn.click();
         await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 45000 });
         await delay(500);
       } catch(e) { log("  Pagination: " + e.message.split("\n")[0]); break; }
@@ -720,7 +741,97 @@ async function scrapeBCDetail(page, bc) {
 }
 
 // ============================================================
-// SCRAPING FICHE DETAIL MP (HTML + PDF Bordereau/CPS)
+// TELECHARGEMENT & ANALYSE DAO (ZIP avec BDP/CPS)
+// ============================================================
+async function downloadDAO(page, daoUrl) {
+  if (!pdfParse) return { articles: [], bodyText: "" };
+  try {
+    const cookies = await page.cookies();
+    const cookieStr = cookies.map(c => c.name + "=" + c.value).join("; ");
+    const resp = await fetch(daoUrl, {
+      headers: {
+        "Cookie":     cookieStr,
+        "Referer":    page.url(),
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept":     "application/zip,application/pdf,application/octet-stream,*/*",
+      },
+      timeout: 45000,
+    });
+    if (!resp.ok) {
+      log("  DAO fetch " + resp.status + " url: " + daoUrl.slice(0, 80));
+      return { articles: [], bodyText: "" };
+    }
+    const buffer = await resp.buffer();
+    if (!buffer || buffer.length < 100) return { articles: [], bodyText: "" };
+
+    const ct     = (resp.headers.get("content-type") || "").toLowerCase();
+    const isZip  = ct.includes("zip") || ct.includes("octet-stream") ||
+                   (buffer[0] === 0x50 && buffer[1] === 0x4B); // PK magic
+    const isPdf  = ct.includes("pdf") || (buffer[0] === 0x25 && buffer[1] === 0x50); // %P magic
+
+    // --- ZIP ---
+    if (isZip && AdmZip) {
+      log("  DAO ZIP " + Math.round(buffer.length / 1024) + " KB -> extraction PDFs...");
+      let zip;
+      try { zip = new AdmZip(buffer); } catch (e) {
+        log("  DAO ZIP parse erreur: " + e.message);
+        return { articles: [], bodyText: "" };
+      }
+      const entries = zip.getEntries();
+      log("  DAO ZIP " + entries.length + " fichiers: " + entries.map(e => e.entryName).join(", ").slice(0, 200));
+
+      const isBDP = n => /bordereau|bdp|b\.d\.p|prix.unit|prix.glo|bpu/i.test(n);
+      const isCPS = n => /\bcps\b|cahier.*pres|prescri|specification/i.test(n);
+      const isPDFname = n => /\.pdf$/i.test(n);
+
+      const pdfEntries = entries.filter(e => isPDFname(e.entryName));
+      const bdpEntries = pdfEntries.filter(e => isBDP(e.entryName));
+      const cpsEntries = pdfEntries.filter(e => isCPS(e.entryName));
+      const otherPDFs  = pdfEntries.filter(e => !isBDP(e.entryName) && !isCPS(e.entryName));
+      const toProcess  = [...bdpEntries, ...cpsEntries, ...otherPDFs].slice(0, 5);
+
+      if (toProcess.length === 0) {
+        log("  DAO ZIP aucun PDF trouve parmi " + entries.length + " fichiers");
+        return { articles: [], bodyText: "" };
+      }
+      let allArticles = [], allText = "";
+      for (const entry of toProcess) {
+        try {
+          const pdfBuf = entry.getData();
+          if (!pdfBuf || pdfBuf.length < 200) continue;
+          const data = await pdfParse(pdfBuf, { max: 0 });
+          const txt  = data.text || "";
+          log("  DAO PDF '" + entry.entryName + "' " + txt.length + " chars");
+          allText += "\n" + txt.slice(0, 6000);
+          if (allArticles.length === 0) {
+            const arts = parsePDFArticles(txt);
+            if (arts.length > 0) allArticles = arts;
+          }
+        } catch (e) {
+          log("  DAO PDF '" + entry.entryName + "' erreur: " + e.message);
+        }
+      }
+      return { articles: allArticles, bodyText: allText.slice(0, 15000) };
+    }
+
+    // --- PDF direct ---
+    if (isPdf) {
+      log("  DAO PDF direct " + Math.round(buffer.length / 1024) + " KB -> extraction...");
+      const data = await pdfParse(buffer, { max: 0 });
+      const arts = parsePDFArticles(data.text || "");
+      return { articles: arts, bodyText: (data.text || "").slice(0, 15000) };
+    }
+
+    log("  DAO format inconnu: ct=" + ct.slice(0, 50) + " size=" + buffer.length);
+    return { articles: [], bodyText: "" };
+  } catch (e) {
+    log("  DAO erreur: " + e.message);
+    return { articles: [], bodyText: "" };
+  }
+}
+
+// ============================================================
+// SCRAPING FICHE DETAIL MP (HTML + DAO ZIP/PDF BDP/CPS)
 // ============================================================
 async function scrapeMPDetail(page, mp) {
   try {
@@ -728,16 +839,15 @@ async function scrapeMPDetail(page, mp) {
     await delay(300 + Math.floor(Math.random() * 400));
     await page.evaluate(async () => {
       document.querySelectorAll(".accordion-toggle,.collapse-toggle,[data-toggle='collapse'],[data-bs-toggle='collapse'],.panel-heading a,.card-header button,button.accordion-button,summary").forEach(el => {
-        try { el.click(); } catch(e) {}
+        try { el.click(); } catch (e) {}
       });
       document.querySelectorAll("details").forEach(d => { d.open = true; });
       await new Promise(r => setTimeout(r, 500));
     });
 
-    // Extraire les infos HTML + les liens PDF
+    // Extraire infos HTML + liens ZIP/PDF
     const d = await page.evaluate(() => {
       const get = s => { const el = document.querySelector(s); return el ? el.innerText.trim() : ""; };
-      // bodyText = texte complet pour scan profond + extraction date
       const mainElMP = document.querySelector("main,.main-content,#contenu,#main,.container,.content") || document.body;
       const bodyText = (mainElMP.innerText || document.body.innerText).replace(/\s+/g, " ").slice(0, 8000);
       let date_limite = "";
@@ -748,7 +858,7 @@ async function scrapeMPDetail(page, mp) {
         if (all.length) date_limite = all[all.length - 1];
       }
 
-      // Articles HTML (lots eventuellement listes dans la page)
+      // Articles HTML (tableaux de la page detail)
       const htmlArticles = [], seen = new Set();
       document.querySelectorAll("table").forEach(t => {
         t.querySelectorAll("tr").forEach((row, i) => {
@@ -760,70 +870,107 @@ async function scrapeMPDetail(page, mp) {
           seen.add(desig);
           htmlArticles.push({
             designation:    desig,
-            quantite:       cells.length >= 3 ? (cells[cells.length-2].innerText||"").trim() : "",
-            unite:          cells.length >= 3 ? (cells[cells.length-1].innerText||"").trim() : "",
-            specifications: cells.length >= 2 ? (cells[1].innerText||"").trim().slice(0,400) : "",
+            quantite:       cells.length >= 3 ? (cells[cells.length - 2].innerText || "").trim() : "",
+            unite:          cells.length >= 3 ? (cells[cells.length - 1].innerText || "").trim() : "",
+            specifications: cells.length >= 2 ? (cells[1].innerText || "").trim().slice(0, 400) : "",
           });
         });
       });
 
-      // Detecter les liens PDF : Bordereau > CPS > autres docs DAO
+      // Tous les liens de telechargement (ZIP prioritaire, puis PDF)
       const allLinks = [...document.querySelectorAll("a[href]")].map(a => ({
         href: a.href,
         text: (a.textContent || a.innerText || "").trim().toLowerCase(),
       }));
-      const base = window.location.origin;
-      const isPDF = l => l.href.match(/\.(pdf)$/i) || l.href.includes("/download") || l.href.includes("/document") || l.href.includes("/fichier");
+      const isDocLink = l =>
+        /\.(zip|pdf)$/i.test(l.href) ||
+        l.href.includes("DownloadDAO") ||
+        l.href.includes("DownloadAnnonce") ||
+        l.href.includes("/download") ||
+        l.href.includes("/document") ||
+        l.href.includes("/fichier") ||
+        l.href.includes("telecharger") ||
+        /dao|dossier|bordereau|bdp|cps|cahier|reglement|rc\b/i.test(l.text);
 
-      const bordereau = allLinks.filter(l => isPDF(l) && /bordereau|bp\b|prix\s*unit|prix\s*glo|bpu/i.test(l.text));
-      const cps       = allLinks.filter(l => isPDF(l) && /\bcps\b|cahier.*prescri|speciif|specification/i.test(l.text));
-      const dao       = allLinks.filter(l => isPDF(l) && /\bdao\b|dossier.*appel|reglement.*consul|\brc\b/i.test(l.text));
-      const allDocs   = allLinks.filter(l => isPDF(l));
-
-      // Priorite: Bordereau > CPS > DAO > premier PDF
-      const pdfLinks = [
-        ...(bordereau.length ? bordereau.slice(0,2) : []),
-        ...(cps.length && bordereau.length === 0 ? cps.slice(0,1) : []),
-        ...(dao.length && bordereau.length === 0 && cps.length === 0 ? dao.slice(0,1) : []),
-        ...(allDocs.length && bordereau.length === 0 && cps.length === 0 ? allDocs.slice(0,2) : []),
-      ];
+      const zipLinks = allLinks.filter(l => isDocLink(l) && (/\.zip$/i.test(l.href) || l.href.includes("DownloadDAO") || /dao|dossier/i.test(l.text)));
+      const pdfLinks = allLinks.filter(l => isDocLink(l) && /\.pdf$/i.test(l.href));
+      const orgM     = window.location.href.match(/orgAcronyme[=]([^&\s]+)/);
+      const refM     = window.location.href.match(/refConsultation[=]([^&\s]+)/);
       return {
-        reference: get(".reference,#reference,.num-ao,.numero-ao,h2") || document.title.replace(/.*#/,"").trim(),
-        objet:     get(".objet,#objet,h1,.panel-title,.intitule,.titre-ao"),
-        organisme: get(".acheteur,.organisme,#acheteur,.maitre-ouvrage,.mo"),
-        lieu:      get(".lieu,#lieu"),
-        wilaya:    get("[class*='wilaya'],[class*='region'],[class*='prefect']"),
-        budget:    get(".montant,.budget,.estimation,[class*='montant'],[class*='budget']"),
-        procedure: get(".type-procedure,.procedure,.type-ao,[class*='procedure']"),
+        reference:  get(".reference,#reference,.num-ao,.numero-ao,h2") || document.title.replace(/.*#/, "").trim(),
+        objet:      get(".objet,#objet,h1,.panel-title,.intitule,.titre-ao"),
+        organisme:  get(".acheteur,.organisme,#acheteur,.maitre-ouvrage,.mo"),
+        lieu:       get(".lieu,#lieu"),
+        wilaya:     get("[class*='wilaya'],[class*='region'],[class*='prefect']"),
+        budget:     get(".montant,.budget,.estimation,[class*='montant'],[class*='budget']"),
+        procedure:  get(".type-procedure,.procedure,.type-ao,[class*='procedure']"),
         date_limite,
         htmlArticles,
-        pdfLinks: pdfLinks.map(l => l.href).slice(0, 4),
+        zipLinks:   zipLinks.map(l => l.href).slice(0, 3),
+        pdfLinks:   pdfLinks.map(l => l.href).slice(0, 4),
+        orgAcronyme: orgM ? orgM[1] : "",
+        refConsultation: refM ? refM[1] : "",
         bodyText,
+        pageUrl: window.location.href,
       };
     });
 
-    // Extraction PDF : Bordereau des Prix en priorite, CPS en fallback
-    let pdfArticles = [];
-    if (d.pdfLinks && d.pdfLinks.length > 0) {
-      log("  MP " + mp.id + ": " + d.pdfLinks.length + " PDF(s) detecte(s) -> extraction...");
-      for (const pdfUrl of d.pdfLinks) {
-        const extracted = await extractPDFArticles(page, pdfUrl);
-        if (extracted.length > 0) {
-          log("  MP " + mp.id + ": " + extracted.length + " articles extraits du PDF");
-          pdfArticles = extracted;
-          break; // Prendre le premier PDF qui donne des resultats
+    log("  MP " + mp.id + ": ZIP=" + (d.zipLinks||[]).length + " PDF=" + (d.pdfLinks||[]).length +
+        " HTML=" + (d.htmlArticles||[]).length + " articles");
+
+    // Construire les URLs DAO a tenter
+    const daoUrls = [...(d.zipLinks || [])];
+    // URL directe DownloadDAO si refConsultation disponible
+    const refC = d.refConsultation || mp.id;
+    const org  = d.orgAcronyme || "";
+    if (refC) {
+      const base = "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseDownloadDAO";
+      daoUrls.push(base + "&refConsultation=" + refC + (org ? "&orgAcronyme=" + org : ""));
+    }
+    // Aussi essayer liens PDF (BDP/CPS en priorite)
+    const sortedPDFs = [
+      ...(d.pdfLinks || []).filter(u => /bordereau|bdp|bpu/i.test(u)),
+      ...(d.pdfLinks || []).filter(u => /\bcps\b|cahier|prescri/i.test(u)),
+      ...(d.pdfLinks || []).filter(u => !/bordereau|bdp|bpu|\bcps\b|cahier|prescri/i.test(u)),
+    ];
+
+    let daoArticles = [], daoBodyText = "";
+
+    // Tenter chaque URL DAO (ZIP d'abord)
+    for (const url of daoUrls) {
+      const result = await downloadDAO(page, url);
+      if (result.articles.length > 0 || result.bodyText.length > 200) {
+        log("  MP " + mp.id + ": DAO OK -> " + result.articles.length + " articles, " + result.bodyText.length + " chars");
+        daoArticles  = result.articles;
+        daoBodyText  = result.bodyText;
+        break;
+      }
+    }
+
+    // Fallback: PDFs de la page si DAO ZIP vide
+    if (daoArticles.length === 0 && daoBodyText.length < 200) {
+      for (const pdfUrl of sortedPDFs.slice(0, 3)) {
+        const result = await downloadDAO(page, pdfUrl);
+        if (result.articles.length > 0 || result.bodyText.length > 200) {
+          log("  MP " + mp.id + ": PDF fallback OK -> " + result.articles.length + " articles");
+          daoArticles = result.articles;
+          daoBodyText = result.bodyText;
+          break;
         }
       }
     }
 
-    // Fusionner: les articles PDF ont priorite sur HTML (plus complets)
-    const articles = pdfArticles.length > 0 ? pdfArticles : d.htmlArticles;
-    if (articles.length === 0) {
-      log("  MP " + mp.id + ": aucun article extrait (PDF: " + (d.pdfLinks||[]).length + " liens, HTML: " + d.htmlArticles.length + ")");
+    // Articles finaux: DAO > HTML
+    const articles = daoArticles.length > 0 ? daoArticles : (d.htmlArticles || []);
+    // bodyText final: page HTML + contenu DAO
+    const bodyText = (d.bodyText || "") + (daoBodyText ? "\n" + daoBodyText : "");
+
+    if (articles.length === 0 && daoBodyText.length < 200) {
+      log("  MP " + mp.id + ": aucun contenu extrait - URL: " + mp.url.slice(0, 80));
     }
 
-    const { htmlArticles, pdfLinks, ...rest } = d;
-    return { ...mp, ...rest, articles };
+    const { htmlArticles, zipLinks, pdfLinks, orgAcronyme, refConsultation, pageUrl, ...rest } = d;
+    return { ...mp, ...rest, articles, bodyText: bodyText.slice(0, 20000) };
   } catch (e) { log("  MP Detail " + mp.id + ": " + e.message); return mp; }
 }
 
@@ -1022,9 +1169,9 @@ async function runGlobalScanMP() {
 // DEMARRAGE
 // ============================================================
 console.log("================================================");
-console.log("  RADAR BC + MARCHES PUBLICS - Bot v6.17");
+console.log("  RADAR BC + MARCHES PUBLICS - Bot v6.18");
 console.log("  Scan BC  : toutes les 2h (a l'heure pile)");
-console.log("  Scan MP  : heures impaires (1h,3h,5h,...)");
+console.log("  Scan MP  : cron heures impaires (1h,3h,...) - pas au boot");
 console.log("  contenu  : scan profond bodyText + articles");
 console.log("  Frontiere de mot : eau != carreaux");
 console.log("================================================");
@@ -1045,6 +1192,7 @@ cron.schedule("0 1,3,5,7,9,11,13,15,17,19,21,23 * * *", runGlobalScanMP, { timez
 log("Crons: BC heures paires (0h,2h,...), MP heures impaires (1h,3h,...). Jamais en meme temps.");
 
 // Lancer les deux scans au demarrage
-// TEST: BC desactive au boot pour tester MP seul
-// runGlobalScanBC();
-setTimeout(runGlobalScanMP, 5000); // TEST: MP seul, 5s apres boot
+// BC demarre immediatement au boot
+runGlobalScanBC();
+// MP: pas de demarrage au boot - cron seulement (heures impaires, jamais en meme temps que BC)
+// Pour forcer un scan MP manuel: redeploy avec delai court
