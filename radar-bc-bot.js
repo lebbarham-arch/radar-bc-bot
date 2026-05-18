@@ -20,7 +20,7 @@ const CFG = {
   bcListUrl:  "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
   bcLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
   // MP - Marchés Publics (Appels d'Offres)
-  mpListUrl:  "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseAdvancedSearch",
+  mpListUrl:  "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseAccueilAuthentifie",
   mpLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
 };
 
@@ -893,9 +893,9 @@ async function runGlobalScanMP() {
 // DEMARRAGE
 // ============================================================
 console.log("================================================");
-console.log("  RADAR BC + MARCHES PUBLICS - Bot v6.16");
+console.log("  RADAR BC + MARCHES PUBLICS - Bot v6.17");
 console.log("  Scan BC  : toutes les 2h (a l'heure pile)");
-console.log("  Scan MP  : toutes les 2h (a la demi-heure)");
+console.log("  Scan MP  : heures impaires (1h,3h,5h,...)");
 console.log("  contenu  : scan profond bodyText + articles");
 console.log("  Frontiere de mot : eau != carreaux");
 console.log("================================================");
@@ -912,9 +912,9 @@ log("Telegram: " + (CFG.tgToken ? "token OK" : "non configure"));
 // Cron BC : toutes les 2h a l'heure pile  (00:00, 02:00, 04:00, ...)
 cron.schedule("0 */2 * * *", runGlobalScanBC, { timezone: "Africa/Casablanca" });
 // Cron MP : toutes les 2h a la demi-heure (00:30, 02:30, 04:30, ...)
-cron.schedule("30 */2 * * *", runGlobalScanMP, { timezone: "Africa/Casablanca" });
-log("Crons: BC a l'heure pile, MP a la demi-heure. Toutes les 2h.");
+cron.schedule("0 1,3,5,7,9,11,13,15,17,19,21,23 * * *", runGlobalScanMP, { timezone: "Africa/Casablanca" });
+log("Crons: BC heures paires (0h,2h,...), MP heures impaires (1h,3h,...). Jamais en meme temps.");
 
 // Lancer les deux scans au demarrage
 runGlobalScanBC();
-setTimeout(runGlobalScanMP, 90000); // MP demarre 90s apres BC
+setTimeout(runGlobalScanMP, 30000); // TEST: MP demarre 30s apres BC
