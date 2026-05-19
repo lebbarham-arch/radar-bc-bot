@@ -225,14 +225,26 @@ async function sendWhatsApp(client, msg) {
 
 function buildMessage(item, matchedCriteres, radarType) {
   const arts = (item.articles || []).slice(0, 10)
-    .map((a, i) => "  " + (i + 1) + ". " + a.designation +
-      (a.quantite ? " - " + a.quantite + " " + (a.unite || "") : ""))
+    .map((a, i) => {
+      let line = "  " + (i + 1) + ". " + a.designation;
+      // Montant estimé et caution (extraits du popup PopUpDetailLots)
+      if (a.estimation && a.estimation !== "-" && a.estimation !== "")
+        line += "\n       Estimation : " + a.estimation;
+      if (a.caution && a.caution !== "-" && a.caution !== "" && !/^0[,.]?0*\s*DH?$/i.test(a.caution.trim()))
+        line += " | Caution : " + a.caution;
+      // Fallback quantite (BCs)
+      if (!a.estimation && a.quantite)
+        line += " - " + a.quantite + " " + (a.unite || "");
+      return line;
+    })
     .join("\n");
   const more  = item.articles && item.articles.length > 10
-    ? "\n  ... +" + (item.articles.length - 10) + " autres" : "";
+    ? "\n  ... +" + (item.articles.length - 10) + " autres lots" : "";
   const icons = { region: "[region]", organisme: "[org]", titre: "[titre]", contenu: "[contenu]" };
   const tags  = matchedCriteres.map(c => icons[c.type] + " " + c.valeur).join(" | ");
   const header = radarType === "mp" ? "NOUVEAU MARCHE PUBLIC" : "NOUVEAU BC EN COURS";
+  const budgetLine = item.estimation_totale
+    ? "Budget estimatif : " + item.estimation_totale + " DH TTC" : null;
   return [
     header, tags, "",
     "Ref: "    + (item.reference || item.id || "N/A"),
@@ -240,12 +252,13 @@ function buildMessage(item, matchedCriteres, radarType) {
     "Objet: "  + (item.objet || "N/A"),
     "Lieu: "   + (item.wilaya || item.lieu || "N/A"),
     "Limite: " + (item.date_limite || "N/A"),
-    "", radarType === "mp" ? "Lots:" : "Articles:",
-    arts || "  Voir la fiche",
+    budgetLine,
+    "", radarType === "mp" ? "Lots :" : "Articles :",
+    arts || "  (voir la fiche)",
     more, "",
     "Lien: " + item.url, "",
-    "Radar BC Maroc - Veille automatique",
-  ].filter(l => l !== undefined).join("\n");
+    "Radar Marches Maroc - Veille automatique",
+  ].filter(l => l !== undefined && l !== null).join("\n");
 }
 
 // ============================================================
@@ -434,6 +447,164 @@ async function scrapeOnePage(browser, baseUrl, pageNum) {
 
 
 // ============================================================
+// PACK STANDARD : recherche portail par mot-clé
+// Le portail indexe les désignations de lots -> résultats ciblés
+// Sans authentification requise
+// ============================================================
+async function searchPortalByKeyword(browser, keyword, opts) {
+  // opts: { categorie: "1"|"2"|"3", procedureType: "1"|"2"|... }
+  const all = [], seen = new Set();
+  const catValue  = (opts && opts.categorie)     ? String(opts.categorie)     : "0";
+  const procValue = (opts && opts.procedureType) ? String(opts.procedureType) : "0";
+  let pg;
+  try {
+    pg = await newPage(browser);
+    log("  [STD] Recherche portail: '" + keyword + "' cat=" + catValue + "...");
+    await pg.goto(CFG.mpListUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await delay(1200);
+
+    // Remplir les champs de recherche (confirmés par inspection du portail)
+    const filled = await pg.evaluate((kw, cat, proc) => {
+      // Mot-clé
+      const input = document.getElementById("ctl0_CONTENU_PAGE_AdvancedSearch_keywordSearch") ||
+                    document.querySelector("input[name*='keywordSearch'],input[id*='keywordSearch']");
+      if (!input) return false;
+      input.value = kw;
+      input.dispatchEvent(new Event("input",  { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      // Catégorie (Travaux/Fournitures/Services)
+      const catEl = document.querySelector("select[name*='categorie']");
+      if (catEl && cat !== "0") catEl.value = cat;
+      // Mode de passation
+      const procEl = document.querySelector("select[name*='procedureType']");
+      if (procEl && proc !== "0") procEl.value = proc;
+      return true;
+    }, keyword, catValue, procValue);
+
+    if (!filled) {
+      log("  [STD] Champ keywordSearch introuvable pour: " + keyword);
+      await pg.close().catch(() => {});
+      return [];
+    }
+    await delay(400);
+
+    // Soumettre via mécanisme PRADO (lancerRecherche) — nom confirmé par inspection
+    await pg.evaluate(() => {
+      const btnName = "ctl0$CONTENU_PAGE$AdvancedSearch$lancerRecherche";
+      const target  = document.getElementById("PRADO_POSTBACK_TARGET");
+      if (target) target.value = btnName;
+      const btn = document.querySelector("input[name='" + btnName + "'],button[name='" + btnName + "']");
+      if (btn) { btn.click(); return; }
+      const form = document.forms[0] || document.querySelector("form");
+      if (form) form.submit();
+    });
+
+    try {
+      await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 35000 });
+    } catch (e) { log("  [STD] nav: " + e.message.split("\n")[0]); }
+    await delay(800);
+
+    // Optimiser: passer à 500 résultats/page pour minimiser les requêtes
+    // Le sélecteur listePageSizeTop accepte: 10, 20, 50, 100, 500
+    const pageSized = await pg.evaluate(() => {
+      const sel = document.querySelector("select[name*='listePageSizeTop'],select[id*='listePageSizeTop']");
+      if (!sel || !sel.querySelector("option[value='500']")) return false;
+      sel.value = "500";
+      const target = document.getElementById("PRADO_POSTBACK_TARGET");
+      if (target) target.value = sel.name;
+      const form = document.forms[0] || document.querySelector("form");
+      if (form) { form.submit(); return true; }
+      return false;
+    });
+    if (pageSized) {
+      try {
+        await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 });
+        log("  [STD] Page size -> 500 OK");
+      } catch(e) { log("  [STD] Page size: " + e.message.split("\n")[0]); }
+      await delay(600);
+    }
+
+    // Extraction AOs + pagination (500/page → typiquement 1-2 pages)
+    let pageNum = 0;
+    while (pageNum < 20) {
+      pageNum++;
+      const result = await pg.evaluate(() => {
+        const items = [], seenIds = new Set();
+        const base  = window.location.origin;
+        document.querySelectorAll("a[href]").forEach(link => {
+          const href = link.getAttribute("href") || "";
+          const refM = href.match(/refConsultation[=]([^&\s'"]+)/);
+          if (!refM) return;
+          let id = refM[1];
+          if (/^[A-Za-z0-9+/]{8,}={0,2}$/.test(id) && !/^\d+$/.test(id)) return;
+          if (href.includes("popUpGestionPanier") || href.includes("panier")) return;
+          if (seenIds.has(id)) return;
+          seenIds.add(id);
+          let fullUrl = href, orgAcronyme = "";
+          const popM = href.match(/popUp\s*\(\s*['"]([^'"]+)/i);
+          if (popM) {
+            const inner = popM[1].replace(/&lang=\w*$/, "").replace(/&lang=$/, "");
+            fullUrl = inner.startsWith("http") ? inner : base + "/" + inner.replace(/^\//, "");
+            const oM = inner.match(/orgA(?:ccronyme|cronyme|cronymr)[=]([^&\s'"]+)/i);
+            if (oM) orgAcronyme = oM[1];
+          } else if (!href.startsWith("http")) {
+            fullUrl = base + (href.startsWith("/") ? href : "/" + href);
+          }
+          if (!orgAcronyme) {
+            const oM = href.match(/orgA(?:ccronyme|cronyme|cronymr)[=]([^&\s'"]+)/i);
+            if (oM) orgAcronyme = oM[1];
+          }
+          const row   = link.closest("tr,.avis-item,li,article,div.row,.consultation-row,.ao-item");
+          const txt   = row ? row.innerText : link.innerText;
+          const lines = txt.split("\n").map(l => l.trim()).filter(Boolean);
+          const dates = [...txt.matchAll(/(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2})?)/g)].map(m => m[1]);
+          items.push({
+            id, reference: lines[0] || "",
+            objet:       lines[1] || lines[0] || link.textContent.trim(),
+            organisme:   lines[2] || "",
+            date_limite: dates.length ? dates[dates.length - 1] : "",
+            lieu:        lines.find(l => l.length > 5 && !l.match(/^\d{2}\//)) || "",
+            wilaya: "", url: fullUrl, orgAcronyme,
+          });
+        });
+        const nextSel = "a.next,a[rel='next'],.suivant:not(.disabled) a,a[id*='suivant'],a[title*='uivant'],a[title*='Next']";
+        const pgLinks = [...document.querySelectorAll("a[href*='javascript'],a[onclick*='Page']")]
+          .filter(a => /^\d+$/.test((a.textContent || "").trim()) || /suivant|next|>/i.test((a.textContent || "").trim()));
+        const nextEl = document.querySelector(nextSel) || (pgLinks.length > 1 ? pgLinks[pgLinks.length - 1] : null);
+        return { items, hasNext: !!nextEl && items.length > 0 };
+      });
+
+      log("  [STD] '" + keyword + "' p" + pageNum + ": " + result.items.length + " AO(s)");
+      for (const item of result.items) {
+        if (!seen.has(item.id)) { seen.add(item.id); all.push(item); }
+      }
+      if (!result.hasNext || result.items.length === 0) break;
+
+      try {
+        const nextSel = "a.next,a[rel='next'],.suivant:not(.disabled) a,a[id*='suivant'],a[title*='uivant']";
+        const pgElems = await pg.$$("a[href*='javascript'],a[onclick*='Page']");
+        const pgBtns  = [];
+        for (const a of pgElems) {
+          const txt = (await a.evaluate(el => el.textContent || "")).trim();
+          if (/^\d+$/.test(txt) || /suivant|next|>/i.test(txt)) pgBtns.push(a);
+        }
+        const nextBtn = await pg.$(nextSel) || (pgBtns.length > 1 ? pgBtns[pgBtns.length - 1] : null);
+        if (!nextBtn) break;
+        await nextBtn.click();
+        await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 45000 });
+        await delay(500);
+      } catch (e) { log("  [STD] pagination: " + e.message.split("\n")[0]); break; }
+    }
+  } catch (e) {
+    log("  [STD] searchPortalByKeyword erreur: " + e.message);
+  } finally {
+    if (pg) await pg.close().catch(() => {});
+  }
+  log("  [STD] -> '" + keyword + "' : " + all.length + " AO(s) total");
+  return all;
+}
+
+// ============================================================
 // SCRAPING LISTE MP (PRADO - soumettre formulaire + pagination clic)
 // ============================================================
 async function scrapeAllMPs(browser) {
@@ -486,9 +657,29 @@ async function scrapeAllMPs(browser) {
     } catch(e) { log("  waitForNav: " + e.message.split("\n")[0]); }
     await delay(1000);
 
-    // 4. Paginer et extraire les AOs
+    // 3b. Optimiser: passer à 500 résultats/page (options confirmées: 10,20,50,100,500)
+    // Champ: ctl0$CONTENU_PAGE$resultSearch$listePageSizeTop
+    const pageSized = await pg.evaluate(() => {
+      const sel = document.querySelector("select[name*='listePageSizeTop'],select[id*='listePageSizeTop']");
+      if (!sel || !sel.querySelector("option[value='500']")) return false;
+      sel.value = "500";
+      const target = document.getElementById("PRADO_POSTBACK_TARGET");
+      if (target) target.value = sel.name;
+      const form = document.forms[0] || document.querySelector("form");
+      if (form) { form.submit(); return true; }
+      return false;
+    });
+    if (pageSized) {
+      try {
+        await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 });
+        log("  Page size -> 500 OK");
+      } catch(e) { log("  Page size: " + e.message.split("\n")[0]); }
+      await delay(800);
+    }
+
+    // 4. Paginer et extraire les AOs (500/page → typiquement 1-5 pages au lieu de 100-200)
     let pageNum = 0;
-    while (pageNum < 200) {
+    while (pageNum < 20) {
       pageNum++;
       const result = await pg.evaluate(() => {
         const items = [], seenIds = new Set();
@@ -856,7 +1047,11 @@ async function downloadDAO(page, daoUrl) {
 // ============================================================
 // SCRAPING FICHE DETAIL MP (HTML + DAO ZIP/PDF BDP/CPS)
 // ============================================================
-async function scrapeMPDetail(page, mp) {
+// opts.skipDAO = true  -> PACK MOYEN  : popup HTML seulement, pas de DAO
+// opts.skipDAO = false -> PACK AVANCÉ : popup HTML + téléchargement DAO (ZIP/PDF)
+// défaut (pas d'opts)  -> comportement avancé (rétrocompat)
+async function scrapeMPDetail(page, mp, opts) {
+  const skipDAO = !!(opts && opts.skipDAO === true);
   try {
     // networkidle2 = attend que PRADO finisse de charger le contenu dynamique
     await page.goto(mp.url, { waitUntil: "networkidle2", timeout: 45000 });
@@ -882,10 +1077,55 @@ async function scrapeMPDetail(page, mp) {
         if (all.length) date_limite = all[all.length - 1];
       }
 
-      // Articles HTML (tableaux de la page detail)
-      const htmlArticles = [], seen = new Set();
-      document.querySelectorAll("table").forEach(t => {
-        t.querySelectorAll("tr").forEach((row, i) => {
+      // ---- Extraction lots depuis popup PopUpDetailLots (PRADO) ----
+      // Structure de la page : tableau avec lignes "Lot N : | designation"
+      // puis "Estimation (en Dhs TTC) : | montant" et "Caution provisoire : | montant"
+      const lots = [];
+      let curLot = null;
+      document.querySelectorAll("table tr").forEach(row => {
+        const cells = [...row.querySelectorAll("td")];
+        if (!cells.length) return;
+        const firstTxt = (cells[0].innerText || "").trim();
+        const valueTxt = cells.length >= 2 ? (cells[cells.length - 1].innerText || "").trim() : firstTxt;
+        // Détecter en-tête de lot : "Lot 1 :" dans la première cellule
+        const lotM = firstTxt.match(/^Lot\s+(\d+)\s*:/i);
+        if (lotM) {
+          curLot = { lotNum: parseInt(lotM[1]), designation: valueTxt, estimation: "", caution: "", categorie: "" };
+          lots.push(curLot);
+          return;
+        }
+        if (!curLot) return;
+        const lbl = firstTxt.toLowerCase();
+        if (/estimation/i.test(lbl))  curLot.estimation = valueTxt;
+        if (/caution/i.test(lbl))     curLot.caution    = valueTxt;
+        if (/cat[eé]gorie/i.test(lbl)) curLot.categorie  = valueTxt;
+      });
+
+      // Calcul budget total (somme estimations de tous les lots)
+      let estimationTotale = 0;
+      lots.forEach(l => {
+        const n = parseFloat((l.estimation || "").replace(/\s/g, "").replace(",", ".").replace(/[^\d.]/g, ""));
+        if (!isNaN(n)) estimationTotale += n;
+      });
+      const estimation_totale = estimationTotale > 0
+        ? estimationTotale.toLocaleString("fr-MA", { maximumFractionDigits: 2 }) : "";
+
+      // Convertir lots en articles (format unifié)
+      const htmlArticles = lots.length > 0
+        ? lots.map(l => ({
+            designation:    "Lot " + l.lotNum + " : " + l.designation,
+            specifications: l.categorie && l.categorie !== "-" ? "Cat.: " + l.categorie : "",
+            quantite:       "",
+            unite:          "",
+            estimation:     l.estimation !== "-" ? l.estimation : "",
+            caution:        l.caution    !== "-" ? l.caution    : "",
+          }))
+        : [];
+
+      // Fallback: extraction generique si pas de lots trouves (autres types de pages)
+      if (htmlArticles.length === 0) {
+        const seen = new Set();
+        document.querySelectorAll("table tr").forEach((row, i) => {
           if (i === 0) return;
           const cells = row.querySelectorAll("td");
           if (!cells.length) return;
@@ -897,9 +1137,10 @@ async function scrapeMPDetail(page, mp) {
             quantite:       cells.length >= 3 ? (cells[cells.length - 2].innerText || "").trim() : "",
             unite:          cells.length >= 3 ? (cells[cells.length - 1].innerText || "").trim() : "",
             specifications: cells.length >= 2 ? (cells[1].innerText || "").trim().slice(0, 400) : "",
+            estimation: "", caution: "",
           });
         });
-      });
+      }
 
       // Tous les liens de telechargement (ZIP prioritaire, puis PDF)
       const allLinks = [...document.querySelectorAll("a[href]")].map(a => ({
@@ -934,6 +1175,7 @@ async function scrapeMPDetail(page, mp) {
         budget:     get(".montant,.budget,.estimation,[class*='montant'],[class*='budget']"),
         procedure:  get(".type-procedure,.procedure,.type-ao,[class*='procedure']"),
         date_limite,
+        estimation_totale,
         htmlArticles,
         zipLinks:   zipLinks.map(l => l.href).slice(0, 3),
         pdfLinks:   pdfLinks.map(l => l.href).slice(0, 4),
@@ -954,52 +1196,52 @@ async function scrapeMPDetail(page, mp) {
       log("  MP " + mp.id + " popup ok (" + (d.bodyText||"").length + " chars): " + (d.bodyText||"").slice(0,150).replace(/\s+/g," "));
     }
 
-    // Construire les URLs DAO a tenter
-    const daoUrls = [...(d.zipLinks || [])];
-    // URL directe DownloadDAO - priorite: extrait de la page, sinon de l'objet mp (URL popUp)
-    const refC = d.refConsultation || mp.id;
-    const org  = d.orgAcronyme || mp.orgAcronyme || "";
-    if (refC) {
-      const daoBase = "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseDownloadDAO";
-      daoUrls.push(daoBase + "&refConsultation=" + refC + (org ? "&orgAcronyme=" + org : ""));
-    }
-    log("  MP " + mp.id + " org=" + org + " daoUrls=" + daoUrls.length);
-    // Aussi essayer liens PDF (BDP/CPS en priorite)
-    const sortedPDFs = [
-      ...(d.pdfLinks || []).filter(u => /bordereau|bdp|bpu/i.test(u)),
-      ...(d.pdfLinks || []).filter(u => /\bcps\b|cahier|prescri/i.test(u)),
-      ...(d.pdfLinks || []).filter(u => !/bordereau|bdp|bpu|\bcps\b|cahier|prescri/i.test(u)),
-    ];
-
     let daoArticles = [], daoBodyText = "";
 
-    // Tenter chaque URL DAO (ZIP d'abord)
-    for (const url of daoUrls) {
-      const result = await downloadDAO(page, url);
-      if (result.articles.length > 0 || result.bodyText.length > 200) {
-        log("  MP " + mp.id + ": DAO OK -> " + result.articles.length + " articles, " + result.bodyText.length + " chars");
-        daoArticles  = result.articles;
-        daoBodyText  = result.bodyText;
-        break;
+    if (!skipDAO) {
+      // PACK AVANCÉ : téléchargement DAO (ZIP BDP/CPS)
+      const daoUrls = [...(d.zipLinks || [])];
+      const refC = d.refConsultation || mp.id;
+      const org  = d.orgAcronyme || mp.orgAcronyme || "";
+      if (refC) {
+        const daoBase = "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseDownloadDAO";
+        daoUrls.push(daoBase + "&refConsultation=" + refC + (org ? "&orgAcronyme=" + org : ""));
       }
-    }
+      log("  MP " + mp.id + " [AVANCÉ] org=" + org + " daoUrls=" + daoUrls.length);
+      const sortedPDFs = [
+        ...(d.pdfLinks || []).filter(u => /bordereau|bdp|bpu/i.test(u)),
+        ...(d.pdfLinks || []).filter(u => /\bcps\b|cahier|prescri/i.test(u)),
+        ...(d.pdfLinks || []).filter(u => !/bordereau|bdp|bpu|\bcps\b|cahier|prescri/i.test(u)),
+      ];
 
-    // Fallback: PDFs de la page si DAO ZIP vide
-    if (daoArticles.length === 0 && daoBodyText.length < 200) {
-      for (const pdfUrl of sortedPDFs.slice(0, 3)) {
-        const result = await downloadDAO(page, pdfUrl);
+      for (const url of daoUrls) {
+        const result = await downloadDAO(page, url);
         if (result.articles.length > 0 || result.bodyText.length > 200) {
-          log("  MP " + mp.id + ": PDF fallback OK -> " + result.articles.length + " articles");
+          log("  MP " + mp.id + ": DAO OK -> " + result.articles.length + " articles, " + result.bodyText.length + " chars");
           daoArticles = result.articles;
           daoBodyText = result.bodyText;
           break;
         }
       }
+      // Fallback PDFs si DAO ZIP vide
+      if (daoArticles.length === 0 && daoBodyText.length < 200) {
+        for (const pdfUrl of sortedPDFs.slice(0, 3)) {
+          const result = await downloadDAO(page, pdfUrl);
+          if (result.articles.length > 0 || result.bodyText.length > 200) {
+            log("  MP " + mp.id + ": PDF fallback OK -> " + result.articles.length + " articles");
+            daoArticles = result.articles;
+            daoBodyText = result.bodyText;
+            break;
+          }
+        }
+      }
+    } else {
+      log("  MP " + mp.id + " [MOYEN] skip DAO, popup HTML uniquement");
     }
 
     // Articles finaux: DAO > HTML
     const articles = daoArticles.length > 0 ? daoArticles : (d.htmlArticles || []);
-    // bodyText final: page HTML + contenu DAO
+    // bodyText final: page HTML + contenu DAO (si avancé)
     const bodyText = (d.bodyText || "") + (daoBodyText ? "\n" + daoBodyText : "");
 
     if (articles.length === 0 && daoBodyText.length < 200) {
@@ -1007,23 +1249,25 @@ async function scrapeMPDetail(page, mp) {
     }
 
     const { htmlArticles, zipLinks, pdfLinks, orgAcronyme, refConsultation, pageUrl, ...rest } = d;
-    return { ...mp, ...rest, articles, bodyText: bodyText.slice(0, 20000) };
+    return { ...mp, ...rest, articles, bodyText: bodyText.slice(0, 20000), estimation_totale: d.estimation_totale || "" };
   } catch (e) { log("  MP Detail " + mp.id + ": " + e.message); return mp; }
 }
 
-async function loadDetails(browser, items, label, isMP) {
+async function loadDetails(browser, items, label, isMP, opts) {
   if (!items.length) return [];
-  log("  Chargement " + items.length + " fiches " + label + " (3 en parallele)...");
+  const packLabel = opts && opts.skipDAO === true ? "[MOYEN]" : opts && opts.skipDAO === false ? "[AVANCÉ]" : "";
+  log("  Chargement " + items.length + " fiches " + label + " " + packLabel + " (3 en parallele)...");
   const result = []; const BATCH = 3;
   for (let i = 0; i < items.length; i += BATCH) {
     const batch = items.slice(i, i + BATCH);
     const pages = await Promise.all(batch.map(() => newPage(browser)));
-    const scrapeFunc = isMP ? scrapeMPDetail : scrapeBCDetail;
-    const detailed = await Promise.all(batch.map((item, idx) => scrapeFunc(pages[idx], item).catch(() => item)));
+    const detailed = await Promise.all(batch.map((item, idx) =>
+      (isMP ? scrapeMPDetail(pages[idx], item, opts) : scrapeBCDetail(pages[idx], item)).catch(() => item)
+    ));
     await Promise.all(pages.map(p => p.close().catch(() => {})));
     result.push(...detailed);
     if (i > 0 && i % 60 === 0) log("  " + i + "/" + items.length + " fiches chargees");
-    await delay(isMP ? 400 : 200); // MP: delai supplementaire pour PDF
+    await delay(isMP ? 400 : 200);
   }
   return result;
 }
@@ -1125,6 +1369,10 @@ async function runGlobalScanBC() {
 
 // ============================================================
 // SCAN MP (Marches Publics / Appels d'Offres)
+// Architecture SaaS 3 niveaux :
+//   STANDARD : recherche portail par mot-clé (désignation lot)
+//   MOYEN    : listing complet + popup detail HTML (sans DAO)
+//   AVANCÉ   : listing complet + popup detail + DAO ZIP/PDF (BDP/CPS)
 // ============================================================
 let _scanningMP = false;
 
@@ -1133,67 +1381,188 @@ async function runGlobalScanMP() {
   _scanningMP = true;
   const now = new Date().toLocaleString("fr-MA", { timeZone: "Africa/Casablanca" });
   log("\n" + "=".repeat(60));
-  log("SCAN MARCHES PUBLICS - " + now);
+  log("SCAN MARCHES PUBLICS v7 - " + now);
   log("=".repeat(60));
+
   let clients = [];
   try {
     const raw = await db.getClients();
     clients = (raw || []).filter(c => (c.criteres || []).some(cr => cr.radar_type === "mp"));
   } catch (e) { log("Supabase MP: " + e.message); _scanningMP = false; return; }
   if (!clients.length) { log("Aucun client MP actif."); _scanningMP = false; return; }
-  log(clients.length + " client(s) MP actif(s)");
+
+  // Grouper par pack (défaut = standard si champ pack absent/null)
+  const stdClients = clients.filter(c => !c.pack || c.pack === "standard");
+  const moyClients = clients.filter(c => c.pack === "moyen");
+  const advClients = clients.filter(c => c.pack === "avance");
+  log(clients.length + " client(s) MP | " +
+    stdClients.length + " standard | " +
+    moyClients.length + " moyen | " +
+    advClients.length + " avancé");
+
   let browser;
   try {
     browser = await launchBrowser();
-    let mpListUrl = CFG.mpListUrl;
+
+    // Login si credentials dispo (utile pour pack avancé / DAO)
     if (CFG.login && CFG.password) {
       const lp = await newPage(browser);
-      const loggedIn = await loginPortal(lp, CFG.mpLoginUrl);
-      if (loggedIn) {
-        // Logger le contenu du dashboard pour trouver l'URL AO
-        try {
-          await delay(2000);
-          const dashInfo = await lp.evaluate(() => ({
-            url: window.location.href,
-            title: document.title,
-            links: [...document.querySelectorAll("a[href]")]
-              .map(a => ({ text: (a.textContent||"").trim().slice(0,40), href: a.getAttribute("href")||"" }))
-              .filter(l => l.href && l.href.length > 2 && !l.href.startsWith("#"))
-              .slice(0, 30),
-            bodySnippet: (document.body ? document.body.innerText : "").slice(0, 500),
-          }));
-          log("  Dashboard URL: " + dashInfo.url);
-          log("  Dashboard title: " + dashInfo.title);
-          log("  Dashboard liens: " + JSON.stringify(dashInfo.links));
-          log("  Dashboard texte: " + dashInfo.bodySnippet.replace(/\n/g," ").slice(0,200));
-        } catch(e) { log("  Erreur dashboard: " + e.message); }
-      }
+      await loginPortal(lp, CFG.mpLoginUrl);
       await lp.close().catch(() => {});
     }
-    const allMPs = await scrapeAllMPs(browser);
-    if (!allMPs.length) { log("Aucun MP recupere."); return; }
-    const vusIds   = await db.getMPVusIds();
-    const newMPs   = allMPs.filter(mp => !vusIds.has(mp.id));
-    const knownMPs = allMPs.filter(mp =>  vusIds.has(mp.id));
-    log(newMPs.length + " nouveaux MP | " + knownMPs.length + " deja connus");
-    const newDetailed = await loadDetails(browser, newMPs, "MP nouveaux", true);
-    log("\nMatching clients MP...");
-    for (const client of clients) {
-      const sentIds     = await db.getMPSentIds(client.id);
-      const isNewClient = sentIds.size === 0 && vusIds.size > 0;
-      if (isNewClient) {
-        log("  [" + client.nom + "] NOUVEAU CLIENT MP - scan initial (chargement " + allMPs.length + " fiches)...");
-        // Charger les details FRAIS de tous les MPs (pas la DB qui n'a pas d'articles)
-        const knownDetailed = await loadDetails(browser, knownMPs, "scan initial", true);
-        await matchClient(client, [...knownDetailed, ...newDetailed], "scan initial", "mp");
-      } else {
-        await matchClient(client, newDetailed, "nouveaux MP", "mp");
+
+    const vusIds     = await db.getMPVusIds();
+    const allMarques = []; // MPs à marquer vus à la fin (dédupliqués)
+
+    // =====================================================
+    // PACK STANDARD : recherche portail par mots-clés
+    //   Le portail indexe les désignations de lots
+    //   -> résultats rapides et ciblés, sans auth
+    // =====================================================
+    if (stdClients.length > 0) {
+      log("\n" + "-".repeat(40));
+      log("[PACK STANDARD] Recherche portail par mots-clés");
+      log("-".repeat(40));
+
+      // Collecter les paires (mot-clé, catégorie) depuis les critères MP
+      // Une même clé peut avoir plusieurs catégories → on recherche chaque combo unique
+      // categorie: "1"=Travaux, "2"=Fournitures, "3"=Services, "0"=Toutes
+      const CATEGORIE_MAP = { "travaux": "1", "fournitures": "2", "services": "3" };
+      const kwCatPairs = new Map(); // "kw||cat" -> {keyword, categorie}
+      for (const client of stdClients) {
+        let catValue = "0";
+        // Chercher un critère catégorie pour ce client
+        for (const c of (client.criteres || [])) {
+          if (c.radar_type === "mp" && c.type === "categorie" && c.valeur) {
+            catValue = CATEGORIE_MAP[c.valeur.toLowerCase()] || "0";
+          }
+        }
+        for (const c of (client.criteres || [])) {
+          if (c.radar_type === "mp" && c.type !== "categorie" && c.valeur) {
+            const key = c.valeur + "||" + catValue;
+            kwCatPairs.set(key, { keyword: c.valeur, categorie: catValue });
+          }
+        }
+      }
+      // Fallback: si aucune paire trouvée, chercher critères sans type spécifié
+      if (kwCatPairs.size === 0) {
+        for (const client of stdClients) {
+          for (const c of (client.criteres || [])) {
+            if (c.radar_type === "mp" && c.valeur) {
+              kwCatPairs.set(c.valeur + "||0", { keyword: c.valeur, categorie: "0" });
+            }
+          }
+        }
+      }
+      log("  Recherches: " + [...kwCatPairs.values()].map(p => "[" + p.keyword + (p.categorie !== "0" ? "/" + p.categorie : "") + "]").join(" "));
+
+      const stdMap = new Map();
+      for (const { keyword, categorie } of kwCatPairs.values()) {
+        const found = await searchPortalByKeyword(browser, keyword, { categorie });
+        for (const mp of found) { if (!stdMap.has(mp.id)) stdMap.set(mp.id, mp); }
+        await delay(600);
+      }
+      const stdAll = [...stdMap.values()];
+      const stdNew = stdAll.filter(mp => !vusIds.has(mp.id));
+      const stdKnown = stdAll.filter(mp => vusIds.has(mp.id));
+      log("  " + stdAll.length + " AO trouvés via portail | " + stdNew.length + " nouveaux");
+
+      // STANDARD : charge le popup UNIQUEMENT pour les AO matchés par le portail
+      // -> estimation + caution + lots, mais seulement pour les AO keyword-ciblés
+      // Différence avec MOYEN : MOYEN charge le popup pour TOUS les AO du listing
+      log("  Chargement popup pour " + stdNew.length + " nouveaux AO (standard)...");
+      const stdNewDet = await loadDetails(browser, stdNew, "MP standard nouveaux", true, { skipDAO: true });
+
+      log("  Matching clients standard...");
+      for (const client of stdClients) {
+        const sentIds = await db.getMPSentIds(client.id);
+        const isNew   = sentIds.size === 0 && vusIds.size > 0;
+        if (isNew) {
+          log("  [" + client.nom + "] NOUVEAU CLIENT - scan initial standard...");
+          const stdKnownDet = await loadDetails(browser, stdKnown, "scan initial standard", true, { skipDAO: true });
+          await matchClient(client, [...stdKnownDet, ...stdNewDet], "scan initial (standard)", "mp");
+        } else {
+          await matchClient(client, stdNewDet, "nouveaux MP (standard)", "mp");
+        }
+      }
+      for (const mp of stdNewDet) {
+        if (!allMarques.find(m => m.id === mp.id)) allMarques.push(mp);
       }
     }
-    if (newDetailed.length) {
-      await db.markMPVus(newDetailed);
-      log(newDetailed.length + " MP ajoutes a mps_vus");
+
+    // =====================================================
+    // PACK MOYEN & AVANCÉ : listing complet + popup detail
+    // =====================================================
+    const needsFullScan = moyClients.length > 0 || advClients.length > 0;
+    let allMPsListing = null;
+
+    if (needsFullScan) {
+      log("\n" + "-".repeat(40));
+      log("[PACK MOYEN/AVANCÉ] Scan listing complet portail...");
+      log("-".repeat(40));
+      allMPsListing = await scrapeAllMPs(browser);
+      if (!allMPsListing || !allMPsListing.length) {
+        log("  Aucun MP récupéré du listing.");
+        allMPsListing = [];
+      }
     }
+
+    // ---- PACK MOYEN (popup HTML, sans DAO) ----
+    if (moyClients.length > 0 && allMPsListing && allMPsListing.length > 0) {
+      log("\n[PACK MOYEN] Chargement popup detail (sans DAO)...");
+      const moyNew   = allMPsListing.filter(mp => !vusIds.has(mp.id));
+      const moyKnown = allMPsListing.filter(mp =>  vusIds.has(mp.id));
+      log("  " + moyNew.length + " nouveaux | " + moyKnown.length + " connus");
+
+      const moyNewDet = await loadDetails(browser, moyNew, "MP moyen nouveaux", true, { skipDAO: true });
+
+      for (const client of moyClients) {
+        const sentIds = await db.getMPSentIds(client.id);
+        const isNew   = sentIds.size === 0 && vusIds.size > 0;
+        if (isNew) {
+          log("  [" + client.nom + "] NOUVEAU CLIENT MOYEN - scan initial...");
+          const moyKnownDet = await loadDetails(browser, moyKnown, "scan initial moyen", true, { skipDAO: true });
+          await matchClient(client, [...moyKnownDet, ...moyNewDet], "scan initial (moyen)", "mp");
+        } else {
+          await matchClient(client, moyNewDet, "nouveaux MP (moyen)", "mp");
+        }
+      }
+      for (const mp of moyNewDet) {
+        if (!allMarques.find(m => m.id === mp.id)) allMarques.push(mp);
+      }
+    }
+
+    // ---- PACK AVANCE (popup HTML + DAO) ----
+    if (advClients.length > 0 && allMPsListing && allMPsListing.length > 0) {
+      log("\n[PACK AVANCE] Chargement popup detail + DAO...");
+      const advNew   = allMPsListing.filter(mp => !vusIds.has(mp.id));
+      const advKnown = allMPsListing.filter(mp =>  vusIds.has(mp.id));
+      log("  " + advNew.length + " nouveaux | " + advKnown.length + " connus");
+
+      const advNewDet = await loadDetails(browser, advNew, "MP avance nouveaux", true, { skipDAO: false });
+
+      for (const client of advClients) {
+        const sentIds = await db.getMPSentIds(client.id);
+        const isNew   = sentIds.size === 0 && vusIds.size > 0;
+        if (isNew) {
+          log("  [" + client.nom + "] NOUVEAU CLIENT AVANCE - scan initial...");
+          const advKnownDet = await loadDetails(browser, advKnown, "scan initial avance", true, { skipDAO: false });
+          await matchClient(client, [...advKnownDet, ...advNewDet], "scan initial (avance)", "mp");
+        } else {
+          await matchClient(client, advNewDet, "nouveaux MP (avance)", "mp");
+        }
+      }
+      for (const mp of advNewDet) {
+        if (!allMarques.find(m => m.id === mp.id)) allMarques.push(mp);
+      }
+    }
+
+    // Marquer tous les MPs vus (union de tous les packs)
+    if (allMarques.length) {
+      await db.markMPVus(allMarques);
+      log(allMarques.length + " MP ajoutes a mps_vus");
+    }
+
   } catch (e) {
     log("Erreur MP: " + e.message);
     if (e.stack) log(e.stack.split("\n").slice(0,3).join("\n"));
@@ -1208,11 +1577,10 @@ async function runGlobalScanMP() {
 // DEMARRAGE
 // ============================================================
 console.log("================================================");
-console.log("  RADAR BC + MARCHES PUBLICS - Bot v6.18");
-console.log("  Scan BC  : toutes les 2h (a l'heure pile)");
-console.log("  Scan MP  : cron heures impaires (1h,3h,...) - pas au boot");
-console.log("  contenu  : scan profond bodyText + articles");
-console.log("  Frontiere de mot : eau != carreaux");
+console.log("  RADAR MARCHES PUBLICS - Bot v7.2");
+console.log("  Packs : standard / moyen / avance");
+console.log("  Cron  : toutes les 2h");
+console.log("  Page size portail: 500 (optimise)");
 console.log("================================================");
 
 const missing = [];
