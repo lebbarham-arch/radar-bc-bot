@@ -1275,7 +1275,13 @@ async function scrapeMPDetail(page, mp, opts) {
     }
 
     const { htmlArticles, zipLinks, pdfLinks, orgAcronyme, refConsultation, pageUrl, ...rest } = d;
-    return { ...mp, ...rest, articles, bodyText: bodyText.slice(0, 20000), estimation_totale: d.estimation_totale || "" };
+    // Ne pas écraser les champs non-vides issus des résultats de recherche (objet, organisme, etc.)
+    // Le popup PopUpDetailLot ne contient pas ces champs → rest.objet = "" → on garde mp.objet
+    const cleanRest = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== "" && v !== null && v !== undefined));
+    // bodyText final enrichi des métadonnées de base (pour que le matching keyword fonctionne même si popup vide)
+    const metaPrefix = [mp.objet, mp.organisme, mp.reference].filter(Boolean).join(" ");
+    const finalBodyText = (metaPrefix ? metaPrefix + " " : "") + bodyText;
+    return { ...mp, ...cleanRest, articles, bodyText: finalBodyText.slice(0, 20000), estimation_totale: d.estimation_totale || mp.estimation_totale || "" };
   } catch (e) { log("  MP Detail " + mp.id + ": " + e.message); return mp; }
 }
 
@@ -1608,19 +1614,13 @@ console.log("  Packs : standard / moyen / avance");
 console.log("  Cron  : toutes les 2h");
 console.log("  Page size portail: 500 (optimise)");
 console.log("================================================");
+console.log("[" + new Date().toISOString().slice(11,19).replace("T"," ") + "] Supabase: " + CFG.supabaseUrl);
+console.log("[" + new Date().toISOString().slice(11,19).replace("T"," ") + "] Portail: " + CFG.login);
+console.log("[" + new Date().toISOString().slice(11,19).replace("T"," ") + "] Telegram: token " + (CFG.telegramToken ? "OK" : "MANQUANT"));
+console.log("[" + new Date().toISOString().slice(11,19).replace("T"," ") + "] Mode MP uniquement. Cron: toutes les 2h.");
+console.log("");
 
-const missing = [];
-if (!CFG.sbUrl) missing.push("SUPABASE_URL");
-if (!CFG.sbKey) missing.push("SUPABASE_KEY");
-if (missing.length) { console.error("Variables manquantes: " + missing.join(", ")); process.exit(1); }
-
-log("Supabase: " + CFG.sbUrl);
-log("Portail: " + (CFG.login || "(public)"));
-log("Telegram: " + (CFG.tgToken ? "token OK" : "non configure"));
-
-// Cron MP : toutes les 2h
-cron.schedule("0 */2 * * *", runGlobalScanMP, { timezone: "Africa/Casablanca" });
-log("Mode MP uniquement. Cron: toutes les 2h.");
-
-// Scan MP au demarrage
+// Cron toutes les 2h
+cron.schedule("0 */2 * * *", () => { runGlobalScanMP(); });
+// Lancement immédiat au démarrage
 runGlobalScanMP();
