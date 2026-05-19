@@ -1550,50 +1550,92 @@ async function runGlobalScanMP() {
 
     // ---- PACK MOYEN (popup HTML, sans DAO) ----
     if (moyClients.length > 0 && allMPsListing && allMPsListing.length > 0) {
-      log("\n[PACK MOYEN] Chargement popup detail (sans DAO)...");
+      log("\n[PACK MOYEN] Scan listing + popup candidats...");
       const moyNew   = allMPsListing.filter(mp => !vusIds.has(mp.id));
       const moyKnown = allMPsListing.filter(mp =>  vusIds.has(mp.id));
       log("  " + moyNew.length + " nouveaux | " + moyKnown.length + " connus");
 
-      const moyNewDet = await loadDetails(browser, moyNew, "MP moyen nouveaux", true, { skipDAO: true });
+      // Pré-filtre listing: ne charger le popup QUE pour les AOs candidats
+      // Evite de charger 500+ popups sur le scan initial (mps_vus vide)
+      // Les critères "contenu" cherchent dans l'objet du listing en premier pass
+      const allMoyCriteres = moyClients.flatMap(c =>
+        (c.criteres || []).filter(cr => cr.radar_type === "mp").map(cr => ({ type: cr.type, valeur: cr.valeur }))
+      );
+      const quickListingMatchMoy = mp => allMoyCriteres.some(c => {
+        if (c.type === "region")    return hasKw(mp.wilaya, c.valeur) || hasKw(mp.lieu, c.valeur);
+        if (c.type === "organisme") return hasKw(mp.organisme, c.valeur);
+        return hasKw(mp.objet, c.valeur); // titre + contenu: objet du listing
+      });
+      const moyNewCands    = moyNew.filter(mp =>  quickListingMatchMoy(mp));
+      const moyNewNonCands = moyNew.filter(mp => !quickListingMatchMoy(mp));
+      log("  Pre-filtre: " + moyNewCands.length + " candidats popup | " + moyNewNonCands.length + " non-candidats (skip popup)");
+
+      const moyNewDet = moyNewCands.length > 0
+        ? await loadDetails(browser, moyNewCands, "MP moyen candidats", true, { skipDAO: true })
+        : [];
 
       for (const client of moyClients) {
         const sentIds = await db.getMPSentIds(client.id);
         const isNew   = sentIds.size === 0 && vusIds.size > 0;
         if (isNew) {
           log("  [" + client.nom + "] NOUVEAU CLIENT MOYEN - scan initial...");
-          const moyKnownDet = await loadDetails(browser, moyKnown, "scan initial moyen", true, { skipDAO: true });
+          const moyKnownCands = moyKnown.filter(mp => quickListingMatchMoy(mp));
+          log("  " + moyKnownCands.length + " connus candidats popup");
+          const moyKnownDet = moyKnownCands.length > 0
+            ? await loadDetails(browser, moyKnownCands, "scan initial moyen", true, { skipDAO: true })
+            : [];
           await matchClient(client, [...moyKnownDet, ...moyNewDet], "scan initial (moyen)", "mp");
         } else {
           await matchClient(client, moyNewDet, "nouveaux MP (moyen)", "mp");
         }
       }
-      for (const mp of moyNewDet) {
+      // Marquer TOUS les nouveaux comme vus: candidats (popup chargé) + non-candidats (listing only)
+      for (const mp of [...moyNewDet, ...moyNewNonCands]) {
         if (!allMarques.find(m => m.id === mp.id)) allMarques.push(mp);
       }
     }
 
     // ---- PACK AVANCE (popup HTML + DAO) ----
     if (advClients.length > 0 && allMPsListing && allMPsListing.length > 0) {
-      log("\n[PACK AVANCE] Chargement popup detail + DAO...");
+      log("\n[PACK AVANCE] Scan listing + popup + DAO candidats...");
       const advNew   = allMPsListing.filter(mp => !vusIds.has(mp.id));
       const advKnown = allMPsListing.filter(mp =>  vusIds.has(mp.id));
       log("  " + advNew.length + " nouveaux | " + advKnown.length + " connus");
 
-      const advNewDet = await loadDetails(browser, advNew, "MP avance nouveaux", true, { skipDAO: false });
+      // Même pré-filtre que MOYEN: popup+DAO uniquement pour candidats listing
+      const allAdvCriteres = advClients.flatMap(c =>
+        (c.criteres || []).filter(cr => cr.radar_type === "mp").map(cr => ({ type: cr.type, valeur: cr.valeur }))
+      );
+      const quickListingMatchAdv = mp => allAdvCriteres.some(c => {
+        if (c.type === "region")    return hasKw(mp.wilaya, c.valeur) || hasKw(mp.lieu, c.valeur);
+        if (c.type === "organisme") return hasKw(mp.organisme, c.valeur);
+        return hasKw(mp.objet, c.valeur);
+      });
+      const advNewCands    = advNew.filter(mp =>  quickListingMatchAdv(mp));
+      const advNewNonCands = advNew.filter(mp => !quickListingMatchAdv(mp));
+      log("  Pre-filtre: " + advNewCands.length + " candidats popup+DAO | " + advNewNonCands.length + " non-candidats (skip)");
+
+      const advNewDet = advNewCands.length > 0
+        ? await loadDetails(browser, advNewCands, "MP avance candidats", true, { skipDAO: false })
+        : [];
 
       for (const client of advClients) {
         const sentIds = await db.getMPSentIds(client.id);
         const isNew   = sentIds.size === 0 && vusIds.size > 0;
         if (isNew) {
           log("  [" + client.nom + "] NOUVEAU CLIENT AVANCE - scan initial...");
-          const advKnownDet = await loadDetails(browser, advKnown, "scan initial avance", true, { skipDAO: false });
+          const advKnownCands = advKnown.filter(mp => quickListingMatchAdv(mp));
+          log("  " + advKnownCands.length + " connus candidats popup+DAO");
+          const advKnownDet = advKnownCands.length > 0
+            ? await loadDetails(browser, advKnownCands, "scan initial avance", true, { skipDAO: false })
+            : [];
           await matchClient(client, [...advKnownDet, ...advNewDet], "scan initial (avance)", "mp");
         } else {
           await matchClient(client, advNewDet, "nouveaux MP (avance)", "mp");
         }
       }
-      for (const mp of advNewDet) {
+      // Marquer TOUS les nouveaux comme vus
+      for (const mp of [...advNewDet, ...advNewNonCands]) {
         if (!allMarques.find(m => m.id === mp.id)) allMarques.push(mp);
       }
     }
@@ -1623,13 +1665,13 @@ console.log("  Packs : standard / moyen / avance");
 console.log("  Cron  : toutes les 2h");
 console.log("  Page size portail: 500 (optimise)");
 console.log("================================================");
-console.log("[" + new Date().toISOString().slice(11,19).replace("T"," ") + "] Supabase: " + CFG.supabaseUrl);
-console.log("[" + new Date().toISOString().slice(11,19).replace("T"," ") + "] Portail: " + CFG.login);
-console.log("[" + new Date().toISOString().slice(11,19).replace("T"," ") + "] Telegram: token " + (CFG.telegramToken ? "OK" : "MANQUANT"));
-console.log("[" + new Date().toISOString().slice(11,19).replace("T"," ") + "] Mode MP uniquement. Cron: toutes les 2h.");
+console.log("[" + new Date().toISOString().slice(11,19) + "] Supabase: " + (CFG.sbUrl ? CFG.sbUrl.slice(8, 40) + "..." : "MANQUANT"));
+console.log("[" + new Date().toISOString().slice(11,19) + "] Portail login: " + (CFG.login || "(anonyme)"));
+console.log("[" + new Date().toISOString().slice(11,19) + "] Telegram token: " + (CFG.tgToken ? "OK" : "MANQUANT"));
+console.log("[" + new Date().toISOString().slice(11,19) + "] Cron: toutes les 2h. Demarrage immediat.");
 console.log("");
 
 // Cron toutes les 2h
 cron.schedule("0 */2 * * *", () => { runGlobalScanMP(); });
-// Lancement immédiat au démarrage
+// Lancement immediat au demarrage
 runGlobalScanMP();
