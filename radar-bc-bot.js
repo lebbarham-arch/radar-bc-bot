@@ -76,13 +76,16 @@ function matchCritere(item, c) {
     case "organisme":
       return hasKw(item.organisme, c.valeur);
     case "titre":
-      return hasKw(item.objet, c.valeur);
+      // _keyword = keyword portail ayant retourné cet item (fallback si objet vide/générique)
+      return hasKw(item.objet, c.valeur) || hasKw(item._keyword || "", c.valeur);
     case "contenu":
       // Recherche dans les articles extraits ET dans le texte complet de la fiche
+      // _keyword sert de fallback quand le popup est vide mais le portail a bien matché
       return (item.articles || []).some(a =>
           hasKw(a.designation, c.valeur) || hasKw(a.specifications, c.valeur))
         || hasKw(item.bodyText || "", c.valeur)
-        || hasKw(item.objet || "", c.valeur);
+        || hasKw(item.objet || "", c.valeur)
+        || hasKw(item._keyword || "", c.valeur);
     default:
       return false;
   }
@@ -601,7 +604,8 @@ async function searchPortalByKeyword(browser, keyword, opts) {
     if (pg) await pg.close().catch(() => {});
   }
   log("  [STD] -> '" + keyword + "' : " + all.length + " AO(s) total");
-  return all;
+  // Taguer chaque item avec le keyword portail → matchCritere peut s'y fier
+  return all.map(item => ({ ...item, _keyword: keyword }));
 }
 
 // ============================================================
@@ -1277,7 +1281,12 @@ async function scrapeMPDetail(page, mp, opts) {
     const { htmlArticles, zipLinks, pdfLinks, orgAcronyme, refConsultation, pageUrl, ...rest } = d;
     // Ne pas écraser les champs non-vides issus des résultats de recherche (objet, organisme, etc.)
     // Le popup PopUpDetailLot ne contient pas ces champs → rest.objet = "" → on garde mp.objet
-    const cleanRest = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== "" && v !== null && v !== undefined));
+    const cleanRest = Object.fromEntries(Object.entries(rest).filter(([k, v]) => {
+      if (v === "" || v === null || v === undefined) return false;
+      // Le popup retourne "Descriptif des lots - Consultation" comme titre générique → ne pas écraser l'objet réel
+      if (k === "objet" && /descriptif des lots/i.test(String(v))) return false;
+      return true;
+    }));
     // bodyText final enrichi des métadonnées de base (pour que le matching keyword fonctionne même si popup vide)
     const metaPrefix = [mp.objet, mp.organisme, mp.reference].filter(Boolean).join(" ");
     const finalBodyText = (metaPrefix ? metaPrefix + " " : "") + bodyText;
