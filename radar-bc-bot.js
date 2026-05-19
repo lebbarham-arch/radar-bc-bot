@@ -1082,24 +1082,50 @@ async function scrapeMPDetail(page, mp, opts) {
       // puis "Estimation (en Dhs TTC) : | montant" et "Caution provisoire : | montant"
       const lots = [];
       let curLot = null;
-      document.querySelectorAll("table tr").forEach(row => {
-        const cells = [...row.querySelectorAll("td")];
-        if (!cells.length) return;
-        const firstTxt = (cells[0].innerText || "").trim();
-        const valueTxt = cells.length >= 2 ? (cells[cells.length - 1].innerText || "").trim() : firstTxt;
-        // Détecter en-tête de lot : "Lot 1 :" dans la première cellule
+      // Parser 1 : table <tr><td> (PRADO classique)
+      document.querySelectorAll("table tr, dl, .lot-row, .row-lot").forEach(row => {
+        const cells = [...row.querySelectorAll("td, dd, .value, .field-value")];
+        const labels = [...row.querySelectorAll("td, dt, .label, .field-label")];
+        if (!cells.length && !labels.length) return;
+        const allCells = cells.length >= 2 ? cells : [...row.querySelectorAll("td, th, dt, dd, div, span")].filter(el => el.children.length === 0);
+        if (!allCells.length) return;
+        const firstTxt = (allCells[0].innerText || "").trim();
+        const valueTxt = allCells.length >= 2 ? (allCells[allCells.length - 1].innerText || "").trim() : firstTxt;
         const lotM = firstTxt.match(/^Lot\s+(\d+)\s*:/i);
         if (lotM) {
-          curLot = { lotNum: parseInt(lotM[1]), designation: valueTxt, estimation: "", caution: "", categorie: "" };
+          const desig = valueTxt.replace(/^Lot\s+\d+\s*:\s*/i, "").trim() || firstTxt.replace(/^Lot\s+\d+\s*:\s*/i, "").trim();
+          curLot = { lotNum: parseInt(lotM[1]), designation: desig, estimation: "", caution: "", categorie: "" };
           lots.push(curLot);
           return;
         }
         if (!curLot) return;
         const lbl = firstTxt.toLowerCase();
-        if (/estimation/i.test(lbl))  curLot.estimation = valueTxt;
-        if (/caution/i.test(lbl))     curLot.caution    = valueTxt;
+        if (/estimation/i.test(lbl))   curLot.estimation = valueTxt;
+        if (/caution/i.test(lbl))      curLot.caution    = valueTxt;
         if (/cat[eé]gorie/i.test(lbl)) curLot.categorie  = valueTxt;
       });
+
+      // Parser 2 : fallback bodyText regex (si aucune table trouvée)
+      // Format connu : "Lot 1 : Désignation Catégorie : X Estimation ... : Y,YY Caution ... : Z,ZZ"
+      if (lots.length === 0 && bodyText.match(/Lot\s+\d+\s*:/i)) {
+        const parts = bodyText.split(/(?=\bLot\s+\d+\s*:)/i).filter(p => /^Lot\s+\d+\s*:/i.test(p.trim()));
+        parts.forEach(block => {
+          const lm = block.match(/^Lot\s+(\d+)\s*:\s*(.*?)(?:\s+Cat[eé]gorie\s*:|$)/i);
+          if (!lm) return;
+          const lotNum = parseInt(lm[1]);
+          const designation = lm[2].trim();
+          const estM = block.match(/Estimation\s*(?:\([^)]+\))?\s*:\s*([\d\s]+[,.]\s*\d+(?:\s*DH)?)/i);
+          const cauM = block.match(/Caution\s+provisoire\s*:\s*([\d\s]+[,.]\s*\d+(?:\s*DH)?)/i);
+          const catM = block.match(/Cat[eé]gorie\s*:\s*([^\n]+?)(?:\s+Description\s*:|\s+Estimation\s*:|\s+Caution\s*:|$)/i);
+          lots.push({
+            lotNum,
+            designation,
+            estimation: estM ? estM[1].trim() : "",
+            caution:    cauM ? cauM[1].trim() : "",
+            categorie:  catM ? catM[1].trim() : "",
+          });
+        });
+      }
 
       // Calcul budget total (somme estimations de tous les lots)
       let estimationTotale = 0;
@@ -1294,7 +1320,7 @@ async function matchClient(client, itemsToCheck, label, radarType) {
     found++;
     if (sentIds.has(item.id)) continue;
     const matched = getMatchedCriteres(item, criteres);
-    const tag = "[" + radarType.toUpperCase() + "][" + client.nom + "] BC " + item.id +
+    const tag = "[" + radarType.toUpperCase() + "][" + client.nom + "] " + radarType.toUpperCase() + " " + item.id +
       " [" + matched.map(c => c.valeur).join(", ") + "] " + (item.objet || "").slice(0, 50);
     log("  MATCH " + tag);
     sentIds.add(item.id); sent++;
