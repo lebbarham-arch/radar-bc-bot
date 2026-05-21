@@ -1,6 +1,8 @@
 "use strict";
 
 require("dotenv").config();
+const fs        = require("fs");
+const path      = require("path");
 const puppeteer = require("puppeteer-extra");
 const Stealth   = require("puppeteer-extra-plugin-stealth");
 const cron      = require("node-cron");
@@ -32,6 +34,35 @@ const CFG = {
 const delay     = ms     => new Promise(r => setTimeout(r, ms));
 const randDelay = (a, b) => delay(Math.floor(Math.random() * (b - a)) + a);
 const log       = msg    => console.log("[" + new Date().toLocaleTimeString("fr-MA") + "] " + msg);
+
+// ============================================================
+// CACHE LLM LOCAL (ai_cache.json)
+// Evite les appels réseau au redémarrage ou si Supabase KO
+// ============================================================
+const AI_CACHE_FILE = path.join(__dirname, "ai_cache.json");
+
+function loadAICache() {
+  try {
+    if (fs.existsSync(AI_CACHE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(AI_CACHE_FILE, "utf8"));
+      log("[Cache] " + Object.keys(data).length + " entrées chargées depuis ai_cache.json");
+      return data;
+    }
+  } catch (e) {
+    log("[Cache] Erreur lecture ai_cache.json: " + e.message);
+  }
+  return {};
+}
+
+function saveAICache(cache) {
+  try {
+    fs.writeFileSync(AI_CACHE_FILE, JSON.stringify(cache, null, 2), "utf8");
+  } catch (e) {
+    log("[Cache] Erreur écriture ai_cache.json: " + e.message);
+  }
+}
+
+const AI_CACHE = loadAICache();
 
 // ============================================================
 // NORMALISATION & MATCHING
@@ -317,8 +348,16 @@ async function callLLM(systemPrompt, userPrompt, maxTokens) {
   return null;
 }
 
-// Prompt 1 : Generateur de famille semantique
+// Prompt 1 : Generateur de famille semantique (avec cache local)
 async function enrichCritereWithAI(critere) {
+  const cacheKey = norm(critere.valeur);
+
+  // 1. Vérifier le cache local d'abord
+  if (AI_CACHE[cacheKey]) {
+    log('  [Cache] Hit: "' + critere.valeur + '" (' + AI_CACHE[cacheKey].inclusions.length + ' inclusions)');
+    return { inclusions: AI_CACHE[cacheKey].inclusions, exclusions: AI_CACHE[cacheKey].exclusions };
+  }
+
   log('  [IA] Enrichissement: "' + critere.valeur + '"');
   const sys =
     "Tu es un expert en marches publics et achats administratifs au Maroc. " +
@@ -337,6 +376,16 @@ async function enrichCritereWithAI(critere) {
   }
   log('  [IA] "' + critere.valeur + '" -> ' +
     result.inclusions.length + " inclusions, " + (result.exclusions || []).length + " exclusions");
+
+  // 2. Sauvegarder dans le cache local
+  AI_CACHE[cacheKey] = {
+    valeur:     critere.valeur,
+    inclusions: result.inclusions,
+    exclusions: result.exclusions || [],
+    cached_at:  new Date().toISOString(),
+  };
+  saveAICache(AI_CACHE);
+
   return { inclusions: result.inclusions, exclusions: result.exclusions || [] };
 }
 

@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Enrichissements IA — Radar Marchés Maroc</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f0f4f8; color: #1a202c; }
+
+  header {
+    background: linear-gradient(135deg, #1a365d, #2b6cb0);
+    color: white; padding: 1.2rem 2rem;
+    display: flex; align-items: center; gap: 1rem;
+  }
+  header h1 { font-size: 1.3rem; font-weight: 700; }
+  header span { font-size: 0.85rem; opacity: 0.8; }
+
+  .toolbar {
+    padding: 1rem 2rem; background: white;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
+  }
+  .toolbar input, .toolbar select {
+    padding: 0.5rem 0.8rem; border: 1px solid #cbd5e0;
+    border-radius: 6px; font-size: 0.9rem; outline: none;
+  }
+  .toolbar input:focus, .toolbar select:focus { border-color: #3182ce; }
+  .toolbar input[type=text] { width: 260px; }
+  .btn {
+    padding: 0.5rem 1.2rem; border: none; border-radius: 6px;
+    cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: 0.15s;
+  }
+  .btn-primary { background: #3182ce; color: white; }
+  .btn-primary:hover { background: #2b6cb0; }
+  .btn-success { background: #38a169; color: white; }
+  .btn-success:hover { background: #2f855a; }
+  .btn-danger  { background: #e53e3e; color: white; }
+  .btn-danger:hover  { background: #c53030; }
+  .btn-sm { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+
+  .config-banner {
+    background: #fff3cd; border: 1px solid #ffc107;
+    padding: 1rem 2rem; font-size: 0.9rem; color: #856404;
+  }
+  .config-banner input {
+    margin: 0 0.5rem; padding: 0.3rem 0.6rem;
+    border: 1px solid #ffc107; border-radius: 4px; width: 340px; font-size: 0.85rem;
+  }
+
+  main { padding: 1.5rem 2rem; }
+
+  .stats { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .stat-card {
+    background: white; border-radius: 10px; padding: 1rem 1.5rem;
+    border: 1px solid #e2e8f0; min-width: 140px;
+  }
+  .stat-card .val { font-size: 2rem; font-weight: 700; color: #3182ce; }
+  .stat-card .lbl { font-size: 0.8rem; color: #718096; margin-top: 0.2rem; }
+
+  .criteres-grid { display: flex; flex-direction: column; gap: 1rem; }
+
+  .critere-card {
+    background: white; border-radius: 10px;
+    border: 1px solid #e2e8f0; overflow: hidden;
+    transition: box-shadow 0.15s;
+  }
+  .critere-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+
+  .critere-header {
+    padding: 0.9rem 1.2rem; display: flex;
+    align-items: center; gap: 0.8rem; cursor: pointer;
+    background: #f7fafc; border-bottom: 1px solid #e2e8f0;
+  }
+  .critere-header:hover { background: #edf2f7; }
+  .badge {
+    display: inline-block; padding: 0.2rem 0.6rem;
+    border-radius: 99px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  }
+  .badge-bc  { background: #bee3f8; color: #2b6cb0; }
+  .badge-mp  { background: #c6f6d5; color: #276749; }
+  .badge-ok  { background: #c6f6d5; color: #276749; }
+  .badge-ko  { background: #fed7d7; color: #c53030; }
+
+  .critere-valeur { font-weight: 600; font-size: 1rem; flex: 1; }
+  .critere-client { font-size: 0.8rem; color: #718096; }
+  .chevron { font-size: 1rem; color: #a0aec0; transition: transform 0.2s; }
+  .critere-card.open .chevron { transform: rotate(90deg); }
+
+  .critere-body { padding: 1.2rem; display: none; }
+  .critere-card.open .critere-body { display: block; }
+
+  .two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+  @media (max-width: 700px) { .two-cols { grid-template-columns: 1fr; } }
+
+  .tags-section label {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+    color: #718096; display: block; margin-bottom: 0.5rem;
+  }
+  .tags-container {
+    min-height: 48px; border: 1px solid #e2e8f0; border-radius: 6px;
+    padding: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.4rem;
+    background: #f7fafc;
+  }
+  .tag {
+    display: flex; align-items: center; gap: 0.3rem;
+    background: #ebf8ff; border: 1px solid #bee3f8; color: #2b6cb0;
+    padding: 0.2rem 0.5rem; border-radius: 99px; font-size: 0.8rem;
+  }
+  .tag.excl { background: #fff5f5; border-color: #fed7d7; color: #c53030; }
+  .tag-del { background: none; border: none; cursor: pointer; color: inherit; font-size: 0.9rem; opacity: 0.6; }
+  .tag-del:hover { opacity: 1; }
+
+  .add-tag-row { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+  .add-tag-row input {
+    flex: 1; padding: 0.4rem 0.7rem; border: 1px solid #cbd5e0;
+    border-radius: 6px; font-size: 0.85rem; outline: none;
+  }
+  .add-tag-row input:focus { border-color: #3182ce; }
+
+  .actions-row { margin-top: 1rem; display: flex; gap: 0.6rem; align-items: center; }
+  .save-status { font-size: 0.82rem; color: #38a169; font-weight: 600; }
+
+  .loading { text-align: center; padding: 3rem; color: #718096; }
+  .error-msg { background: #fff5f5; border: 1px solid #fed7d7; color: #c53030;
+    padding: 1rem; border-radius: 8px; margin: 1rem 0; }
+
+  .empty-state { text-align: center; padding: 2rem; color: #a0aec0; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🤖 Dashboard Enrichissements IA</h1>
+    <span>Radar Marchés Publics Maroc — ai_inclusions / ai_exclusions par critère</span>
+  </div>
+</header>
+
+<div class="config-banner" id="configBanner">
+  ⚙️ Configuration Supabase :
+  <input type="text" id="sbUrl"  placeholder="https://xxxx.supabase.co" />
+  <input type="password" id="sbKey" placeholder="service_role key (anon key)" />
+  <button class="btn btn-primary btn-sm" onclick="saveConfig()">Connecter</button>
+  <span id="configStatus" style="margin-left:0.5rem;font-size:0.85rem;"></span>
+</div>
+
+<div class="toolbar">
+  <input type="text" id="search" placeholder="🔍 Rechercher un critère..." oninput="renderCriteres()">
+  <select id="filterType" onchange="renderCriteres()">
+    <option value="">Tous types</option>
+    <option value="bc">BC seulement</option>
+    <option value="mp">MP seulement</option>
+  </select>
+  <select id="filterIA" onchange="renderCriteres()">
+    <option value="">Tous statuts IA</option>
+    <option value="ok">Enrichis ✅</option>
+    <option value="ko">Non enrichis ❌</option>
+  </select>
+  <button class="btn btn-primary" onclick="loadData()">🔄 Actualiser</button>
+  <button class="btn btn-success" onclick="exportCache()">📥 Exporter cache JSON</button>
+</div>
+
+<main>
+  <div class="stats" id="stats"></div>
+  <div class="criteres-grid" id="criteresList">
+    <div class="loading">Configurez Supabase ci-dessus pour charger les données.</div>
+  </div>
+</main>
+
+<script>
+// ─── Config ─────────────────────────────────────────────────
+let SB_URL = localStorage.getItem("sb_url") || "";
+let SB_KEY = localStorage.getItem("sb_key") || "";
+let allData = []; // [{client, critere}]
+
+document.getElementById("sbUrl").value = SB_URL;
+document.getElementById("sbKey").value = SB_KEY;
+
+if (SB_URL && SB_KEY) {
+  document.getElementById("configStatus").textContent = "✅ Config restaurée";
+  loadData();
+}
+
+function saveConfig() {
+  SB_URL = document.getElementById("sbUrl").value.trim().replace(/\/$/, "");
+  SB_KEY = document.getElementById("sbKey").value.trim();
+  localStorage.setItem("sb_url", SB_URL);
+  localStorage.setItem("sb_key", SB_KEY);
+  document.getElementById("configStatus").textContent = "✅ Connecté";
+  loadData();
+}
+
+// ─── API Supabase ────────────────────────────────────────────
+async function sbFetch(table, query) {
+  const url = SB_URL + "/rest/v1/" + table + "?" + query;
+  const r = await fetch(url, {
+    headers: {
+      "apikey": SB_KEY,
+      "Authorization": "Bearer " + SB_KEY,
+      "Content-Type": "application/json",
+    }
+  });
+  if (!r.ok) throw new Error("Supabase " + r.status + ": " + await r.text());
+  return r.json();
+}
+
+async function sbPatch(table, id, data) {
+  const url = SB_URL + "/rest/v1/" + table + "?id=eq." + id;
+  const r = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      "apikey": SB_KEY,
+      "Authorization": "Bearer " + SB_KEY,
+      "Content-Type": "application/json",
+      "Prefer": "return=representation",
+    },
+    body: JSON.stringify(data),
+  });
+  if (!r.ok) throw new Error("PATCH " + r.status + ": " + await r.text());
+  return r.json();
+}
+
+// ─── Chargement données ──────────────────────────────────────
+async function loadData() {
+  document.getElementById("criteresList").innerHTML = '<div class="loading">⏳ Chargement...</div>';
+  try {
+    const [clients, criteres] = await Promise.all([
+      sbFetch("clients", "select=id,nom,email,pack,actif&actif=eq.true&order=nom"),
+      sbFetch("criteres", "select=id,client_id,valeur,radar_type,ai_inclusions,ai_exclusions,actif&actif=eq.true&order=valeur"),
+    ]);
+
+    const clientMap = {};
+    clients.forEach(c => clientMap[c.id] = c);
+
+    allData = criteres.map(cr => ({
+      critere: cr,
+      client: clientMap[cr.client_id] || { nom: "Inconnu", pack: "?" },
+    }));
+
+    renderStats();
+    renderCriteres();
+  } catch (e) {
+    document.getElementById("criteresList").innerHTML =
+      '<div class="error-msg">❌ Erreur: ' + e.message + '</div>';
+  }
+}
+
+// ─── Stats ───────────────────────────────────────────────────
+function renderStats() {
+  const total   = allData.length;
+  const enrichis = allData.filter(d => d.critere.ai_inclusions && d.critere.ai_inclusions.length > 0).length;
+  const bc = allData.filter(d => (d.critere.radar_type || "bc") === "bc").length;
+  const mp = allData.filter(d => d.critere.radar_type === "mp").length;
+
+  document.getElementById("stats").innerHTML = `
+    <div class="stat-card"><div class="val">${total}</div><div class="lbl">Critères actifs</div></div>
+    <div class="stat-card"><div class="val" style="color:#38a169">${enrichis}</div><div class="lbl">Enrichis par IA</div></div>
+    <div class="stat-card"><div class="val" style="color:#e53e3e">${total - enrichis}</div><div class="lbl">Non enrichis</div></div>
+    <div class="stat-card"><div class="val" style="color:#3182ce">${bc}</div><div class="lbl">Type BC</div></div>
+    <div class="stat-card"><div class="val" style="color:#276749">${mp}</div><div class="lbl">Type MP</div></div>
+  `;
+}
+
+// ─── Rendu liste ─────────────────────────────────────────────
+function renderCriteres() {
+  const search = document.getElementById("search").value.toLowerCase().trim();
+  const fType  = document.getElementById("filterType").value;
+  const fIA    = document.getElementById("filterIA").value;
+
+  let filtered = allData.filter(({ critere, client }) => {
+    const matchSearch = !search ||
+      critere.valeur.toLowerCase().includes(search) ||
+      client.nom.toLowerCase().includes(search);
+    const matchType = !fType || (critere.radar_type || "bc") === fType;
+    const hasIA = critere.ai_inclusions && critere.ai_inclusions.length > 0;
+    const matchIA = !fIA || (fIA === "ok" ? hasIA : !hasIA);
+    return matchSearch && matchType && matchIA;
+  });
+
+  if (!filtered.length) {
+    document.getElementById("criteresList").innerHTML =
+      '<div class="empty-state">Aucun critère trouvé.</div>';
+    return;
+  }
+
+  document.getElementById("criteresList").innerHTML = filtered.map(({ critere, client }) => {
+    const type  = critere.radar_type || "bc";
+    const hasIA = critere.ai_inclusions && critere.ai_inclusions.length > 0;
+    const inclusions = critere.ai_inclusions || [];
+    const exclusions = critere.ai_exclusions || [];
+
+    const inclTags = inclusions.map((t, i) =>
+      `<span class="tag"><span>${t}</span><button class="tag-del" onclick="removeTag(${critere.id},'incl',${i})" title="Supprimer">×</button></span>`
+    ).join("") || '<span style="color:#a0aec0;font-size:0.8rem">Aucune inclusion</span>';
+
+    const exclTags = exclusions.map((t, i) =>
+      `<span class="tag excl"><span>${t}</span><button class="tag-del" onclick="removeTag(${critere.id},'excl',${i})" title="Supprimer">×</button></span>`
+    ).join("") || '<span style="color:#a0aec0;font-size:0.8rem">Aucune exclusion</span>';
+
+    return `
+      <div class="critere-card" id="card-${critere.id}">
+        <div class="critere-header" onclick="toggleCard(${critere.id})">
+          <span class="badge badge-${type}">${type.toUpperCase()}</span>
+          <span class="badge badge-${hasIA ? 'ok' : 'ko'}">${hasIA ? '✅ IA' : '❌ Non enrichi'}</span>
+          <span class="critere-valeur">${critere.valeur}</span>
+          <span class="critere-client">${client.nom}</span>
+          <span class="chevron">▶</span>
+        </div>
+        <div class="critere-body">
+          <div class="two-cols">
+            <div class="tags-section">
+              <label>✅ Inclusions (${inclusions.length})</label>
+              <div class="tags-container" id="incl-${critere.id}">${inclTags}</div>
+              <div class="add-tag-row">
+                <input type="text" id="newIncl-${critere.id}" placeholder="Ajouter une inclusion..." onkeydown="if(event.key==='Enter') addTag(${critere.id},'incl')">
+                <button class="btn btn-success btn-sm" onclick="addTag(${critere.id},'incl')">+ Ajouter</button>
+              </div>
+            </div>
+            <div class="tags-section">
+              <label>❌ Exclusions (${exclusions.length})</label>
+              <div class="tags-container" id="excl-${critere.id}">${exclTags}</div>
+              <div class="add-tag-row">
+                <input type="text" id="newExcl-${critere.id}" placeholder="Ajouter une exclusion..." onkeydown="if(event.key==='Enter') addTag(${critere.id},'excl')">
+                <button class="btn btn-danger btn-sm" onclick="addTag(${critere.id},'excl')">+ Ajouter</button>
+              </div>
+            </div>
+          </div>
+          <div class="actions-row">
+            <button class="btn btn-success btn-sm" onclick="saveCard(${critere.id})">💾 Sauvegarder</button>
+            <button class="btn btn-danger btn-sm" onclick="clearCard(${critere.id})">🗑 Vider l'IA</button>
+            <span class="save-status" id="status-${critere.id}"></span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+// ─── Interactions ────────────────────────────────────────────
+function toggleCard(id) {
+  const card = document.getElementById("card-" + id);
+  card.classList.toggle("open");
+}
+
+function getCardData(id) {
+  const d = allData.find(x => x.critere.id === id);
+  return d ? d.critere : null;
+}
+
+function addTag(id, type) {
+  const input = document.getElementById("new" + (type === "incl" ? "Incl" : "Excl") + "-" + id);
+  const val = input.value.trim();
+  if (!val) return;
+  const critere = getCardData(id);
+  if (!critere) return;
+  if (type === "incl") {
+    critere.ai_inclusions = critere.ai_inclusions || [];
+    if (!critere.ai_inclusions.includes(val)) critere.ai_inclusions.push(val);
+  } else {
+    critere.ai_exclusions = critere.ai_exclusions || [];
+    if (!critere.ai_exclusions.includes(val)) critere.ai_exclusions.push(val);
+  }
+  input.value = "";
+  renderCriteres();
+  // Rouvrir la carte
+  setTimeout(() => {
+    document.getElementById("card-" + id).classList.add("open");
+  }, 10);
+}
+
+function removeTag(id, type, idx) {
+  const critere = getCardData(id);
+  if (!critere) return;
+  if (type === "incl") critere.ai_inclusions.splice(idx, 1);
+  else critere.ai_exclusions.splice(idx, 1);
+  renderCriteres();
+  setTimeout(() => {
+    document.getElementById("card-" + id).classList.add("open");
+  }, 10);
+}
+
+async function saveCard(id) {
+  const critere = getCardData(id);
+  const statusEl = document.getElementById("status-" + id);
+  statusEl.textContent = "💾 Sauvegarde...";
+  try {
+    await sbPatch("criteres", id, {
+      ai_inclusions: critere.ai_inclusions || [],
+      ai_exclusions: critere.ai_exclusions || [],
+    });
+    statusEl.textContent = "✅ Sauvegardé !";
+    setTimeout(() => { statusEl.textContent = ""; }, 3000);
+  } catch (e) {
+    statusEl.textContent = "❌ Erreur: " + e.message;
+    statusEl.style.color = "#e53e3e";
+  }
+}
+
+async function clearCard(id) {
+  if (!confirm("Vider les inclusions/exclusions IA pour ce critère ?")) return;
+  const critere = getCardData(id);
+  critere.ai_inclusions = [];
+  critere.ai_exclusions = [];
+  try {
+    await sbPatch("criteres", id, { ai_inclusions: [], ai_exclusions: [] });
+    renderStats();
+    renderCriteres();
+    setTimeout(() => {
+      document.getElementById("card-" + id).classList.add("open");
+    }, 10);
+  } catch (e) {
+    alert("Erreur: " + e.message);
+  }
+}
+
+function exportCache() {
+  const cache = {};
+  allData.forEach(({ critere }) => {
+    if (critere.ai_inclusions && critere.ai_inclusions.length > 0) {
+      const key = critere.valeur.toLowerCase().normalize("NFD")
+        .replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+      cache[key] = {
+        valeur: critere.valeur,
+        inclusions: critere.ai_inclusions,
+        exclusions: critere.ai_exclusions || [],
+        cached_at: new Date().toISOString(),
+      };
+    }
+  });
+  const blob = new Blob([JSON.stringify(cache, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "ai_cache.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+</script>
+</body>
+</html>
