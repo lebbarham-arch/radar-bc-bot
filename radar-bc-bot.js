@@ -13,11 +13,14 @@ try { AdmZip = require("adm-zip"); } catch(e) { AdmZip = null; }
 puppeteer.use(Stealth());
 
 const CFG = {
-  sbUrl:     process.env.SUPABASE_URL     || "",
-  sbKey:     process.env.SUPABASE_KEY     || "",
-  login:     process.env.PORTAL_LOGIN     || "",
-  password:  process.env.PORTAL_PASSWORD  || "",
-  tgToken:   process.env.TELEGRAM_BOT_TOKEN || "",
+  sbUrl:        process.env.SUPABASE_URL          || "",
+  sbKey:        process.env.SUPABASE_KEY          || "",
+  login:        process.env.PORTAL_LOGIN          || "",
+  password:     process.env.PORTAL_PASSWORD       || "",
+  tgToken:      process.env.TELEGRAM_BOT_TOKEN    || "",
+  anthropicKey: process.env.ANTHROPIC_API_KEY     || "",
+  ollamaUrl:    process.env.OLLAMA_URL            || "",
+  ollamaModel:  process.env.OLLAMA_MODEL          || "qwen2.5:32b",
   // BC - Bons de Commande
   bcListUrl:  "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
   bcLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
@@ -51,14 +54,39 @@ function hasKw(text, kw) {
   return new RegExp("\\b" + esc).test(norm(text));
 }
 
+
+// Fuzzy matching (Levenshtein) pour corriger erreurs OCR
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  return dp[m][n];
+}
+function hasKwFuzzy(text, kw) {
+  if (hasKw(text, kw)) return true;
+  const nk = norm(kw);
+  if (nk.length < 5) return false;
+  const maxDist = nk.length >= 8 ? 2 : 1;
+  return norm(text).split(/\s+/).some(w =>
+    Math.abs(w.length - nk.length) <= maxDist + 1 && levenshtein(w, nk) <= maxDist
+  );
+}
+function hasAnyKw(text, terms) {
+  return (terms || []).some(t => hasKwFuzzy(text, t));
+}
+
 function isEnCours(item) {
   if (norm(item.objet || "").includes("annul")) return false;
   if (item.date_limite) {
     const m = item.date_limite.match(/(\d{2})\/(\d{2})\/(\d{4})/);
     if (m) {
-      const dStr     = m[3] + "-" + m[2] + "-" + m[1];
-      const todayStr = new Date().toISOString().slice(0, 10);
-      if (dStr < todayStr) return false;
+      const dStr  = m[3] + "-" + m[2] + "-" + m[1];
+      const grace = new Date(); grace.setDate(grace.getDate() - 30);
+      if (dStr < grace.toISOString().slice(0, 10)) return false;
     }
   }
   return true;
@@ -66,28 +94,31 @@ function isEnCours(item) {
 
 // ============================================================
 // MATCHING CRITERES
-// FIX: "contenu" cherche UNIQUEMENT dans les articles/lots
-//      pas dans le titre, l'organisme, ou la description brute
+// v8.1 : utilise ai_inclusions/ai_exclusions + fuzzy matching
 // ============================================================
 function matchCritere(item, c) {
+  const incl = [c.valeur, ...(c.ai_inclusions || [])];
+  const excl = c.ai_exclusions || [];
   switch (c.type) {
     case "region":
       return hasKw(item.wilaya, c.valeur) || hasKw(item.lieu, c.valeur);
     case "organisme":
       return hasKw(item.organisme, c.valeur);
-    case "titre":
-      // _keyword = keyword portail ayant retourné cet item (fallback si objet vide/générique)
-      return hasKw(item.objet, c.valeur) || hasKw(item._keyword || "", c.valeur);
-    case "contenu":
-      // Recherche dans les articles extraits ET dans le texte complet de la fiche
-      // _keyword sert de fallback quand le popup est vide mais le portail a bien matché
-      return (item.articles || []).some(a =>
-          hasKw(a.designation, c.valeur) || hasKw(a.specifications, c.valeur))
-        || hasKw(item.bodyText || "", c.valeur)
-        || hasKw(item.objet || "", c.valeur)
-        || hasKw(item._keyword || "", c.valeur);
-    default:
-      return false;
+    case "titre": {
+      const text = (item.objet || "") + " " + (item._keyword || "");
+      if (excl.length && excl.some(t => hasKw(text, t))) return false;
+      return hasAnyKw(text, incl);
+    }
+    case "contenu": {
+      const text = (item.articles || [])
+          .map(a => (a.designation || "") + " " + (a.specifications || "")).join(" ")
+        + " " + (item.bodyText || "")
+        + " " + (item.objet || "")
+        + " " + (item._keyword || "");
+      if (excl.length && excl.some(t => hasKw(text, t))) return false;
+      return hasAnyKw(text, incl);
+    }
+    default: return false;
   }
 }
 
@@ -193,11 +224,165 @@ const db = {
       method: "POST", prefer: "return=minimal",
       body: JSON.stringify({ client_id: cid, nb_analyses: ana, nb_trouves: found, nb_nouveaux: sent, radar_type: radarType || "bc" }),
     }).catch(() => {}),
+
+  // IA: persister l'enrichissement d'un critere
+  saveCritereAI: (critereId, inclusions, exclusions) =>
+    sbReq("criteres?id=eq." + critereId, {
+      method: "PATCH", prefer: "return=minimal",
+      body: JSON.stringify({
+        ai_inclusions:  inclusions  || [],
+        ai_exclusions:  exclusions  || [],
+        ai_enriched_at: new Date().toISOString(),
+      }),
+    }).catch(e => log("  saveCritereAI: " + e.message)),
 };
 
+
 // ============================================================
-// NOTIFICATIONS
+// COUCHE IA UNIFIEE (Ollama local + Claude Haiku fallback)
 // ============================================================
+
+async function callOllama(systemPrompt, userPrompt, maxTokens) {
+  if (!CFG.ollamaUrl) return null;
+  maxTokens = maxTokens || 400;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const r = await fetch(CFG.ollamaUrl + "/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: CFG.ollamaModel, temperature: 0.1, stream: false,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user",   content: userPrompt },
+        ],
+      }),
+    });
+    clearTimeout(timer);
+    if (!r.ok) { log("  [IA][Ollama] Erreur " + r.status); return null; }
+    const d = await r.json();
+    const text = (d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || "";
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) { log("  [IA][Ollama] Non-JSON: " + text.slice(0, 80)); return null; }
+    return JSON.parse(m[0]);
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === "AbortError") log("  [IA][Ollama] Timeout");
+    else log("  [IA][Ollama] " + e.message);
+    return null;
+  }
+}
+
+async function callClaudeHaiku(systemPrompt, userPrompt, maxTokens) {
+  if (!CFG.anthropicKey) return null;
+  maxTokens = maxTokens || 400;
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type":      "application/json",
+        "x-api-key":         CFG.anthropicKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model:       "claude-haiku-4-5-20251001",
+        max_tokens:  maxTokens,
+        temperature: 0.1,
+        system:      systemPrompt,
+        messages:    [{ role: "user", content: userPrompt }],
+      }),
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(() => r.status);
+      log("  [IA][Haiku] Erreur " + r.status + ": " + String(err).slice(0, 100));
+      return null;
+    }
+    const d = await r.json();
+    const text = (d.content && d.content[0] && d.content[0].text) || "";
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) { log("  [IA][Haiku] Non-JSON: " + text.slice(0, 80)); return null; }
+    return JSON.parse(m[0]);
+  } catch (e) { log("  [IA][Haiku] " + e.message); return null; }
+}
+
+async function callLLM(systemPrompt, userPrompt, maxTokens) {
+  if (CFG.ollamaUrl) {
+    const result = await callOllama(systemPrompt, userPrompt, maxTokens);
+    if (result !== null) return result;
+    if (CFG.anthropicKey) log("  [IA] Ollama KO -> fallback Claude Haiku");
+  }
+  if (CFG.anthropicKey) return await callClaudeHaiku(systemPrompt, userPrompt, maxTokens);
+  return null;
+}
+
+// Prompt 1 : Generateur de famille semantique
+async function enrichCritereWithAI(critere) {
+  log('  [IA] Enrichissement: "' + critere.valeur + '"');
+  const sys =
+    "Tu es un expert en marches publics et achats administratifs au Maroc. " +
+    "Tu generes des familles de termes pour un systeme de veille sur les Bons de Commande (BC) " +
+    "et Marches Publics marocains. Tes reponses sont en JSON strict, sans markdown, sans commentaire.";
+  const usr =
+    'Le client surveille : "' + critere.valeur + '"\n\n' +
+    "Genere un JSON avec :\n" +
+    '1. "inclusions" : variantes techniques, synonymes, abreviations, erreurs OCR frequentes, ' +
+    "termes de l'administration marocaine. Maximum 20 termes.\n" +
+    '2. "exclusions" : termes proches mais differents a exclure. Maximum 10 termes.\n\n' +
+    'Format strict : {"inclusions":["terme1"],"exclusions":["terme2"]}';
+  const result = await callLLM(sys, usr, 600);
+  if (!result || !Array.isArray(result.inclusions)) {
+    log("  [IA] Echec enrichissement: " + critere.valeur); return null;
+  }
+  log('  [IA] "' + critere.valeur + '" -> ' +
+    result.inclusions.length + " inclusions, " + (result.exclusions || []).length + " exclusions");
+  return { inclusions: result.inclusions, exclusions: result.exclusions || [] };
+}
+
+// Prompt 2 : Validation avant envoi notification
+async function validateMatchWithAI(item, critere, radarType) {
+  if (!CFG.ollamaUrl && !CFG.anthropicKey) return null;
+  const extrait = [
+    item.objet || "",
+    (item.articles || []).slice(0, 6)
+      .map(a => (a.designation || "") + (a.specifications ? " - " + a.specifications : "")).join(". "),
+    (item.bodyText || "").slice(0, 600),
+  ].filter(Boolean).join(" | ").slice(0, 1000);
+  const label = radarType === "mp" ? "Marche Public (AO)" : "Bon de Commande";
+  const sys =
+    "Tu analyses des " + label + "s marocains pour verifier leur pertinence. " +
+    "Ignore les erreurs d'OCR. Reponds en JSON strict sans markdown.";
+  const usr =
+    'Besoin client : "' + critere.valeur + '"\n' +
+    'Texte du ' + label + ' : "' + extrait + '"\n\n' +
+    'Format : {"pertinent":true,"raison":"courte phrase","resume":"2 phrases max pour notification"}';
+  const r = await callLLM(sys, usr, 250);
+  if (!r || typeof r.pertinent !== "boolean") return null;
+  return r;
+}
+
+// Enrichissement automatique des criteres non encore traites
+async function autoEnrichCriteres(clients, radarType) {
+  if (!CFG.ollamaUrl && !CFG.anthropicKey) return;
+  const toEnrich = [];
+  for (const client of clients)
+    for (const c of (client.criteres || []))
+      if ((c.radar_type || "bc") === radarType && !c.ai_inclusions)
+        toEnrich.push(c);
+  if (!toEnrich.length) { log("  [IA] Criteres deja enrichis."); return; }
+  log("  [IA] " + toEnrich.length + " critere(s) a enrichir...");
+  for (const c of toEnrich) {
+    const result = await enrichCritereWithAI(c);
+    if (result) {
+      c.ai_inclusions = result.inclusions;
+      c.ai_exclusions = result.exclusions;
+      await db.saveCritereAI(c.id, result.inclusions, result.exclusions);
+    }
+    await delay(300);
+  }
+}
+
 async function sendTelegram(client, msg) {
   const token = CFG.tgToken || client.tg_token;
   if (!token || !client.tg_chat_id) return;
@@ -226,7 +411,7 @@ async function sendWhatsApp(client, msg) {
   } catch (e) { log("  WhatsApp erreur: " + e.message); }
 }
 
-function buildMessage(item, matchedCriteres, radarType) {
+function buildMessage(item, matchedCriteres, radarType, aiResume) {
   const arts = (item.articles || []).slice(0, 10)
     .map((a, i) => {
       let line = "  " + (i + 1) + ". " + a.designation;
@@ -248,6 +433,7 @@ function buildMessage(item, matchedCriteres, radarType) {
   const header = radarType === "mp" ? "NOUVEAU MARCHE PUBLIC" : "NOUVEAU BC EN COURS";
   const budgetLine = item.estimation_totale
     ? "Budget estimatif : " + item.estimation_totale + " DH TTC" : null;
+  const aiLine = aiResume ? "[IA] " + aiResume : null;
   return [
     header, tags, "",
     "Ref: "    + (item.reference || item.id || "N/A"),
@@ -256,6 +442,7 @@ function buildMessage(item, matchedCriteres, radarType) {
     "Lieu: "   + (item.wilaya || item.lieu || "N/A"),
     "Limite: " + (item.date_limite || "N/A"),
     budgetLine,
+    aiLine,
     "", radarType === "mp" ? "Lots :" : "Articles :",
     arts || "  (voir la fiche)",
     more, "",
@@ -1320,7 +1507,13 @@ async function loadDetails(browser, items, label, isMP, opts) {
 async function matchClient(client, itemsToCheck, label, radarType) {
   const criteres = (client.criteres || [])
     .filter(c => (c.radar_type || "bc") === radarType)
-    .map(c => ({ type: c.type, valeur: c.valeur }));
+    .map(c => ({
+      id:            c.id,
+      type:          c.type,
+      valeur:        c.valeur,
+      ai_inclusions: c.ai_inclusions || [],
+      ai_exclusions: c.ai_exclusions || [],
+    }));
   if (!criteres.length) return;
 
   const getSentIds = radarType === "bc" ? db.getBCSentIds : db.getMPSentIds;
@@ -1330,16 +1523,34 @@ async function matchClient(client, itemsToCheck, label, radarType) {
   let found = 0, sent = 0;
 
   for (const item of itemsToCheck) {
-    if (!isEnCours(item)) continue;
+    if (!isEnCours(item)) {
+      log("  skip " + (item.id || "") + " expire (date_limite=" + (item.date_limite || "none") + ")");
+      continue;
+    }
     if (!itemMatchesCriteres(item, criteres)) continue;
     found++;
     if (sentIds.has(item.id)) continue;
     const matched = getMatchedCriteres(item, criteres);
+
+    // Validation IA avant envoi
+    let aiResume = null;
+    if ((CFG.ollamaUrl || CFG.anthropicKey) && matched.length > 0) {
+      const v = await validateMatchWithAI(item, matched[0], radarType);
+      if (v) {
+        if (!v.pertinent) {
+          log("  [IA] REJETE " + item.id + " - " + (v.raison || ""));
+          continue;
+        }
+        aiResume = v.resume || null;
+        log("  [IA] VALIDE " + item.id + " - " + (v.raison || ""));
+      }
+    }
+
     const tag = "[" + radarType.toUpperCase() + "][" + client.nom + "] " + radarType.toUpperCase() + " " + item.id +
       " [" + matched.map(c => c.valeur).join(", ") + "] " + (item.objet || "").slice(0, 50);
     log("  MATCH " + tag);
     sentIds.add(item.id); sent++;
-    const msg = buildMessage(item, matched, radarType);
+    const msg = buildMessage(item, matched, radarType, aiResume);
     await sendTelegram(client, msg);
     await sendWhatsApp(client, msg);
     await markSent(client.id, item.id, matched[0] ? matched[0].type : "", matched[0] ? matched[0].valeur : "", item);
@@ -1368,6 +1579,7 @@ async function runGlobalScanBC() {
   } catch (e) { log("Supabase: " + e.message); _scanningBC = false; return; }
   if (!clients.length) { log("Aucun client BC actif."); _scanningBC = false; return; }
   log(clients.length + " client(s) BC actif(s)");
+  await autoEnrichCriteres(clients, "bc");
   let browser;
   try {
     browser = await launchBrowser();
@@ -1441,6 +1653,7 @@ async function runGlobalScanMP() {
     moyClients.length + " moyen | " +
     advClients.length + " avancé");
 
+  await autoEnrichCriteres(clients, "mp");
   let browser;
   try {
     browser = await launchBrowser();
@@ -1660,15 +1873,21 @@ async function runGlobalScanMP() {
 // DEMARRAGE
 // ============================================================
 console.log("================================================");
-console.log("  RADAR MARCHES PUBLICS - Bot v7.2");
+console.log("  RADAR MARCHES PUBLICS - Bot v8.1 (IA)");
 console.log("  Packs : standard / moyen / avance");
 console.log("  Cron  : toutes les 2h");
-console.log("  Page size portail: 500 (optimise)");
+console.log("  IA    : Ollama local + Claude Haiku fallback");
 console.log("================================================");
-console.log("[" + new Date().toISOString().slice(11,19) + "] Supabase: " + (CFG.sbUrl ? CFG.sbUrl.slice(8, 40) + "..." : "MANQUANT"));
-console.log("[" + new Date().toISOString().slice(11,19) + "] Portail login: " + (CFG.login || "(anonyme)"));
-console.log("[" + new Date().toISOString().slice(11,19) + "] Telegram token: " + (CFG.tgToken ? "OK" : "MANQUANT"));
-console.log("[" + new Date().toISOString().slice(11,19) + "] Cron: toutes les 2h. Demarrage immediat.");
+{
+  const _ia = CFG.ollamaUrl
+    ? "Ollama (" + CFG.ollamaModel + ") @ " + CFG.ollamaUrl + (CFG.anthropicKey ? " + Haiku fallback" : "")
+    : CFG.anthropicKey ? "Claude Haiku (cloud)" : "DESACTIVE";
+  console.log("[" + new Date().toISOString().slice(11,19) + "] Supabase: " + (CFG.sbUrl ? CFG.sbUrl.slice(8, 40) + "..." : "MANQUANT"));
+  console.log("[" + new Date().toISOString().slice(11,19) + "] Portail login: " + (CFG.login || "(anonyme)"));
+  console.log("[" + new Date().toISOString().slice(11,19) + "] Telegram token: " + (CFG.tgToken ? "OK" : "MANQUANT"));
+  console.log("[" + new Date().toISOString().slice(11,19) + "] IA: " + _ia);
+  console.log("[" + new Date().toISOString().slice(11,19) + "] Cron: toutes les 2h. Demarrage immediat.");
+}
 console.log("");
 
 // Cron toutes les 2h

@@ -1,5 +1,5 @@
 app = "radar-bc-bot"
-primary_region = "ams"
+primary_region = "cdg"
 
 [build]
   dockerfile = "Dockerfile"
