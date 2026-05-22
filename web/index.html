@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Radar BC & Marchés Publics Maroc</title>
+<title>Radar BC Maroc</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
@@ -23,15 +23,10 @@
   .btn-ghost:hover { border-color:#94a3b8; color:#334155; }
   .badge { display:inline-block; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:600; }
   .badge-blue   { background:#dbeafe; color:#1d4ed8; }
-  .badge-purple { background:#ede9fe; color:#7c3aed; }
   .badge-green  { background:#dcfce7; color:#15803d; }
   .badge-amber  { background:#fef3c7; color:#b45309; }
+  .badge-purple { background:#ede9fe; color:#7c3aed; }
   .badge-gray   { background:#f1f5f9; color:#475569; }
-  .radar-toggle { display:flex; background:#f1f5f9; border-radius:10px; padding:3px; gap:2px; }
-  .radar-toggle button { flex:1; padding:7px 16px; border-radius:8px; font-size:13px; font-weight:600; border:none; cursor:pointer; transition:all .2s; }
-  .radar-toggle .rt-bc.active   { background:#2563eb; color:#fff; box-shadow:0 2px 8px rgba(37,99,235,.3); }
-  .radar-toggle .rt-mp.active   { background:#7c3aed; color:#fff; box-shadow:0 2px 8px rgba(124,58,237,.3); }
-  .radar-toggle button:not(.active) { background:transparent; color:#64748b; }
   .alert { padding:12px 16px; border-radius:8px; font-size:14px; margin-bottom:12px; }
   .alert-error   { background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; }
   .alert-success { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
@@ -48,15 +43,15 @@
 </head>
 <body class="bg-slate-100 min-h-screen">
 
-<!-- ===== AUTH PAGE ===== -->
+<!-- AUTH -->
 <div id="page-auth" class="min-h-screen flex items-center justify-center px-4">
   <div class="w-full max-w-md">
     <div class="text-center mb-8">
-      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 shadow-lg" style="background:linear-gradient(135deg,#2563eb,#7c3aed)">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 shadow-lg" style="background:linear-gradient(135deg,#2563eb,#1e40af)">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
       </div>
-      <h1 class="text-2xl font-bold text-slate-800">Radar Marchés Maroc</h1>
-      <p class="text-slate-500 text-sm mt-1">Radar BC &amp; Marchés Publics — Veille toutes les 2h</p>
+      <h1 class="text-2xl font-bold text-slate-800">Radar BC Maroc</h1>
+      <p class="text-slate-500 text-sm mt-1">Surveillance automatique des Bons de Commande</p>
     </div>
     <div class="card">
       <div class="flex gap-2 mb-6">
@@ -85,28 +80,24 @@
         </div>
       </div>
     </div>
-    <p class="text-center text-xs text-slate-400 mt-6">Radar Marchés Maroc &copy; 2025 — Scan BC à :00, scan MP à :30</p>
+    <p class="text-center text-xs text-slate-400 mt-6">© 2026 Radar BC Maroc — Scan automatique toutes les 2h</p>
   </div>
 </div>
 
-<!-- ===== APP PAGE ===== -->
+<!-- APP -->
 <div id="page-app" class="hidden min-h-screen flex">
-  <!-- Sidebar -->
-  <aside class="w-60 bg-slate-800 min-h-screen flex flex-col flex-shrink-0">
+  <aside class="w-56 bg-slate-800 min-h-screen flex flex-col flex-shrink-0">
     <div class="p-5 border-b border-slate-700">
       <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background:linear-gradient(135deg,#2563eb,#7c3aed)">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+        <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background:linear-gradient(135deg,#2563eb,#1e40af)">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
         </div>
-        <div>
-          <div class="text-white font-bold text-sm leading-tight">Radar Marchés</div>
-          <div class="text-slate-400 text-xs">BC &amp; Marchés Publics</div>
-        </div>
+        <div class="text-white font-bold text-sm leading-tight">Radar BC Maroc</div>
       </div>
     </div>
     <nav class="flex-1 p-3 space-y-1">
       <div class="sidebar-link active" id="nav-dashboard" onclick="showTab('dashboard')">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7h18M3 12h18M3 17h18"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         Tableau de bord
       </div>
       <div class="sidebar-link" id="nav-criteres" onclick="showTab('criteres')">
@@ -114,14 +105,14 @@
         Mes critères
         <span id="badge-criteres" class="ml-auto text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full hidden"></span>
       </div>
-      <div class="sidebar-link" id="nav-profil" onclick="showTab('profil')">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-        Mon profil
-      </div>
       <div class="sidebar-link" id="nav-alertes" onclick="showTab('alertes')">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
         Mes alertes
         <span id="badge-alertes" class="ml-auto text-xs bg-green-500 text-white px-2 py-0.5 rounded-full hidden"></span>
+      </div>
+      <div class="sidebar-link" id="nav-profil" onclick="showTab('profil')">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+        Mon profil
       </div>
       <div class="sidebar-link" id="nav-aide" onclick="showTab('aide')">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -137,63 +128,46 @@
     </div>
   </aside>
 
-  <!-- Main -->
   <main class="flex-1 overflow-auto">
 
-    <!-- ===== DASHBOARD ===== -->
+    <!-- DASHBOARD -->
     <div id="tab-dashboard" class="p-6 space-y-6">
       <div class="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 class="text-xl font-bold text-slate-800">Tableau de bord</h2>
-          <p class="text-slate-500 text-sm" id="dash-welcome">Chargement...</p>
+          <p class="text-slate-500 text-sm" id="dash-welcome"></p>
         </div>
-        <div class="flex items-center gap-3">
-          <!-- Filtre radar type -->
-          <div class="radar-toggle" id="dash-radar-toggle">
-            <button class="rt-all active" onclick="setDashFilter('all')">Tout</button>
-            <button class="rt-bc" onclick="setDashFilter('bc')">📋 BC</button>
-            <button class="rt-mp" onclick="setDashFilter('mp')">🏛️ MP</button>
-          </div>
-          <button onclick="refreshDashboard()" class="btn-ghost text-sm flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-            Actualiser
-          </button>
-        </div>
+        <button onclick="refreshDashboard()" class="btn-ghost text-sm flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Actualiser
+        </button>
       </div>
-      <!-- Stats -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <div class="stat-card">
           <div class="text-slate-500 text-xs font-medium uppercase tracking-wide mb-1">BCs reçus</div>
           <div class="text-3xl font-bold text-blue-600" id="stat-total-bc">—</div>
-        </div>
-        <div class="stat-card">
-          <div class="text-slate-500 text-xs font-medium uppercase tracking-wide mb-1">MPs reçus</div>
-          <div class="text-3xl font-bold" style="color:#7c3aed" id="stat-total-mp">—</div>
         </div>
         <div class="stat-card">
           <div class="text-slate-500 text-xs font-medium uppercase tracking-wide mb-1">Critères actifs</div>
           <div class="text-3xl font-bold text-amber-600" id="stat-criteres">—</div>
         </div>
         <div class="stat-card">
-          <div class="text-slate-500 text-xs font-medium uppercase tracking-wide mb-1">Prochains scans</div>
-          <div class="text-sm font-bold text-slate-700 leading-tight" id="stat-next-scan">BC :00<br>MP :30</div>
+          <div class="text-slate-500 text-xs font-medium uppercase tracking-wide mb-1">Prochain scan</div>
+          <div class="text-lg font-bold text-slate-700" id="stat-next-scan">—</div>
         </div>
       </div>
-      <!-- Empty state -->
       <div id="dash-empty" class="hidden card text-center py-12">
-        <div class="text-6xl mb-4">🔍</div>
-        <h3 class="text-lg font-semibold text-slate-700 mb-2">Aucun résultat pour l'instant</h3>
-        <p class="text-slate-500 text-sm mb-4">Le bot scanne toutes les 2h (BC à :00, Marchés Publics à :30). Configurez vos <strong>critères</strong> et vos <strong>notifications</strong>.</p>
+        <div class="text-5xl mb-4">📋</div>
+        <h3 class="text-lg font-semibold text-slate-700 mb-2">Aucun BC détecté pour l'instant</h3>
+        <p class="text-slate-500 text-sm mb-4">Le radar scanne toutes les 2h. Ajoutez vos critères pour être alerté.</p>
         <button onclick="showTab('criteres')" class="btn-primary">Configurer mes critères</button>
       </div>
-      <!-- Table -->
       <div id="dash-table-wrap" class="card hidden">
-        <h3 class="font-semibold text-slate-700 mb-4" id="dash-table-title">Résultats détectés</h3>
+        <h3 class="font-semibold text-slate-700 mb-4">Bons de Commande détectés</h3>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
               <tr class="text-left text-slate-500 border-b border-slate-100">
-                <th class="pb-3 pr-3 font-medium w-8">Type</th>
                 <th class="pb-3 pr-4 font-medium">Date</th>
                 <th class="pb-3 pr-4 font-medium">Organisme</th>
                 <th class="pb-3 pr-4 font-medium">Objet</th>
@@ -212,49 +186,37 @@
       </div>
     </div>
 
-    <!-- ===== CRITERES ===== -->
+    <!-- CRITERES -->
     <div id="tab-criteres" class="p-6 space-y-6 hidden">
       <div>
-        <h2 class="text-xl font-bold text-slate-800">Mes critères de recherche</h2>
-        <p class="text-slate-500 text-sm">Configurez les alertes pour les Bons de Commande ET les Marchés Publics.</p>
+        <h2 class="text-xl font-bold text-slate-800">Mes critères de veille</h2>
+        <p class="text-slate-500 text-sm">Définissez les mots-clés sur lesquels le radar vous alertera.</p>
       </div>
-      <!-- Radar type selector — MP desactive en v1 -->
-      <div class="flex items-center gap-4 flex-wrap">
-        <div class="radar-toggle">
-          <button class="rt-bc active" id="crit-rt-bc" onclick="setCritRadar('bc')">📋 Radar BC</button>
-          <button class="rt-mp" id="crit-rt-mp" disabled title="Bientôt disponible"
-            style="opacity:0.45;cursor:not-allowed;background:transparent;color:#64748b">
-            🏛️ Marchés Publics <span style="font-size:0.7rem;background:#fef9c3;color:#854d0e;padding:1px 6px;border-radius:9999px;font-weight:700">Bientôt</span>
-          </button>
-        </div>
-        <div id="crit-radar-desc" class="text-sm text-slate-500"></div>
-      </div>
-      <!-- Add form -->
       <div class="card">
-        <h3 class="font-semibold text-slate-700 mb-4" id="crit-add-title">Ajouter un critère Radar BC</h3>
+        <h3 class="font-semibold text-slate-700 mb-4">Ajouter un critère</h3>
         <div id="crit-msg"></div>
         <div class="flex gap-3 flex-wrap">
           <select id="crit-type" class="input-field" style="max-width:210px">
             <option value="contenu">🔎 Contenu (articles/lots)</option>
-            <option value="titre">📌 Titre (objet)</option>
+            <option value="titre">📌 Titre (objet du BC)</option>
             <option value="region">📍 Région / Wilaya</option>
             <option value="organisme">🏢 Organisme</option>
           </select>
           <input id="crit-valeur" type="text" class="input-field flex-1" style="min-width:200px" placeholder="Ex: café, informatique, Casablanca..." onkeydown="if(event.key==='Enter')addCritere()" />
-          <button onclick="addCritere()" class="btn-primary whitespace-nowrap">+ Ajouter</button>
+          <button onclick="addCritere()" id="btn-add-crit" class="btn-primary whitespace-nowrap">+ Ajouter</button>
         </div>
-        <div class="mt-4 grid grid-cols-2 gap-3 text-xs text-slate-500" id="crit-help">
+        <div class="mt-4 grid grid-cols-2 gap-3 text-xs text-slate-500">
           <div class="bg-slate-50 rounded-lg p-3">
             <div class="font-semibold text-slate-600 mb-1">🔎 Contenu</div>
-            Cherche dans la liste des articles/lots du BC ou MP. Idéal pour un produit précis. <strong>Ne cherche PAS dans le titre.</strong>
+            Cherche dans la liste des articles du BC. Pour un produit précis. Ne cherche pas dans le titre.
           </div>
           <div class="bg-slate-50 rounded-lg p-3">
             <div class="font-semibold text-slate-600 mb-1">📌 Titre</div>
-            Cherche uniquement dans l'objet (titre) du BC ou MP.
+            Cherche dans l'objet (titre) du BC uniquement.
           </div>
           <div class="bg-slate-50 rounded-lg p-3">
             <div class="font-semibold text-slate-600 mb-1">📍 Région</div>
-            Filtre par wilaya ou ville. Ex: Casablanca, Rabat, Marrakech...
+            Filtre par wilaya. Ex: Casablanca, Rabat, Marrakech...
           </div>
           <div class="bg-slate-50 rounded-lg p-3">
             <div class="font-semibold text-slate-600 mb-1">🏢 Organisme</div>
@@ -262,36 +224,55 @@
           </div>
         </div>
       </div>
-      <!-- List -->
       <div class="card">
         <h3 class="font-semibold text-slate-700 mb-4" id="crit-list-title">Critères enregistrés</h3>
         <div id="criteres-list">
-          <div class="text-center py-8 text-slate-400 text-sm" id="criteres-loading">Chargement...</div>
+          <div class="text-center py-8 text-slate-400 text-sm">Chargement...</div>
         </div>
       </div>
     </div>
 
-    <!-- ===== PROFIL ===== -->
+    <!-- ALERTES -->
+    <div id="tab-alertes" class="p-6 space-y-6 hidden">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 class="text-xl font-bold text-slate-800">Mes alertes</h2>
+          <p class="text-slate-500 text-sm mt-1">Bons de Commande détectés par le radar</p>
+        </div>
+        <button onclick="loadAlertes()" class="btn-ghost text-sm">🔄 Actualiser</button>
+      </div>
+      <div class="grid grid-cols-3 gap-4">
+        <div class="stat-card text-center"><div class="text-2xl font-bold text-blue-600" id="alerte-total">—</div><div class="text-xs text-slate-500 mt-1">Total</div></div>
+        <div class="stat-card text-center"><div class="text-2xl font-bold text-green-600" id="alerte-30j">—</div><div class="text-xs text-slate-500 mt-1">Ce mois</div></div>
+        <div class="stat-card text-center"><div class="text-2xl font-bold text-slate-600 text-base" id="alerte-last">—</div><div class="text-xs text-slate-500 mt-1">Dernière alerte</div></div>
+      </div>
+      <div class="card">
+        <div id="alertesList">
+          <div class="text-slate-400 text-sm text-center py-8">Chargement...</div>
+        </div>
+        <div id="alertesEmpty" class="hidden text-center py-12">
+          <div class="text-4xl mb-3">🔔</div>
+          <div class="text-slate-600 font-medium">Aucune alerte pour l'instant</div>
+          <div class="text-slate-400 text-sm mt-1">Le radar vous notifiera dès qu'un BC correspond à vos critères</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROFIL -->
     <div id="tab-profil" class="p-6 space-y-6 hidden">
       <div>
         <h2 class="text-xl font-bold text-slate-800">Mon profil &amp; notifications</h2>
-        <p class="text-slate-500 text-sm">Les notifications sont communes aux deux radars (BC et Marchés Publics).</p>
       </div>
 
-      <!-- ── MON ABONNEMENT ── -->
+      <!-- Abonnement -->
       <div class="card" id="pack-card">
         <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div class="flex items-center gap-3">
             <h3 class="font-semibold text-slate-700">Mon abonnement</h3>
             <span id="pack-badge" class="badge badge-blue">—</span>
           </div>
-          <a id="pack-upgrade-cta" href="pricing.html" target="_blank"
-             class="hidden btn-primary text-sm py-1.5 px-4" style="text-decoration:none">
-            ⬆ Upgrader →
-          </a>
+          <a id="pack-upgrade-cta" href="pricing.html" target="_blank" class="hidden btn-primary text-sm py-1.5 px-4" style="text-decoration:none">Upgrader →</a>
         </div>
-
-        <!-- Barre usage mots-clés -->
         <div class="mb-4">
           <div class="flex justify-between text-xs text-slate-500 mb-1">
             <span>Mots-clés utilisés</span>
@@ -301,12 +282,10 @@
             <div id="pack-kw-bar" class="h-2 rounded-full transition-all" style="width:0%;background:#2563eb"></div>
           </div>
         </div>
-
-        <!-- Features du pack -->
         <div id="pack-features" class="grid grid-cols-2 gap-2 text-sm"></div>
       </div>
 
-      <!-- ── INFORMATIONS ── -->
+      <!-- Infos -->
       <div class="card">
         <h3 class="font-semibold text-slate-700 mb-4">Informations</h3>
         <div id="profil-msg"></div>
@@ -316,11 +295,12 @@
           <div><label class="block text-sm font-medium text-slate-700 mb-1">Email (connexion)</label>
             <input id="profil-email" type="email" class="input-field bg-slate-50" readonly /></div>
           <div class="md:col-span-2">
-            <label class="block text-sm font-medium text-slate-700 mb-1">Email de notification <span class="text-slate-400 font-normal">(peut être différent de l'email de connexion)</span></label>
-            <input id="profil-email-notif" type="email" class="input-field" placeholder="alerte@monentreprise.ma" />
+            <label class="block text-sm font-medium text-slate-700 mb-1">Email de notification <span class="text-slate-400 font-normal">(peut différer de l'email de connexion)</span></label>
+            <input id="profil-email-notif" type="email" class="input-field" placeholder="alertes@monentreprise.ma" />
           </div>
         </div>
       </div>
+
       <!-- Telegram -->
       <div class="card">
         <div class="flex items-center gap-3 mb-4">
@@ -333,103 +313,50 @@
             <input id="profil-tg-chat" type="text" class="input-field" placeholder="Ex: 123456789" /></div>
           <div class="bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
             <strong>Obtenir votre Chat ID :</strong><br>
-            1. Démarrez une conversation avec votre bot Telegram (@RadarBCMarocBot)<br>
-            2. Tapez <code class="bg-blue-100 px-1 rounded">/start</code> — le bot vous envoie votre ID<br>
-            3. Collez ce numéro ici.
+            1. Ouvrez Telegram et démarrez une conversation avec <strong>@RadarBCMarocBot</strong><br>
+            2. Envoyez <code class="bg-blue-100 px-1 rounded">/start</code> — le bot vous envoie votre Chat ID<br>
+            3. Copiez ce numéro ici et enregistrez.
           </div>
         </div>
       </div>
-      <!-- WhatsApp -->
-      <div class="card">
-        <div class="flex items-center gap-3 mb-4">
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-base" style="background:#25D366">W</div>
-          <h3 class="font-semibold text-slate-700">Notifications WhatsApp</h3>
-          <span id="wa-status-badge" class="badge badge-gray">Non configuré</span>
-        </div>
-        <div class="space-y-3">
-          <div><label class="block text-sm font-medium text-slate-700 mb-1">Numéro WhatsApp (avec indicatif)</label>
-            <input id="profil-phone" type="tel" class="input-field" placeholder="Ex: 212600000000" /></div>
-          <div><label class="block text-sm font-medium text-slate-700 mb-1">Clé API CallMeBot</label>
-            <input id="profil-wa-key" type="text" class="input-field" placeholder="Votre clé CallMeBot" /></div>
-          <div class="bg-green-50 rounded-lg p-3 text-sm text-green-700">
-            <strong>Clé CallMeBot gratuite :</strong> Envoyez <code class="bg-green-100 px-1 rounded">I allow callmebot to send me messages</code> au +34 644 15 18 77 sur WhatsApp → vous recevrez votre clé.
-          </div>
-        </div>
-      </div>
+
       <div class="flex gap-3">
         <button onclick="saveProfil()" id="btn-save-profil" class="btn-primary">Enregistrer</button>
         <button onclick="changePassword()" class="btn-ghost text-sm">Changer le mot de passe</button>
       </div>
     </div>
 
-    <!-- ===== MES ALERTES ===== -->
-    <div id="tab-alertes" class="p-6 space-y-6 hidden">
-      <div class="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 class="text-xl font-bold text-slate-800">Mes alertes</h2>
-          <p class="text-slate-500 text-sm mt-1">Historique des BCs et Marchés Publics détectés pour vous</p>
-        </div>
-        <div class="flex gap-2">
-          <select id="alerteTypeFilter" onchange="loadAlertes()" class="border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none">
-            <option value="">Tous types</option>
-            <option value="bc">BC seulement</option>
-            <option value="mp">MP seulement</option>
-          </select>
-          <button onclick="loadAlertes()" class="btn-ghost text-sm">🔄 Actualiser</button>
-        </div>
-      </div>
-
-      <!-- Stats rapides -->
-      <div class="grid grid-cols-3 gap-4">
-        <div class="stat-card text-center"><div class="text-2xl font-bold text-blue-600" id="alerte-total">—</div><div class="text-xs text-slate-500 mt-1">Total alertes</div></div>
-        <div class="stat-card text-center"><div class="text-2xl font-bold text-green-600" id="alerte-30j">—</div><div class="text-xs text-slate-500 mt-1">Ce mois</div></div>
-        <div class="stat-card text-center"><div class="text-2xl font-bold text-purple-600" id="alerte-last">—</div><div class="text-xs text-slate-500 mt-1">Dernière alerte</div></div>
-      </div>
-
-      <!-- Liste alertes -->
-      <div class="card">
-        <div id="alertesList">
-          <div class="text-slate-400 text-sm text-center py-8">Chargement des alertes...</div>
-        </div>
-        <div id="alertesEmpty" class="hidden text-center py-12">
-          <div class="text-4xl mb-3">🔔</div>
-          <div class="text-slate-600 font-medium">Aucune alerte pour l'instant</div>
-          <div class="text-slate-400 text-sm mt-1">Le radar vous notifiera dès qu'un marché correspond à vos critères</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===== AIDE ===== -->
+    <!-- AIDE -->
     <div id="tab-aide" class="p-6 space-y-6 hidden">
       <div><h2 class="text-xl font-bold text-slate-800">Aide</h2></div>
       <div class="card space-y-5">
         <div>
-          <h3 class="font-semibold text-slate-700 mb-2">📋 Radar BC vs 🏛️ Radar Marchés Publics</h3>
-          <p class="text-sm text-slate-600"><strong>Radar BC</strong> scanne les Bons de Commande (petites commandes directes) sur marchespublics.gov.ma. Scan toutes les 2h à l'heure pile.<br><strong>Radar MP</strong> scanne les Appels d'Offres (marchés publics formels). Scan toutes les 2h à la demi-heure. Les critères de chaque radar sont indépendants.</p>
+          <h3 class="font-semibold text-slate-700 mb-2">📋 Comment fonctionne le radar ?</h3>
+          <p class="text-sm text-slate-600">Le radar scanne automatiquement le portail marchespublics.gov.ma toutes les 2 heures et détecte les Bons de Commande correspondant à vos critères. Vous êtes alerté par Telegram et/ou email dès qu'un BC est détecté.</p>
         </div>
         <div>
-          <h3 class="font-semibold text-slate-700 mb-2">🔎 Critère "Contenu" — important</h3>
-          <p class="text-sm text-slate-600">Le critère <strong>Contenu</strong> cherche <em>uniquement dans la liste des articles/lots</em>, pas dans le titre ni le nom de l'organisme. Cela évite les faux positifs : si vous cherchez "café", vous ne recevrez que les BCs qui ont explicitement "café" dans leurs articles commandés, pas ceux où le nom de l'organisme contient un café.</p>
+          <h3 class="font-semibold text-slate-700 mb-2">🔎 Critère "Contenu" vs "Titre"</h3>
+          <p class="text-sm text-slate-600"><strong>Contenu</strong> cherche dans la liste des articles/lots du BC — idéal pour un produit précis (ex: "câble RJ45", "café arabica"). Ne cherche pas dans le titre.<br><strong>Titre</strong> cherche uniquement dans l'objet du BC — utile pour un domaine général (ex: "informatique", "travaux").</p>
         </div>
         <div>
-          <h3 class="font-semibold text-slate-700 mb-2">🎯 Conseils mots-clés</h3>
+          <h3 class="font-semibold text-slate-700 mb-2">🎯 Conseils</h3>
           <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside">
-            <li>Les accents sont ignorés : "café" trouve "cafe"</li>
+            <li>Les accents sont ignorés : "café" trouve aussi "cafe"</li>
             <li>Recherche par mot entier : "eau" ne trouve PAS "carreaux"</li>
-            <li>Combinez contenu + titre pour couvrir plus de cas</li>
-            <li>Pour un produit : utilisez <strong>Contenu</strong></li>
-            <li>Pour un domaine général : utilisez <strong>Titre</strong></li>
+            <li>Combinez Contenu + Titre pour couvrir plus de cas</li>
+            <li>Utilisez Région pour filtrer par wilaya</li>
           </ul>
         </div>
         <div>
-          <h3 class="font-semibold text-slate-700 mb-2">📱 Telegram recommandé</h3>
-          <p class="text-sm text-slate-600">Telegram est gratuit, fiable, et sans limite de messages. WhatsApp via CallMeBot fonctionne aussi mais peut avoir des délais. Configurez les deux pour ne rien rater.</p>
+          <h3 class="font-semibold text-slate-700 mb-2">📱 Notifications Telegram</h3>
+          <p class="text-sm text-slate-600">Telegram est gratuit, fiable et sans limite de messages. Configurez-le dans "Mon profil" pour ne rater aucun BC.</p>
         </div>
       </div>
     </div>
 
   </main>
 </div>
+
 <div id="toast">
   <div class="bg-slate-800 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-sm">
     <span id="toast-icon">✓</span><span id="toast-msg"></span>
@@ -442,11 +369,9 @@ const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 let currentUser = null, currentClient = null;
-let dashFilter = 'all', critRadarType = 'bc';
 let itemOffset = 0;
 const ITEM_LIMIT = 30;
 
-// ---- Utils ----
 function showToast(msg, isErr=false) {
   const t = document.getElementById('toast');
   document.getElementById('toast-msg').textContent = msg;
@@ -469,7 +394,7 @@ function typeBadge(type) {
   return `<span class="badge ${m[type]||'badge-gray'}">${l[type]||type}</span>`;
 }
 
-// ---- Auth ----
+// AUTH
 function showAuthTab(tab) {
   const isL = tab==='login';
   document.getElementById('form-login').classList.toggle('hidden',!isL);
@@ -486,33 +411,34 @@ async function doLogin() {
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   const {error} = await sb.auth.signInWithPassword({email,password:pass});
   btn.disabled=false; btn.textContent='Se connecter';
-  if(error) setMsg('auth-msg','Erreur : '+error.message);
+  if(error) setMsg('auth-msg','Email ou mot de passe incorrect.');
 }
 async function doRegister() {
   const name  = document.getElementById('reg-name').value.trim();
   const email = document.getElementById('reg-email').value.trim();
   const pass  = document.getElementById('reg-pass').value;
   if(!name||!email||!pass){setMsg('auth-msg','Remplissez tous les champs.');return;}
-  if(pass.length<6){setMsg('auth-msg','Mot de passe trop court (6 min).');return;}
+  if(pass.length<6){setMsg('auth-msg','Mot de passe : minimum 6 caractères.');return;}
   const btn = document.getElementById('btn-register');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   const {data, error} = await sb.auth.signUp({email,password:pass,options:{data:{full_name:name}}});
   if(error){btn.disabled=false;btn.textContent='Créer mon compte';setMsg('auth-msg','Erreur : '+error.message);return;}
-  // Si session immédiate (confirmation email désactivée) → connexion auto
   if(data.session){
     btn.disabled=false; btn.textContent='Créer mon compte';
     setMsg('auth-msg','✅ Compte créé !','success');
-    onAuthChange(data.session.user);
+    onAuthStateChange(data.session.user);
     return;
   }
-  // Sinon : confirmation email requise
   btn.disabled=false; btn.textContent='Créer mon compte';
-  setMsg('auth-msg','✅ Compte créé ! Vérifiez votre boîte email pour confirmer, puis connectez-vous.','success');
+  setMsg('auth-msg','✅ Compte créé ! Vérifiez votre email pour confirmer, puis connectez-vous.','success');
   showAuthTab('login');
 }
-async function doLogout() { await sb.auth.signOut(); }
+async function doLogout() {
+  await sb.auth.signOut();
+  showAuthPage();
+}
 
-// ---- App state ----
+// NAVIGATION
 function showApp(user) {
   document.getElementById('page-auth').classList.add('hidden');
   document.getElementById('page-app').classList.remove('hidden');
@@ -534,142 +460,38 @@ function showTab(tab) {
   const nav = document.getElementById('nav-'+tab);
   if(nav) nav.classList.add('active');
   if(tab==='dashboard') refreshDashboard();
-  if(tab==='criteres')  { setCritRadar(critRadarType,true); loadCriteres(); }
+  if(tab==='criteres')  loadCriteres();
   if(tab==='profil')    loadProfil();
   if(tab==='alertes')   loadAlertes();
 }
 
-// ---- Mes Alertes ----
-async function loadAlertes() {
-  if(!currentClient||!currentClient.id) return;
-  const list = document.getElementById('alertesList');
-  const empty = document.getElementById('alertesEmpty');
-  list.innerHTML = '<div class="text-slate-400 text-sm text-center py-8">Chargement...</div>';
-  empty.classList.add('hidden');
-  try {
-    const typeFilter = document.getElementById('alerteTypeFilter').value;
-    let query = sb.from('bcs_envoyes')
-      .select('*')
-      .eq('client_id', currentClient.id)
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if(typeFilter) query = query.eq('radar_type', typeFilter);
-    const {data, error} = await query;
-    if(error) throw new Error(error.message);
-    const alertes = data || [];
-
-    // Stats
-    document.getElementById('alerte-total').textContent = alertes.length;
-    const now = new Date();
-    const alertes30 = alertes.filter(a => {
-      const d = new Date(a.created_at);
-      return (now - d) < 30 * 24 * 3600 * 1000;
-    });
-    document.getElementById('alerte-30j').textContent = alertes30.length;
-    if(alertes.length > 0) {
-      const last = new Date(alertes[0].created_at);
-      const diffH = Math.floor((now - last) / 3600000);
-      document.getElementById('alerte-last').textContent = diffH < 24 ? 'Il y a ' + diffH + 'h' : last.toLocaleDateString('fr-MA');
-    } else {
-      document.getElementById('alerte-last').textContent = '—';
-    }
-
-    // Badge sidebar
-    if(alertes30.length > 0) {
-      const badge = document.getElementById('badge-alertes');
-      badge.textContent = alertes30.length;
-      badge.classList.remove('hidden');
-    }
-
-    if(!alertes.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
-
-    list.innerHTML = alertes.map(a => {
-      const dt = new Date(a.created_at);
-      const dtStr = dt.toLocaleString('fr-MA', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
-      const isBC = (a.radar_type||'bc') === 'bc';
-      const titre = a.item_titre || a.bc_id || '—';
-      const url   = a.item_url;
-      return `
-        <div class="flex items-start gap-4 py-3 border-b border-slate-100 last:border-0">
-          <div class="flex-shrink-0 mt-0.5">
-            <span class="badge ${isBC ? 'badge-blue' : 'badge-purple'}">${isBC ? 'BC' : 'MP'}</span>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="font-medium text-slate-800 text-sm truncate">
-              ${url ? `<a href="${url}" target="_blank" class="hover:text-blue-600 hover:underline">${titre}</a>` : titre}
-            </div>
-            ${a.notif_msg ? `<div class="text-xs text-slate-500 mt-0.5 line-clamp-2">${a.notif_msg.substring(0,120)}${a.notif_msg.length>120?'...':''}</div>` : ''}
-          </div>
-          <div class="flex-shrink-0 text-xs text-slate-400 whitespace-nowrap">${dtStr}</div>
-        </div>`;
-    }).join('');
-  } catch(e) {
-    list.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`;
-  }
-}
-
-async function loadClient(user) {
-  try {
-    const {data,error} = await Promise.race([
-      sb.from('clients').select('*').eq('auth_user_id',user.id).single(),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000))
-    ]);
-    if(error||!data) return null;
-    return data;
-  } catch(e) { return null; }
-}
-
-// ---- Dashboard ----
-function setDashFilter(f) {
-  dashFilter = f;
-  const btns = document.querySelectorAll('#dash-radar-toggle button');
-  btns.forEach(b => b.classList.remove('active','rt-bc','rt-mp'));
-  const target = document.querySelector('#dash-radar-toggle .rt-'+f) || document.querySelector('#dash-radar-toggle button');
-  // Re-style all buttons
-  document.querySelectorAll('#dash-radar-toggle button').forEach((b,i) => {
-    const labels = ['rt-all','rt-bc','rt-mp'];
-    b.className = labels[i] + (b.dataset.f === f ? ' active' : '');
-  });
-  // Simpler: just toggle active class
-  document.querySelectorAll('#dash-radar-toggle button').forEach(b=>{
-    b.classList.remove('active');
-    if(b.onclick.toString().includes("'"+f+"'")) b.classList.add('active');
-  });
-  itemOffset=0;
-  loadItemsData(false);
-}
+// DASHBOARD
 async function refreshDashboard() {
   if(!currentClient) return;
-  document.getElementById('dash-welcome').textContent = 'Bonjour, '+(currentClient.nom||'Client')+' !';
+  document.getElementById('dash-welcome').textContent = 'Bonjour, '+(currentClient.nom||'')+'';
   itemOffset=0;
-  await loadItemsData(false);
-  await loadDashStats();
+  await Promise.all([loadItemsData(false), loadDashStats()]);
 }
 async function loadDashStats() {
-  const [bcRes, mpRes, critRes] = await Promise.all([
-    sb.from('bcs_envoyes').select('id',{count:'exact'}).eq('client_id',currentClient.id).eq('radar_type','bc'),
-    sb.from('bcs_envoyes').select('id',{count:'exact'}).eq('client_id',currentClient.id).eq('radar_type','mp'),
-    sb.from('criteres').select('id',{count:'exact'}).eq('client_id',currentClient.id),
+  const [bcRes, critRes] = await Promise.all([
+    sb.from('bcs_envoyes').select('id',{count:'exact',head:true}).eq('client_id',currentClient.id).eq('radar_type','bc'),
+    sb.from('criteres').select('id',{count:'exact',head:true}).eq('client_id',currentClient.id),
   ]);
-  document.getElementById('stat-total-bc').textContent = bcRes.count ?? (bcRes.data||[]).length;
-  document.getElementById('stat-total-mp').textContent = mpRes.count ?? (mpRes.data||[]).length;
-  const nbC = critRes.count ?? (critRes.data||[]).length;
+  document.getElementById('stat-total-bc').textContent = bcRes.count ?? 0;
+  const nbC = critRes.count ?? 0;
   document.getElementById('stat-criteres').textContent = nbC;
   const badge = document.getElementById('badge-criteres');
   if(nbC>0){badge.textContent=nbC;badge.classList.remove('hidden');}
-  // Next scan countdown
   const now = new Date();
   const m = now.getMinutes();
-  const nextBC = m<=0 ? 0 : 120-(m>0?m:0); // minutes to next :00
-  const nextMP = m<30 ? 30-m : m<60 ? 90-m+30 : 150-m; // minutes to next :30
-  document.getElementById('stat-next-scan').innerHTML =
-    'BC dans ~'+(60-m)+'min<br>MP dans ~'+(m<30?30-m:90-m)+'min';
+  const minsToNext = 120 - (m % 120);
+  document.getElementById('stat-next-scan').textContent = 'Dans ~'+minsToNext+' min';
 }
 async function loadItemsData(append=false) {
   if(!currentClient) return;
-  let query = sb.from('bcs_envoyes').select('*').eq('client_id',currentClient.id);
-  if(dashFilter!=='all') query = query.eq('radar_type',dashFilter);
-  query = query.order('created_at',{ascending:false}).range(itemOffset,itemOffset+ITEM_LIMIT-1);
+  const query = sb.from('bcs_envoyes').select('*')
+    .eq('client_id',currentClient.id).eq('radar_type','bc')
+    .order('created_at',{ascending:false}).range(itemOffset,itemOffset+ITEM_LIMIT-1);
   const {data,error} = await query;
   if(error){showToast('Erreur chargement',true);return;}
   if(!append && (!data||data.length===0)){
@@ -683,159 +505,133 @@ async function loadItemsData(append=false) {
   if(!append) tbody.innerHTML='';
   (data||[]).forEach(row=>{
     const bc = row.bc_data||{};
-    const isMP = row.radar_type==='mp';
     const tr = document.createElement('tr');
     tr.className='table-row border-b border-slate-50';
     tr.innerHTML=`
-      <td class="py-3 pr-3">
-        <span class="badge ${isMP?'badge-purple':'badge-blue'}" title="${isMP?'Marche Public':'Bon de Commande'}">${isMP?'MP':'BC'}</span>
-      </td>
       <td class="py-3 pr-4 text-slate-500 whitespace-nowrap text-xs">${fmtDate(row.created_at)}</td>
-      <td class="py-3 pr-4 text-slate-700 text-sm max-w-xs">${bc.organisme||'--'}</td>
-      <td class="py-3 pr-4 text-slate-800 font-medium text-sm max-w-sm">
-        <div style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(bc.objet||'').replace(/"/g,'')}">${bc.objet||row.bc_id}</div>
-      </td>
+      <td class="py-3 pr-4 text-slate-700 text-sm" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${bc.organisme||'—'}</td>
+      <td class="py-3 pr-4 text-slate-800 font-medium text-sm" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(bc.objet||'').replace(/"/g,'&quot;')}">${bc.objet||row.bc_id||'—'}</td>
       <td class="py-3 pr-4">${typeBadge(row.critere_type)}<span class="text-xs text-slate-500 ml-1">${row.critere_valeur||''}</span></td>
-      <td class="py-3 pr-4 text-slate-500 whitespace-nowrap text-xs">${bc.date_limite||'--'}</td>
-      <td class="py-3">${bc.url?`<a href="${bc.url}" target="_blank" class="text-blue-600 hover:underline text-xs font-medium">Voir &rarr;</a>`:'--'}</td>
-    `;
+      <td class="py-3 pr-4 text-slate-500 whitespace-nowrap text-xs">${bc.date_limite||'—'}</td>
+      <td class="py-3">${bc.url?`<a href="${bc.url}" target="_blank" class="text-blue-600 hover:underline text-xs font-medium">Voir →</a>`:'—'}</td>`;
     tbody.appendChild(tr);
   });
   itemOffset += (data||[]).length;
   document.getElementById('btn-load-more').classList.toggle('hidden', !data||data.length<ITEM_LIMIT);
-  const filterLabel = dashFilter==='all'?'resultats':dashFilter==='bc'?'BCs':'Marches Publics';
-  document.getElementById('dash-count').textContent = itemOffset+' '+filterLabel+' affiches';
+  document.getElementById('dash-count').textContent = itemOffset+' BC'+(itemOffset>1?'s':'')+' affichés';
 }
 async function loadMoreItems() { await loadItemsData(true); }
 
-// ---- Alertes ----
+// ALERTES
 async function loadAlertes() {
   if(!currentClient) return;
-  const typeFilter = document.getElementById('alerteTypeFilter').value;
-  let query = sb.from('bcs_envoyes').select('*').eq('client_id',currentClient.id);
-  if(typeFilter) query = query.eq('radar_type',typeFilter);
-  query = query.order('created_at',{ascending:false}).limit(100);
-  const {data,error} = await query;
-  if(error){showToast('Erreur alertes',true);return;}
-  const rows = data||[];
-  const now30 = new Date(Date.now()-30*24*60*60*1000);
-  document.getElementById('alerte-total').textContent = rows.length;
-  document.getElementById('alerte-30j').textContent   = rows.filter(r=>new Date(r.created_at)>now30).length;
-  document.getElementById('alerte-last').textContent  = rows.length ? fmtDate(rows[0].created_at) : '--';
-  const container = document.getElementById('alertes-list');
-  if(!container) return;
-  if(!rows.length){
-    container.innerHTML='<div class="text-center py-12 text-slate-400 text-sm">Aucune alerte pour le moment.<br>Le radar vous notifiera lors des prochains matchs.</div>';
-    return;
+  const list  = document.getElementById('alertesList');
+  const empty = document.getElementById('alertesEmpty');
+  list.innerHTML = '<div class="text-slate-400 text-sm text-center py-8">Chargement...</div>';
+  empty.classList.add('hidden');
+  try {
+    const {data,error} = await sb.from('bcs_envoyes').select('*')
+      .eq('client_id',currentClient.id).eq('radar_type','bc')
+      .order('created_at',{ascending:false}).limit(100);
+    if(error) throw new Error(error.message);
+    const rows = data||[];
+    const now30 = new Date(Date.now()-30*24*60*60*1000);
+    const rows30 = rows.filter(r=>new Date(r.created_at)>now30);
+    document.getElementById('alerte-total').textContent = rows.length;
+    document.getElementById('alerte-30j').textContent   = rows30.length;
+    if(rows.length>0){
+      const diffH = Math.floor((Date.now()-new Date(rows[0].created_at))/3600000);
+      document.getElementById('alerte-last').textContent = diffH<24?'Il y a '+diffH+'h':fmtDate(rows[0].created_at);
+    } else {
+      document.getElementById('alerte-last').textContent = '—';
+    }
+    if(rows30.length>0){
+      const sideB = document.getElementById('badge-alertes');
+      if(sideB){sideB.textContent=rows30.length;sideB.classList.remove('hidden');}
+    }
+    if(!rows.length){ list.innerHTML=''; empty.classList.remove('hidden'); return; }
+    list.innerHTML = rows.map(row=>{
+      const bc = row.bc_data||{};
+      const dt = new Date(row.created_at).toLocaleString('fr-MA',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+      const titre = bc.objet||row.bc_id||'—';
+      const url   = bc.url||row.item_url;
+      return `<div class="flex items-start gap-4 py-3 border-b border-slate-100 last:border-0">
+        <div class="flex-1 min-w-0">
+          <div class="font-medium text-slate-800 text-sm">${url?`<a href="${url}" target="_blank" class="hover:text-blue-600 hover:underline">${titre}</a>`:titre}</div>
+          <div class="text-xs text-slate-500 mt-0.5">${bc.organisme||''} ${bc.date_limite?'· Limite : '+bc.date_limite:''}</div>
+          ${row.critere_valeur?`<div class="mt-1">${typeBadge(row.critere_type)}<span class="text-xs text-slate-400 ml-1">${row.critere_valeur}</span></div>`:''}
+        </div>
+        <div class="flex-shrink-0 text-xs text-slate-400 whitespace-nowrap">${dt}</div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`;
   }
-  container.innerHTML = rows.map(row=>{
-    const bc = row.bc_data||{};
-    const isMP = row.radar_type==='mp';
-    const preview = row.notif_msg ? row.notif_msg.slice(0,120)+'...' : (bc.objet||'').slice(0,120);
-    return `<div class="card mb-3 flex gap-4 items-start">
-      <div class="mt-1">
-        <span class="badge ${isMP?'badge-purple':'badge-blue'}">${isMP?'MP':'BC'}</span>
-      </div>
-      <div class="flex-1 min-w-0">
-        <div class="font-medium text-slate-800 text-sm truncate">${bc.objet||row.bc_id||'--'}</div>
-        <div class="text-xs text-slate-500 mt-1">${bc.organisme||''} &bull; ${fmtDate(row.created_at)}</div>
-        ${preview?`<div class="text-xs text-slate-400 mt-1 line-clamp-2">${preview}</div>`:''}
-      </div>
-      ${bc.url?`<a href="${bc.url}" target="_blank" class="text-blue-600 hover:underline text-xs font-medium whitespace-nowrap mt-1">Voir &rarr;</a>`:''}
-    </div>`;
-  }).join('');
-  // badge sidebar
-  const badge30 = rows.filter(r=>new Date(r.created_at)>now30).length;
-  const sideB = document.getElementById('badge-alertes');
-  if(sideB&&badge30>0){sideB.textContent=badge30;sideB.classList.remove('hidden');}
 }
 
-// ---- Criteres ----
-function setCritRadar(rt, silent=false) {
-  critRadarType = rt;
-  document.getElementById('crit-rt-bc').classList.toggle('active',rt==='bc');
-  document.getElementById('crit-rt-mp').classList.toggle('active',rt==='mp');
-  const isMp = rt==='mp';
-  document.getElementById('crit-add-title').textContent = isMp ? 'Ajouter un critere Radar Marches Publics' : 'Ajouter un critere Radar BC';
-  document.getElementById('crit-list-title').textContent = isMp ? 'Criteres Marches Publics' : 'Criteres Bons de Commande';
-  document.getElementById('crit-radar-desc').textContent = isMp
-    ? "Appels d'Offres -- marchespublics.gov.ma (scan toutes les 2h)"
-    : "Bons de Commande -- marchespublics.gov.ma (scan toutes les 2h)";
-  if(!silent) loadCriteres();
-}
+// CRITERES
 async function loadCriteres() {
   if(!currentClient) return;
   const {data,error} = await sb.from('criteres').select('*')
-    .eq('client_id',currentClient.id).eq('radar_type',critRadarType)
+    .eq('client_id',currentClient.id).eq('radar_type','bc')
     .order('id',{ascending:true});
   const container = document.getElementById('criteres-list');
   if(error){container.innerHTML='<div class="text-red-500 text-sm">Erreur de chargement</div>';return;}
   if(!data||data.length===0){
-    const rt = critRadarType==='mp'?'Marches Publics':'Bons de Commande';
-    container.innerHTML=`<div class="text-center py-8 text-slate-400 text-sm">Aucun critere ${rt}. Ajoutez-en un ci-dessus.</div>`;
+    container.innerHTML='<div class="text-center py-8 text-slate-400 text-sm">Aucun critère. Ajoutez-en un ci-dessus.</div>';
     return;
   }
-  const isMp = critRadarType==='mp';
   const pack = currentClient.pack||'starter';
-  const maxKw = {starter:5,pro:15,business:40}[pack]||5;
-  container.innerHTML=data.map((c,i)=>{
-    const overLimit = i>=maxKw;
-    return `<div class="flex items-center justify-between py-3 border-b border-slate-50 last:border-0 ${overLimit?'opacity-50':''}" id="crit-row-${c.id}">
+  const maxKw = {starter:5,pro:20,business:50}[pack]||5;
+  container.innerHTML=data.map((c,i)=>`
+    <div class="flex items-center justify-between py-3 border-b border-slate-50 last:border-0 ${i>=maxKw?'opacity-40':''}">
       <div class="flex items-center gap-3">
-        <span class="badge ${isMp?'badge-purple':'badge-blue'}">${isMp?'MP':'BC'}</span>
         ${typeBadge(c.type)}
         <span class="font-medium text-slate-800 text-sm">${c.valeur}</span>
-        ${overLimit?'<span class="badge badge-gray text-xs">hors limite pack</span>':''}
+        ${i>=maxKw?'<span class="badge badge-gray text-xs">hors limite pack</span>':''}
       </div>
       <button onclick="deleteCritere('${c.id}')" class="btn-danger">Supprimer</button>
-    </div>`;
-  }).join('');
-  const {data:allC} = await sb.from('criteres').select('id',{count:'exact'}).eq('client_id',currentClient.id);
-  const total = allC ? allC.length : data.length;
+    </div>`).join('');
   const badge = document.getElementById('badge-criteres');
-  badge.textContent=total; badge.classList.remove('hidden');
+  badge.textContent=data.length; badge.classList.remove('hidden');
 }
 async function addCritere() {
-  if(!currentClient||!currentClient.id){showToast('Client non charge',true);return;}
+  if(!currentClient||!currentClient.id){showToast('Compte non activé — contactez le support.',true);return;}
   const type  = document.getElementById('crit-type').value;
   const valeur= document.getElementById('crit-valeur').value.trim();
-  if(!valeur){showToast('Saisir une valeur',true);return;}
+  if(!valeur){showToast('Saisissez un mot-clé.',true);return;}
   const pack = currentClient.pack||'starter';
-  const maxKw = {starter:5,pro:15,business:40}[pack]||5;
-  const {data:existing} = await sb.from('criteres').select('id',{count:'exact'}).eq('client_id',currentClient.id);
-  if(existing && existing.length >= maxKw){
-    showToast('Limite pack atteinte ('+maxKw+' mots-cles). Upgradez votre pack.',true);
+  const maxKw = {starter:5,pro:20,business:50}[pack]||5;
+  const {count} = await sb.from('criteres').select('id',{count:'exact',head:true}).eq('client_id',currentClient.id);
+  if(count >= maxKw){
+    setMsg('crit-msg','Limite atteinte ('+maxKw+' mots-clés). <a href="pricing.html" target="_blank" class="underline font-semibold">Upgradez votre pack →</a>','error');
     return;
   }
   const btn = document.getElementById('btn-add-crit');
-  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  const {error} = await sb.from('criteres').insert({
-    client_id:  currentClient.id,
-    type,
-    valeur,
-    radar_type: critRadarType,
-  });
-  btn.disabled=false;btn.textContent='Ajouter';
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  const {error} = await sb.from('criteres').insert({client_id:currentClient.id,type,valeur,radar_type:'bc'});
+  btn.disabled=false; btn.textContent='+ Ajouter';
   if(error){showToast('Erreur: '+error.message,true);return;}
   document.getElementById('crit-valeur').value='';
-  showToast('Critere ajoute !');
+  setMsg('crit-msg','','success');
+  showToast('Critère ajouté !');
   await loadCriteres();
   await loadDashStats();
 }
 async function deleteCritere(id) {
-  if(!confirm('Supprimer ce critere ?')) return;
+  if(!confirm('Supprimer ce critère ?')) return;
   const {error} = await sb.from('criteres').delete().eq('id',id);
   if(error){showToast('Erreur suppression',true);return;}
-  showToast('Critere supprime');
+  showToast('Critère supprimé');
   await loadCriteres();
   await loadDashStats();
 }
 
-// ---- Profil ----
+// PROFIL
 const PACK_META = {
-  starter:  { label:'Starter',  color:'badge-blue',   maxKw:5,  features:{BC:true,WA:false,AIValid:false,Support:false} },
-  pro:      { label:'Pro',      color:'badge-purple', maxKw:20, features:{BC:true,WA:true, AIValid:true, Support:false} },
-  business: { label:'Business', color:'badge-amber',  maxKw:50, features:{BC:true,WA:true, AIValid:true, Support:true } },
+  starter:  { label:'Starter',  color:'badge-blue',   maxKw:5,  features:{Telegram:true,Email:true,IA:false,Support:false} },
+  pro:      { label:'Pro',      color:'badge-purple', maxKw:20, features:{Telegram:true,Email:true,IA:true, Support:false} },
+  business: { label:'Business', color:'badge-amber',  maxKw:50, features:{Telegram:true,Email:true,IA:true, Support:true } },
 };
 async function loadProfil() {
   if(!currentClient||!currentUser) return;
@@ -843,93 +639,92 @@ async function loadProfil() {
   document.getElementById('profil-nom').value         = currentClient.nom||'';
   document.getElementById('profil-email-notif').value = currentClient.email_notif||'';
   document.getElementById('profil-tg-chat').value     = currentClient.tg_chat_id||'';
-  document.getElementById('profil-phone').value       = currentClient.phone||'';
-  document.getElementById('profil-wa-key').value      = currentClient.wa_apikey||'';
   updateNotifBadges();
   await loadPackCard();
 }
 async function loadPackCard() {
-  const pack = currentClient.pack || 'starter';
-  const meta = PACK_META[pack] || PACK_META.starter;
+  const pack = currentClient.pack||'starter';
+  const meta = PACK_META[pack]||PACK_META.starter;
   const badge = document.getElementById('pack-badge');
-  badge.textContent = meta.label;
-  badge.className = 'badge ' + meta.color;
-  const cta = document.getElementById('pack-upgrade-cta');
-  cta.classList.toggle('hidden', pack === 'business');
-  const {data:kwData} = await sb.from('criteres').select('id',{count:'exact'}).eq('client_id',currentClient.id);
-  const usedKw = kwData ? kwData.length : 0;
-  const maxKw  = meta.maxKw;
-  const pct    = Math.min(100, Math.round(usedKw/maxKw*100));
-  document.getElementById('pack-kw-count').textContent = usedKw+' / '+maxKw;
-  const bar = document.getElementById('pack-kw-bar');
-  bar.style.width = pct+'%';
-  bar.style.background = pct>=90?'#dc2626':pct>=70?'#d97706':'#2563eb';
-  const fDesc = {
-    BC:      ['Radar Bons de Commande',      true],
-    WA:      ['Alertes WhatsApp',            meta.features.WA],
-    AIValid: ['Validation IA (0 faux positif)', meta.features.AIValid],
-    IAEnrich:['Enrichissement IA mots-clés', true],
-    Support: ['Support prioritaire',         meta.features.Support],
-  };
-  document.getElementById('pack-features').innerHTML = Object.values(fDesc).map(([label,ok])=>
-    `<div class="flex items-center gap-2 text-sm ${ok?'text-slate-700':'text-slate-400'}">
-       <span>${ok?'<span class="text-green-600">&#10003;</span>':'<span class="text-slate-300">&#8212;</span>'}</span> ${label}
-     </div>`
-  ).join('');
+  badge.textContent=meta.label; badge.className='badge '+meta.color;
+  document.getElementById('pack-upgrade-cta').classList.toggle('hidden',pack==='business');
+  const {count:usedKw} = await sb.from('criteres').select('id',{count:'exact',head:true}).eq('client_id',currentClient.id);
+  const pct = Math.min(100,Math.round((usedKw||0)/meta.maxKw*100));
+  document.getElementById('pack-kw-count').textContent=(usedKw||0)+' / '+meta.maxKw;
+  const bar=document.getElementById('pack-kw-bar');
+  bar.style.width=pct+'%'; bar.style.background=pct>=90?'#dc2626':pct>=70?'#d97706':'#2563eb';
+  document.getElementById('pack-features').innerHTML=Object.entries(meta.features).map(([k,ok])=>{
+    const labels={Telegram:'Notifications Telegram',Email:'Alertes email',IA:'Validation IA (0 faux positif)',Support:'Support prioritaire'};
+    return `<div class="flex items-center gap-2 text-sm ${ok?'text-slate-700':'text-slate-400'}">
+      <span>${ok?'<span class="text-green-600">✓</span>':'<span class="text-slate-300">—</span>'}</span> ${labels[k]||k}
+    </div>`;
+  }).join('');
 }
 function updateNotifBadges() {
   const tgOk = !!currentClient.tg_chat_id;
-  const waOk = !!(currentClient.phone && currentClient.wa_apikey);
-  const emailOk = !!currentClient.email_notif;
   const tgB = document.getElementById('tg-status-badge');
-  const waB = document.getElementById('wa-status-badge');
-  tgB.textContent=tgOk?'Configure ✓':'Non configure'; tgB.className='badge '+(tgOk?'badge-green':'badge-gray');
-  waB.textContent=waOk?'Configure ✓':'Non configure'; waB.className='badge '+(waOk?'badge-green':'badge-gray');
+  tgB.textContent=tgOk?'Configuré ✓':'Non configuré'; tgB.className='badge '+(tgOk?'badge-green':'badge-gray');
 }
 async function saveProfil() {
   const nom        = document.getElementById('profil-nom').value.trim();
   const emailNotif = document.getElementById('profil-email-notif').value.trim();
   const tgChat     = document.getElementById('profil-tg-chat').value.trim();
-  const phone      = document.getElementById('profil-phone').value.trim();
-  const waKey      = document.getElementById('profil-wa-key').value.trim();
   if(!nom){setMsg('profil-msg','Le nom est requis.');return;}
   setMsg('profil-msg','');
-  const btn = document.getElementById('btn-save-profil');
+  const btn=document.getElementById('btn-save-profil');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
-  const {error} = await sb.from('clients').update({
-    nom,
-    email_notif: emailNotif||null,
-    tg_chat_id:  tgChat||null,
-    phone:       phone||null,
-    wa_apikey:   waKey||null,
-    wa_provider: 'callmebot'
-  }).eq('id',currentClient.id);
+  const {error} = await sb.from('clients').update({nom,email_notif:emailNotif||null,tg_chat_id:tgChat||null}).eq('id',currentClient.id);
   btn.disabled=false; btn.textContent='Enregistrer';
   if(error){setMsg('profil-msg','Erreur : '+error.message);return;}
-  Object.assign(currentClient,{nom,email_notif:emailNotif||null,tg_chat_id:tgChat||null,phone:phone||null,wa_apikey:waKey||null});
+  Object.assign(currentClient,{nom,email_notif:emailNotif||null,tg_chat_id:tgChat||null});
   updateNotifBadges();
-  showToast('Profil enregistre !');
-  setMsg('profil-msg','Profil mis a jour.','success');
+  showToast('Profil enregistré !');
 }
 async function changePassword() {
-  const np = prompt('Nouveau mot de passe (min 6 caracteres) :');
-  if(!np||np.length<6) return;
+  const np = prompt('Nouveau mot de passe (minimum 6 caractères) :');
+  if(!np||np.length<6){if(np!==null)alert('Mot de passe trop court.');return;}
   const {error} = await sb.auth.updateUser({password:np});
   if(error) showToast('Erreur : '+error.message,true);
-  else showToast('Mot de passe mis a jour !');
+  else showToast('Mot de passe mis à jour !');
 }
 
-// ---- Auth listener ----
+// CLIENT LOADER
+async function loadClient(user) {
+  try {
+    const {data,error} = await Promise.race([
+      sb.from('clients').select('*').eq('auth_user_id',user.id).single(),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000))
+    ]);
+    if(error||!data) return null;
+    return data;
+  } catch(e){ return null; }
+}
+
+function onAuthStateChange(user) {
+  currentUser = user;
+  loadClient(user).then(client=>{
+    currentClient = (client&&client.id) ? client : {id:null,nom:user.email,auth_user_id:user.id};
+    showApp(user);
+  });
+}
+
+// AUTH LISTENER
 let _authBusy = false;
 sb.auth.onAuthStateChange(async (event, session) => {
-  if(_authBusy) return;
-  _authBusy = true;
+  if(_authBusy) return; _authBusy=true;
   try {
-    if(session&&session.user) {
-      currentUser = session.user;
-      if(!currentClient || !currentClient.id) {
-        const loaded = await loadClient(currentUser);
-        currentClient = (loaded && loaded.id) ? loaded
-          : {id:null, nom:currentUser.email, auth_user_id:currentUser.id};
+    if(session&&session.user){
+      currentUser=session.user;
+      if(!currentClient||!currentClient.id){
+        const loaded=await loadClient(currentUser);
+        currentClient=(loaded&&loaded.id)?loaded:{id:null,nom:currentUser.email,auth_user_id:currentUser.id};
       }
-    
+      showApp(currentUser);
+    } else {
+      showAuthPage();
+    }
+  } finally { _authBusy=false; }
+});
+</script>
+</body>
+</html>
