@@ -2313,8 +2313,8 @@ const _httpServer = http.createServer(async (req, res) => {
   ]});
 });
 
-_httpServer.listen(HTTP_PORT, () => {
-  log("Serveur HTTP démarré sur port " + HTTP_PORT);
+_httpServer.listen(HTTP_PORT, "0.0.0.0", () => {
+  log("Serveur HTTP démarré sur 0.0.0.0:" + HTTP_PORT);
 });
 
 // ============================================================
