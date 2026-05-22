@@ -2160,6 +2160,128 @@ async function runGlobalScanMP() {
 }
 
 // ============================================================
+// SERVEUR HTTP (tests + health check)
+// ============================================================
+const http    = require("http");
+const urlMod  = require("url");
+
+const HTTP_PORT    = parseInt(process.env.PORT || "3000", 10);
+const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
+
+const _startTime = Date.now();
+
+function checkSecret(req) {
+  if (!ADMIN_SECRET) return true; // pas de secret configuré = ouvert (dev)
+  const u = urlMod.parse(req.url, true);
+  return u.query.secret === ADMIN_SECRET;
+}
+
+function jsonResp(res, status, data) {
+  const body = JSON.stringify(data, null, 2);
+  res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+  res.end(body);
+}
+
+const _httpServer = http.createServer(async (req, res) => {
+  const parsed = urlMod.parse(req.url, true);
+  const path_  = parsed.pathname;
+
+  // ── GET /health  (Fly.io health check) ─────────────
+  if (req.method === "GET" && (path_ === "/health" || path_ === "/")) {
+    return jsonResp(res, 200, { status: "ok", uptime: Math.floor((Date.now() - _startTime) / 1000) });
+  }
+
+  // ── GET /api/status ──────────────────────────────
+  if (req.method === "GET" && path_ === "/api/status") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    const cacheSize = Object.keys(AI_CACHE).length;
+    return jsonResp(res, 200, {
+      status:      "running",
+      uptime_sec:  Math.floor((Date.now() - _startTime) / 1000),
+      scanningBC:  _scanningBC,
+      scanningMP:  _scanningMP,
+      cache_size:  cacheSize,
+      version:     "9.5",
+    });
+  }
+
+  // ── POST /api/scan-now  (déclenche scan BC immédiat) ─────
+  if (req.method === "POST" && path_ === "/api/scan-now") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    if (_scanningBC) return jsonResp(res, 409, { error: "Scan BC déjà en cours" });
+    log("[HTTP] Scan BC déclenché manuellement via /api/scan-now");
+    runGlobalScanBC().catch(e => log("[HTTP] Scan BC erreur: " + e.message));
+    return jsonResp(res, 202, { message: "Scan BC lancé", time: new Date().toISOString() });
+  }
+
+  // ── GET /api/test-notify  (envoie notif de test à un client) ─
+  if (req.method === "GET" && path_ === "/api/test-notify") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    const clientId = parsed.query.client_id;
+    try {
+      const clients = await db.getClients();
+      const client  = clientId
+        ? clients.find(c => String(c.id) === String(clientId))
+        : clients[0];
+      if (!client) return jsonResp(res, 404, { error: "Client introuvable" });
+
+      const fakeItem = {
+        id:        "TEST-" + Date.now(),
+        objet:     "BON DE COMMANDE TEST — Fourniture de matériel informatique",
+        organisme: "Ministère de l'Économie et des Finances",
+        dateLimit: new Date(Date.now() + 7 * 86400000).toLocaleDateString("fr-MA"),
+        url:       "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
+        montant:   null,
+        articles:  [{ designation: "Ordinateurs portables", specifications: "Core i7, 16Go RAM" }],
+        bodyText:  "fourniture matériel informatique ordinateur portable",
+        _keyword:  "informatique",
+      };
+      const fakeMatched = {
+        valeur:        "informatique",
+        type:          "titre",
+        ai_inclusions: ["matériel informatique", "ordinateur"],
+        ai_exclusions: [],
+      };
+      const msgPlain = buildMessage(fakeItem, fakeMatched, "bc", "Résumé IA test — marché de fourniture informatique pour administration.");
+      const msgHtml  = buildHtmlMessage(fakeItem, fakeMatched, "bc", "Résumé IA test — marché de fourniture informatique pour administration.");
+
+      const results = {};
+      if (client.telegram_chat_id) {
+        try { await sendTelegram(client, msgHtml); results.telegram = "ok"; }
+        catch (e) { results.telegram = "erreur: " + e.message; }
+      } else { results.telegram = "non configuré"; }
+
+      if (client.phone) {
+        try { await sendWhatsApp(client, msgPlain); results.whatsapp = "ok"; }
+        catch (e) { results.whatsapp = "erreur: " + e.message; }
+      } else { results.whatsapp = "non configuré"; }
+
+      if (client.email_notif) {
+        try { await sendEmail(client, fakeItem, fakeMatched, "bc", "Résumé IA test."); results.email = "ok"; }
+        catch (e) { results.email = "erreur: " + e.message; }
+      } else { results.email = "non configuré"; }
+
+      log("[HTTP] Notif test envoyée au client: " + client.nom);
+      return jsonResp(res, 200, { client: client.nom, channels: results });
+    } catch (e) {
+      return jsonResp(res, 500, { error: e.message });
+    }
+  }
+
+  // ── 404 ──────────────────────────────────────────────────
+  return jsonResp(res, 404, { error: "Route inconnue", routes: [
+    "GET  /health",
+    "GET  /api/status?secret=xxx",
+    "POST /api/scan-now?secret=xxx",
+    "GET  /api/test-notify?secret=xxx[&client_id=yyy]",
+  ]});
+});
+
+_httpServer.listen(HTTP_PORT, () => {
+  log("Serveur HTTP démarré sur port " + HTTP_PORT);
+});
+
+// ============================================================
 // PLANIFICATION CRON
 // ============================================================
 cron.schedule("0 */2 * * *", () => {

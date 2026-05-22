@@ -1,0 +1,67 @@
+{
+  "cafe": {
+    "valeur": "café",
+    "inclusions": [
+      "cafe",
+      "cafes",
+      "caféier",
+      "caféière",
+      "caféisation",
+      "café industriel",
+      "café en vrac",
+      "café instantané",
+      "café soluble",
+      "café torréfié"
+    ],
+    "exclusions": [
+      "caféin",
+      "caféine",
+      "café noir",
+      "café blanc"
+    ],
+    "cached_at": "2026-05-22T00:29:48.089Z"
+  },
+  "eau": {
+    "valeur": "eau",
+    "inclusions": [
+      "eau",
+      "eaux",
+      "EAU",
+      "EAUX",
+      "fournisseur eau",
+      "contrat eau",
+      "approvisionnement eau",
+      "délégation gestion eau",
+      "service public eau"
+    ],
+    "exclusions": [
+      "électricité",
+      "énergie",
+      "gaz",
+      "eau de boisson"
+    ],
+    "cached_at": "2026-05-22T00:31:35.159Z"
+  },
+  "maintenance": {
+    "valeur": "maintenance",
+    "inclusions": [
+      "maintenance",
+      "entretien",
+      "réparation",
+      "assistance technique",
+      "service après-vente",
+      "intervention",
+      "réalisation",
+      "exécution",
+      "contrat de maintenance"
+    ],
+    "exclusions": [
+      "vente",
+      "achat",
+      "location",
+      "immobilier",
+      "construction"
+    ],
+    "cached_at": "2026-05-22T00:31:38.675Z"
+  }
+}

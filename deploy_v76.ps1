@@ -20,5 +20,4 @@ Write-Host "Push OK - GitHub Actions va deployer automatiquement" -ForegroundCol
 
 Write-Host "`nSuivi: https://github.com/lebbarham-arch/radar-bc-bot/actions" -ForegroundColor Yellow
 Write-Host "Logs:   https://fly.io/apps/radar-bc-bot/monitoring" -ForegroundColor Yellow
-Write-Host "`n=== FIN ===" -ForegroundColor Green
-pause
+Write-Host "`n=== FIN ===" -ForegroundColor
