@@ -29,6 +29,58 @@
 </head>
 <body class="bg-slate-100 min-h-screen">
 
+<!-- ─── ADMIN PASSWORD GATE ──────────────────────────────────────────── -->
+<!-- Pour changer le mot de passe admin, mettez à jour ADMIN_HASH ci-dessous -->
+<!-- SHA-256 de "RadarAdmin2026" — générez le vôtre : https://emn178.github.io/online-tools/sha256.html -->
+<div id="adminGate" class="fixed inset-0 z-50 bg-slate-900 flex items-center justify-center">
+  <div style="background:#fff;border-radius:16px;padding:40px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.4);">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div style="font-size:2rem;margin-bottom:8px;">🛡️</div>
+      <h1 style="font-size:1.2rem;font-weight:800;color:#1e293b;margin:0;">Accès Admin</h1>
+      <p style="font-size:0.8rem;color:#64748b;margin:6px 0 0;">Radar Marchés Maroc</p>
+    </div>
+    <div id="gateError" style="display:none;background:#fee2e2;color:#dc2626;border-radius:8px;padding:8px 12px;font-size:0.82rem;margin-bottom:12px;text-align:center;">
+      Mot de passe incorrect
+    </div>
+    <input id="adminPwd" type="password" placeholder="Mot de passe admin"
+      style="width:100%;box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 14px;font-size:0.95rem;margin-bottom:12px;outline:none;"
+      onkeydown="if(event.key==='Enter')checkAdminPwd()"
+      onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#e2e8f0'">
+    <button onclick="checkAdminPwd()"
+      style="width:100%;background:#1e293b;color:#fff;border:none;border-radius:8px;padding:11px;font-size:0.95rem;font-weight:700;cursor:pointer;">
+      Accéder →
+    </button>
+  </div>
+</div>
+
+<script>
+// SHA-256 du mot de passe admin — changer cette valeur pour changer le mdp
+const ADMIN_HASH = 'c28c3cfb9806f780f10eeb775ad1650ceb98a0614fb854df7590b994a13396e8';
+
+async function checkAdminPwd() {
+  const pwd = document.getElementById('adminPwd').value;
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pwd));
+  const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  if (hash === ADMIN_HASH) {
+    sessionStorage.setItem('admin_auth', '1');
+    document.getElementById('adminGate').style.display = 'none';
+  } else {
+    document.getElementById('gateError').style.display = 'block';
+    document.getElementById('adminPwd').value = '';
+    document.getElementById('adminPwd').focus();
+  }
+}
+
+// Si déjà authentifié dans cet onglet, skip la gate
+if (sessionStorage.getItem('admin_auth') === '1') {
+  document.getElementById('adminGate').style.display = 'none';
+} else {
+  // Focus auto sur le champ mdp
+  setTimeout(() => document.getElementById('adminPwd') && document.getElementById('adminPwd').focus(), 100);
+}
+</script>
+<!-- ─────────────────────────────────────────────────────────────────── -->
+
 <!-- Config banner -->
 <div id="configBanner" class="bg-amber-50 border-b border-amber-200 px-6 py-3 flex items-center gap-3 text-sm">
   <span class="font-semibold text-amber-800">⚙️ Admin Supabase :</span>
@@ -391,50 +443,4 @@ async function loadCache() {
           <div class="flex-1">
             <div class="text-xs font-semibold text-red-700 mb-1">❌ Exclusions (${(r.exclusions||[]).length})</div>
             <div class="flex flex-wrap gap-1">${(r.exclusions||[]).map(t => `<span class="bg-red-50 border border-red-200 text-red-800 text-xs px-2 py-0.5 rounded-full">${t}</span>`).join("")}</div>
-          </div>
-        </div>
-      </div>`).join("");
-  } catch(e) {
-    document.getElementById("cacheList").innerHTML = `<div class="card text-red-500 text-sm">❌ ${e.message} — Vérifiez que la table ai_cache existe (migration_v9.sql)</div>`;
-  }
-}
-
-// ── Bot status ──
-async function loadBotStatus() {
-  const url = document.getElementById("botUrl").value.trim();
-  localStorage.setItem("admin_bot_url", url);
-  const card = document.getElementById("botStatusCard");
-  card.innerHTML = '<p class="text-slate-400 text-sm">Ping en cours...</p>';
-  try {
-    const r = await fetch(url + "/api/status", { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const d = await r.json();
-    card.innerHTML = `
-      <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-        <div class="bg-green-50 rounded-lg p-3 text-center"><div class="text-xl font-bold text-green-600">✅ En ligne</div><div class="text-xs text-slate-500 mt-1">v${d.version || "?"}</div></div>
-        <div class="bg-blue-50 rounded-lg p-3 text-center"><div class="text-lg font-bold text-blue-600">${d.uptime || "—"}</div><div class="text-xs text-slate-500 mt-1">Uptime</div></div>
-        <div class="bg-purple-50 rounded-lg p-3 text-center"><div class="text-lg font-bold text-purple-600">${d.cacheEntries || 0}</div><div class="text-xs text-slate-500 mt-1">Entrées cache</div></div>
-      </div>
-      <div class="grid grid-cols-2 gap-4 text-sm">
-        <div><span class="text-slate-500">Dernier scan BC :</span> <span class="font-medium">${d.lastScanBC ? new Date(d.lastScanBC).toLocaleString("fr-MA") : "—"}</span></div>
-        <div><span class="text-slate-500">Dernier scan MP :</span> <span class="font-medium">${d.lastScanMP ? new Date(d.lastScanMP).toLocaleString("fr-MA") : "—"}</span></div>
-        <div><span class="text-slate-500">Scans BC :</span> <span class="font-medium">${d.scanCountBC || 0} (${d.errorCountBC || 0} erreurs)</span></div>
-        <div><span class="text-slate-500">Scans MP :</span> <span class="font-medium">${d.scanCountMP || 0} (${d.errorCountMP || 0} erreurs)</span></div>
-        ${d.lastErrorBC ? `<div class="col-span-2 text-red-500 text-xs">⚠️ Dernière erreur BC : ${d.lastErrorBC}</div>` : ""}
-        ${d.lastErrorMP ? `<div class="col-span-2 text-red-500 text-xs">⚠️ Dernière erreur MP : ${d.lastErrorMP}</div>` : ""}
-      </div>`;
-  } catch(e) {
-    card.innerHTML = `<div class="flex items-center gap-3"><span class="text-2xl">🔴</span><div><div class="font-bold text-red-600">Bot hors ligne ou inaccessible</div><div class="text-sm text-slate-500">${e.message}</div></div></div>`;
-  }
-}
-
-function showToast(msg, isError = false) {
-  const t = document.createElement("div");
-  t.className = `fixed bottom-6 right-6 z-50 px-4 py-2 rounded-lg text-sm font-semibold shadow-lg ${isError ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`;
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3000);
-}
-</script>
-</body>
-</html>
+ 

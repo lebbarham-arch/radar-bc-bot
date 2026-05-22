@@ -105,11 +105,26 @@
   .tag {
     display: flex; align-items: center; gap: 0.3rem;
     background: #ebf8ff; border: 1px solid #bee3f8; color: #2b6cb0;
-    padding: 0.2rem 0.5rem; border-radius: 99px; font-size: 0.8rem;
+    padding: 0.25rem 0.5rem 0.25rem 0.7rem; border-radius: 99px; font-size: 0.8rem;
+    cursor: pointer; user-select: none; transition: all 0.15s;
   }
+  .tag:hover { filter: brightness(0.94); }
   .tag.excl { background: #fff5f5; border-color: #fed7d7; color: #c53030; }
-  .tag-del { background: none; border: none; cursor: pointer; color: inherit; font-size: 0.9rem; opacity: 0.6; }
-  .tag-del:hover { opacity: 1; }
+  /* Tag désactivé = grisé + barré */
+  .tag.disabled {
+    background: #f7fafc; border-color: #cbd5e0; color: #a0aec0;
+    text-decoration: line-through; opacity: 0.65;
+  }
+  .tag-text { pointer-events: none; }
+  .tag-del {
+    background: none; border: none; cursor: pointer; color: inherit;
+    font-size: 1rem; opacity: 0.45; line-height: 1; padding: 0 2px;
+    pointer-events: all;
+  }
+  .tag-del:hover { opacity: 1; color: #e53e3e; }
+  .tag-toggle-hint {
+    font-size: 0.68rem; color: #a0aec0; margin-bottom: 0.25rem; font-style: italic;
+  }
 
   .add-tag-row { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
   .add-tag-row input {
@@ -226,8 +241,8 @@ async function loadData() {
   document.getElementById("criteresList").innerHTML = '<div class="loading">⏳ Chargement...</div>';
   try {
     const [clients, criteres] = await Promise.all([
-      sbFetch("clients", "select=id,nom,email,pack,actif&actif=eq.true&order=nom"),
-      sbFetch("criteres", "select=id,client_id,valeur,radar_type,ai_inclusions,ai_exclusions,actif&actif=eq.true&order=valeur"),
+      sbFetch("clients", "select=id,nom&order=nom"),
+      sbFetch("criteres", "select=id,client_id,valeur,radar_type,ai_inclusions,ai_exclusions&order=valeur"),
     ]);
 
     const clientMap = {};
@@ -290,13 +305,28 @@ function renderCriteres() {
     const inclusions = critere.ai_inclusions || [];
     const exclusions = critere.ai_exclusions || [];
 
-    const inclTags = inclusions.map((t, i) =>
-      `<span class="tag"><span>${t}</span><button class="tag-del" onclick="removeTag(${critere.id},'incl',${i})" title="Supprimer">×</button></span>`
-    ).join("") || '<span style="color:#a0aec0;font-size:0.8rem">Aucune inclusion</span>';
+    // Tags désactivés stockés en mémoire sur l'objet critere
+    const disabledIncl = critere._disabled_incl || new Set();
+    const disabledExcl = critere._disabled_excl || new Set();
 
-    const exclTags = exclusions.map((t, i) =>
-      `<span class="tag excl"><span>${t}</span><button class="tag-del" onclick="removeTag(${critere.id},'excl',${i})" title="Supprimer">×</button></span>`
-    ).join("") || '<span style="color:#a0aec0;font-size:0.8rem">Aucune exclusion</span>';
+    const activeIncl  = inclusions.filter(t => !disabledIncl.has(t)).length;
+    const activeExcl  = exclusions.filter(t => !disabledExcl.has(t)).length;
+
+    const inclTags = inclusions.map((t, i) => {
+      const off = disabledIncl.has(t);
+      return `<span class="tag${off ? ' disabled' : ''}" onclick="toggleTag(${critere.id},'incl',${i})" title="${off ? 'Cliquer pour réactiver' : 'Cliquer pour désactiver'}">
+        <span class="tag-text">${t}</span>
+        <button class="tag-del" onclick="event.stopPropagation();removeTag(${critere.id},'incl',${i})" title="Supprimer définitivement">×</button>
+      </span>`;
+    }).join("") || '<span style="color:#a0aec0;font-size:0.8rem">Aucune inclusion</span>';
+
+    const exclTags = exclusions.map((t, i) => {
+      const off = disabledExcl.has(t);
+      return `<span class="tag excl${off ? ' disabled' : ''}" onclick="toggleTag(${critere.id},'excl',${i})" title="${off ? 'Cliquer pour réactiver' : 'Cliquer pour désactiver'}">
+        <span class="tag-text">${t}</span>
+        <button class="tag-del" onclick="event.stopPropagation();removeTag(${critere.id},'excl',${i})" title="Supprimer définitivement">×</button>
+      </span>`;
+    }).join("") || '<span style="color:#a0aec0;font-size:0.8rem">Aucune exclusion</span>';
 
     return `
       <div class="critere-card" id="card-${critere.id}">
@@ -310,19 +340,21 @@ function renderCriteres() {
         <div class="critere-body">
           <div class="two-cols">
             <div class="tags-section">
-              <label>✅ Inclusions (${inclusions.length})</label>
+              <label>✅ Inclusions (${activeIncl} actives / ${inclusions.length} <span style="color:${inclusions.length>=ENRICH_LIMITS.incl?'#e53e3e':'#718096'}">max ${ENRICH_LIMITS.incl}</span>)</label>
+              <div class="tag-toggle-hint">Clic = activer/désactiver · × = supprimer</div>
               <div class="tags-container" id="incl-${critere.id}">${inclTags}</div>
               <div class="add-tag-row">
-                <input type="text" id="newIncl-${critere.id}" placeholder="Ajouter une inclusion..." onkeydown="if(event.key==='Enter') addTag(${critere.id},'incl')">
-                <button class="btn btn-success btn-sm" onclick="addTag(${critere.id},'incl')">+ Ajouter</button>
+                <input type="text" id="newIncl-${critere.id}" placeholder="${inclusions.length>=ENRICH_LIMITS.incl?'Limite atteinte':'Ajouter une inclusion...'}" ${inclusions.length>=ENRICH_LIMITS.incl?'disabled':''} onkeydown="if(event.key==='Enter') addTag(${critere.id},'incl')">
+                <button class="btn btn-success btn-sm" onclick="addTag(${critere.id},'incl')" ${inclusions.length>=ENRICH_LIMITS.incl?'disabled':''}>+ Ajouter</button>
               </div>
             </div>
             <div class="tags-section">
-              <label>❌ Exclusions (${exclusions.length})</label>
+              <label>❌ Exclusions (${activeExcl} actives / ${exclusions.length} <span style="color:${exclusions.length>=ENRICH_LIMITS.excl?'#e53e3e':'#718096'}">max ${ENRICH_LIMITS.excl}</span>)</label>
+              <div class="tag-toggle-hint">Clic = activer/désactiver · × = supprimer</div>
               <div class="tags-container" id="excl-${critere.id}">${exclTags}</div>
               <div class="add-tag-row">
-                <input type="text" id="newExcl-${critere.id}" placeholder="Ajouter une exclusion..." onkeydown="if(event.key==='Enter') addTag(${critere.id},'excl')">
-                <button class="btn btn-danger btn-sm" onclick="addTag(${critere.id},'excl')">+ Ajouter</button>
+                <input type="text" id="newExcl-${critere.id}" placeholder="${exclusions.length>=ENRICH_LIMITS.excl?'Limite atteinte':'Ajouter une exclusion...'}" ${exclusions.length>=ENRICH_LIMITS.excl?'disabled':''} onkeydown="if(event.key==='Enter') addTag(${critere.id},'excl')">
+                <button class="btn btn-danger btn-sm" onclick="addTag(${critere.id},'excl')" ${exclusions.length>=ENRICH_LIMITS.excl?'disabled':''}>+ Ajouter</button>
               </div>
             </div>
           </div>
@@ -348,93 +380,22 @@ function getCardData(id) {
   return d ? d.critere : null;
 }
 
-function addTag(id, type) {
-  const input = document.getElementById("new" + (type === "incl" ? "Incl" : "Excl") + "-" + id);
-  const val = input.value.trim();
-  if (!val) return;
-  const critere = getCardData(id);
-  if (!critere) return;
-  if (type === "incl") {
-    critere.ai_inclusions = critere.ai_inclusions || [];
-    if (!critere.ai_inclusions.includes(val)) critere.ai_inclusions.push(val);
-  } else {
-    critere.ai_exclusions = critere.ai_exclusions || [];
-    if (!critere.ai_exclusions.includes(val)) critere.ai_exclusions.push(val);
-  }
-  input.value = "";
+function reopenCard(id) {
   renderCriteres();
-  // Rouvrir la carte
   setTimeout(() => {
-    document.getElementById("card-" + id).classList.add("open");
+    const card = document.getElementById("card-" + id);
+    if (card) card.classList.add("open");
+    // Scroll pour garder la carte visible
+    card && card.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, 10);
 }
 
-function removeTag(id, type, idx) {
+// Toggle actif/désactivé (clic sur le tag)
+function toggleTag(id, type, idx) {
   const critere = getCardData(id);
   if (!critere) return;
-  if (type === "incl") critere.ai_inclusions.splice(idx, 1);
-  else critere.ai_exclusions.splice(idx, 1);
-  renderCriteres();
-  setTimeout(() => {
-    document.getElementById("card-" + id).classList.add("open");
-  }, 10);
-}
-
-async function saveCard(id) {
-  const critere = getCardData(id);
-  const statusEl = document.getElementById("status-" + id);
-  statusEl.textContent = "💾 Sauvegarde...";
-  try {
-    await sbPatch("criteres", id, {
-      ai_inclusions: critere.ai_inclusions || [],
-      ai_exclusions: critere.ai_exclusions || [],
-    });
-    statusEl.textContent = "✅ Sauvegardé !";
-    setTimeout(() => { statusEl.textContent = ""; }, 3000);
-  } catch (e) {
-    statusEl.textContent = "❌ Erreur: " + e.message;
-    statusEl.style.color = "#e53e3e";
-  }
-}
-
-async function clearCard(id) {
-  if (!confirm("Vider les inclusions/exclusions IA pour ce critère ?")) return;
-  const critere = getCardData(id);
-  critere.ai_inclusions = [];
-  critere.ai_exclusions = [];
-  try {
-    await sbPatch("criteres", id, { ai_inclusions: [], ai_exclusions: [] });
-    renderStats();
-    renderCriteres();
-    setTimeout(() => {
-      document.getElementById("card-" + id).classList.add("open");
-    }, 10);
-  } catch (e) {
-    alert("Erreur: " + e.message);
-  }
-}
-
-function exportCache() {
-  const cache = {};
-  allData.forEach(({ critere }) => {
-    if (critere.ai_inclusions && critere.ai_inclusions.length > 0) {
-      const key = critere.valeur.toLowerCase().normalize("NFD")
-        .replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-      cache[key] = {
-        valeur: critere.valeur,
-        inclusions: critere.ai_inclusions,
-        exclusions: critere.ai_exclusions || [],
-        cached_at: new Date().toISOString(),
-      };
-    }
-  });
-  const blob = new Blob([JSON.stringify(cache, null, 2)], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "ai_cache.json";
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-</script>
-</body>
-</html>
+  const list    = type === "incl" ? critere.ai_inclusions : critere.ai_exclusions;
+  const key     = type === "incl" ? "_disabled_incl" : "_disabled_excl";
+  critere[key]  = critere[key] || new Set();
+  const term    = list[idx];
+  if (criter

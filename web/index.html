@@ -438,7 +438,7 @@
 
 <script>
 const SUPABASE_URL  = 'https://xuqxoersxhtyvrslbxzl.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh1cXhvZXJzeGh0eXZyc2xieHpsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODkzOTcwNCwiZXhwIjoyMDk0NTE1NzA0fQ.Oy5cFCcU0FczotnfqIPl-kZE3Mcui-Yo5L45VQbxLz4';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh1cXhvZXJzeGh0eXZyc2xieHpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5Mzk3MDQsImV4cCI6MjA5NDUxNTcwNH0.QdJW7L-wHUo7LvOXPoXIY6dNzQXEHOK6mwTDQvSLZc4';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 let currentUser = null, currentClient = null;
@@ -924,19 +924,4 @@ sb.auth.onAuthStateChange(async (event, session) => {
         currentClient = (loaded && loaded.id) ? loaded
           : {id:null, nom:currentUser.email, auth_user_id:currentUser.id};
       }
-      showApp(currentUser);
-    } else {
-      currentUser = null; currentClient = null;
-      showAuthPage();
-    }
-  } catch(e) {
-    console.error('Auth error:', e);
-    if(session&&session.user) showApp(session.user);
-    else showAuthPage();
-  } finally {
-    _authBusy = false;
-  }
-});
-</script>
-</body>
-</html>
+    

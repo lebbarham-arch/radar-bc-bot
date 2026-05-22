@@ -442,18 +442,24 @@ async function enrichCritereWithAI(critere) {
   if (!result || !Array.isArray(result.inclusions)) {
     log("  [IA] Echec enrichissement: " + critere.valeur); return null;
   }
+
+  // Limites strictes : 10 inclusions, 5 exclusions max
+  const MAX_INCL = 10, MAX_EXCL = 5;
+  const inclusions = result.inclusions.slice(0, MAX_INCL);
+  const exclusions = (result.exclusions || []).slice(0, MAX_EXCL);
+
   log('  [IA] "' + critere.valeur + '" -> ' +
-    result.inclusions.length + " inclusions, " + (result.exclusions || []).length + " exclusions");
+    inclusions.length + " inclusions, " + exclusions.length + " exclusions (cap " + MAX_INCL + "/" + MAX_EXCL + ")");
 
   // 2. Sauvegarder en cache mémoire + Supabase
   const entry = {
     valeur:     critere.valeur,
-    inclusions: result.inclusions,
-    exclusions: result.exclusions || [],
+    inclusions,
+    exclusions,
   };
   await saveCacheEntry(cacheKey, entry);
 
-  return { inclusions: result.inclusions, exclusions: result.exclusions || [] };
+  return { inclusions, exclusions };
 }
 
 // Cache validation par item (clé = item.id + "|" + critere normalisé)
@@ -2094,17 +2100,3 @@ cron.schedule("0 */2 * * *", () => {
 // cron.schedule("30 1,3,5,7,9,11,13,15,17,19,21,23 * * *", () => {
 //   runGlobalScanMP().catch(e => log("Cron MP erreur: " + e.message));
 // });
-
-log("Crons BC (0 */2) et MP (30 heures impaires) programmes.");
-
-// ============================================================
-// DEMARRAGE
-// ============================================================
-(async () => {
-  log("Bot demarre. Chargement cache Supabase...");
-  await loadCacheFromSupabase();
-  log("Cache charge. Premier scan BC dans 10s, MP dans 65s...");
-  setTimeout(() => runGlobalScanBC().catch(e => log("Init BC: " + e.message)), 10000);
-  // MP desactive en v1
-  // setTimeout(() => runGlobalScanMP().catch(e => log("Init MP: " + e.message)), 65000);
-})();
