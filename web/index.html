@@ -496,10 +496,18 @@ async function doRegister() {
   if(pass.length<6){setMsg('auth-msg','Mot de passe trop court (6 min).');return;}
   const btn = document.getElementById('btn-register');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
-  const {error} = await sb.auth.signUp({email,password:pass,options:{data:{full_name:name}}});
+  const {data, error} = await sb.auth.signUp({email,password:pass,options:{data:{full_name:name}}});
+  if(error){btn.disabled=false;btn.textContent='Créer mon compte';setMsg('auth-msg','Erreur : '+error.message);return;}
+  // Si session immédiate (confirmation email désactivée) → connexion auto
+  if(data.session){
+    btn.disabled=false; btn.textContent='Créer mon compte';
+    setMsg('auth-msg','✅ Compte créé !','success');
+    onAuthChange(data.session.user);
+    return;
+  }
+  // Sinon : confirmation email requise
   btn.disabled=false; btn.textContent='Créer mon compte';
-  if(error){setMsg('auth-msg','Erreur : '+error.message);return;}
-  setMsg('auth-msg','✅ Compte créé ! Confirmez votre email puis connectez-vous.','success');
+  setMsg('auth-msg','✅ Compte créé ! Vérifiez votre boîte email pour confirmer, puis connectez-vous.','success');
   showAuthTab('login');
 }
 async function doLogout() { await sb.auth.signOut(); }
