@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Radar Marchés Maroc</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family:'Segoe UI',system-ui,sans-serif; }
+  .card { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .badge { display:inline-block; padding:2px 10px; border-radius:99px; font-size:11px; font-weight:700; }
+  .badge-std  { background:#e0f2fe; color:#0369a1; }
+  .badge-moy  { background:#ede9fe; color:#7c3aed; }
+  .badge-adv  { background:#d1fae5; color:#065f46; }
+  .badge-ok   { background:#d1fae5; color:#065f46; }
+  .badge-err  { background:#fee2e2; color:#dc2626; }
+  .badge-bc   { background:#dbeafe; color:#1d4ed8; }
+  .badge-mp   { background:#ede9fe; color:#7c3aed; }
+  .stat-val   { font-size:2rem; font-weight:800; line-height:1; }
+  .stat-lbl   { font-size:0.75rem; color:#64748b; margin-top:4px; }
+  .nav-item   { padding:8px 16px; border-radius:8px; cursor:pointer; font-size:14px; font-weight:500; color:#94a3b8; transition:all .15s; }
+  .nav-item:hover { background:#1e293b; color:#fff; }
+  .nav-item.active { background:#2563eb; color:#fff; }
+  .table-row:hover { background:#f8fafc; }
+  input, select { outline:none; }
+  .spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,.4); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+<!-- Config banner -->
+<div id="configBanner" class="bg-amber-50 border-b border-amber-200 px-6 py-3 flex items-center gap-3 text-sm">
+  <span class="font-semibold text-amber-800">⚙️ Admin Supabase :</span>
+  <input id="sbUrl" type="text" placeholder="https://xxxx.supabase.co" class="border border-amber-300 rounded px-2 py-1 w-72 text-xs">
+  <input id="sbKey" type="password" placeholder="service_role key" class="border border-amber-300 rounded px-2 py-1 w-80 text-xs">
+  <button onclick="connect()" class="bg-blue-600 text-white px-4 py-1 rounded text-xs font-bold hover:bg-blue-700">Connecter</button>
+  <span id="cfgStatus" class="text-xs text-amber-700"></span>
+</div>
+
+<div class="flex min-h-screen">
+  <!-- Sidebar -->
+  <aside class="w-52 bg-slate-900 flex flex-col pt-4 px-2 flex-shrink-0">
+    <div class="px-3 pb-4 border-b border-slate-700 mb-4">
+      <div class="text-white font-bold text-sm">🛡️ Admin Panel</div>
+      <div class="text-slate-400 text-xs mt-1">Radar Marchés v9</div>
+    </div>
+    <nav class="flex flex-col gap-1">
+      <div class="nav-item active" onclick="showTab('overview')">📊 Vue d'ensemble</div>
+      <div class="nav-item" onclick="showTab('clients')">👥 Clients</div>
+      <div class="nav-item" onclick="showTab('scanlogs')">📋 Logs scans</div>
+      <div class="nav-item" onclick="showTab('cache')">🧠 Cache IA</div>
+      <div class="nav-item" onclick="showTab('bot')">🤖 Statut bot</div>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 p-6 overflow-auto">
+
+    <!-- ── OVERVIEW ── -->
+    <div id="tab-overview" class="space-y-6">
+      <h2 class="text-xl font-bold text-slate-800">Vue d'ensemble</h2>
+      <div id="statsGrid" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="card"><div class="stat-val text-blue-600" id="st-clients">—</div><div class="stat-lbl">Clients actifs</div></div>
+        <div class="card"><div class="stat-val text-purple-600" id="st-criteres">—</div><div class="stat-lbl">Critères totaux</div></div>
+        <div class="card"><div class="stat-val text-green-600" id="st-alertes">—</div><div class="stat-lbl">Alertes envoyées</div></div>
+        <div class="card"><div class="stat-val text-amber-600" id="st-alertes30">—</div><div class="stat-lbl">Alertes ce mois</div></div>
+      </div>
+
+      <!-- Répartition packs -->
+      <div class="card">
+        <h3 class="font-bold text-slate-700 mb-4">Répartition par pack</h3>
+        <div id="packGrid" class="grid grid-cols-3 gap-4 text-center">
+          <div class="bg-blue-50 rounded-lg p-4"><div class="text-2xl font-bold text-blue-600" id="pack-std">—</div><div class="text-xs text-slate-500 mt-1">Standard</div></div>
+          <div class="bg-purple-50 rounded-lg p-4"><div class="text-2xl font-bold text-purple-600" id="pack-moy">—</div><div class="text-xs text-slate-500 mt-1">Moyen</div></div>
+          <div class="bg-green-50 rounded-lg p-4"><div class="text-2xl font-bold text-green-600" id="pack-adv">—</div><div class="text-xs text-slate-500 mt-1">Avancé</div></div>
+        </div>
+      </div>
+
+      <!-- Derniers scans -->
+      <div class="card">
+        <h3 class="font-bold text-slate-700 mb-3">Derniers scans</h3>
+        <div id="lastScans" class="text-sm text-slate-500">Chargement...</div>
+      </div>
+    </div>
+
+    <!-- ── CLIENTS ── -->
+    <div id="tab-clients" class="hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold text-slate-800">Clients</h2>
+        <button onclick="loadClients()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded font-semibold hover:bg-blue-700">🔄 Actualiser</button>
+      </div>
+      <div class="card overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-slate-500 border-b border-slate-100">
+              <th class="pb-2 pr-4 font-semibold">Nom</th>
+              <th class="pb-2 pr-4 font-semibold">Pack</th>
+              <th class="pb-2 pr-4 font-semibold">Critères</th>
+              <th class="pb-2 pr-4 font-semibold">Alertes totales</th>
+              <th class="pb-2 pr-4 font-semibold">Alertes 30j</th>
+              <th class="pb-2 pr-4 font-semibold">Telegram</th>
+              <th class="pb-2 pr-4 font-semibold">Dernière alerte</th>
+              <th class="pb-2 font-semibold">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="clientsTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── SCAN LOGS ── -->
+    <div id="tab-scanlogs" class="hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold text-slate-800">Logs de scan</h2>
+        <div class="flex gap-2">
+          <select id="logFilter" onchange="loadLogs()" class="border border-slate-200 rounded px-2 py-1 text-sm">
+            <option value="">Tous types</option>
+            <option value="bc">BC</option>
+            <option value="mp">MP</option>
+          </select>
+          <button onclick="loadLogs()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded font-semibold hover:bg-blue-700">🔄</button>
+        </div>
+      </div>
+      <div class="card overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-slate-500 border-b border-slate-100">
+              <th class="pb-2 pr-4 font-semibold">Date</th>
+              <th class="pb-2 pr-4 font-semibold">Type</th>
+              <th class="pb-2 pr-4 font-semibold">Statut</th>
+              <th class="pb-2 pr-4 font-semibold">Durée</th>
+              <th class="pb-2 pr-4 font-semibold">Trouvés</th>
+              <th class="pb-2 pr-4 font-semibold">Nouveaux</th>
+              <th class="pb-2 font-semibold">Notifs</th>
+            </tr>
+          </thead>
+          <tbody id="logsTable"></tbody>
+        </table>
+        <div id="logsEmpty" class="text-center py-8 text-slate-400 text-sm hidden">Aucun log disponible</div>
+      </div>
+    </div>
+
+    <!-- ── CACHE IA ── -->
+    <div id="tab-cache" class="hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold text-slate-800">Cache IA</h2>
+        <button onclick="loadCache()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded font-semibold hover:bg-blue-700">🔄 Actualiser</button>
+      </div>
+      <div id="cacheList" class="space-y-3"></div>
+    </div>
+
+    <!-- ── BOT STATUS ── -->
+    <div id="tab-bot" class="hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold text-slate-800">Statut bot</h2>
+        <button onclick="loadBotStatus()" class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded font-semibold hover:bg-blue-700">🔄 Ping</button>
+      </div>
+      <div id="botStatusCard" class="card">
+        <p class="text-slate-400 text-sm">Configurez l'URL du bot ci-dessous puis cliquez Ping.</p>
+      </div>
+      <div class="card flex items-center gap-3">
+        <span class="text-sm font-medium text-slate-600">URL bot :</span>
+        <input id="botUrl" type="text" placeholder="https://radar-bc-bot.fly.dev" class="border border-slate-200 rounded px-3 py-1.5 text-sm flex-1">
+        <button onclick="loadBotStatus()" class="bg-slate-800 text-white px-4 py-1.5 rounded text-sm font-semibold hover:bg-slate-700">Ping /api/status</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+let SB_URL = localStorage.getItem("admin_sb_url") || "";
+let SB_KEY = localStorage.getItem("admin_sb_key") || "";
+document.getElementById("sbUrl").value = SB_URL;
+document.getElementById("sbKey").value = SB_KEY;
+document.getElementById("botUrl").value = localStorage.getItem("admin_bot_url") || "https://radar-bc-bot.fly.dev";
+
+if (SB_URL && SB_KEY) {
+  document.getElementById("cfgStatus").textContent = "✅ Config restaurée";
+  initAdmin();
+}
+
+function connect() {
+  SB_URL = document.getElementById("sbUrl").value.trim().replace(/\/$/, "");
+  SB_KEY = document.getElementById("sbKey").value.trim();
+  localStorage.setItem("admin_sb_url", SB_URL);
+  localStorage.setItem("admin_sb_key", SB_KEY);
+  document.getElementById("cfgStatus").textContent = "✅ Connecté";
+  initAdmin();
+}
+
+async function sbFetch(table, qs = "") {
+  const r = await fetch(SB_URL + "/rest/v1/" + table + (qs ? "?" + qs : ""), {
+    headers: { "apikey": SB_KEY, "Authorization": "Bearer " + SB_KEY, "Content-Type": "application/json" }
+  });
+  if (!r.ok) throw new Error("Supabase " + r.status + ": " + await r.text());
+  return r.json();
+}
+
+async function sbPatch(table, filter, body) {
+  const r = await fetch(SB_URL + "/rest/v1/" + table + "?" + filter, {
+    method: "PATCH",
+    headers: { "apikey": SB_KEY, "Authorization": "Bearer " + SB_KEY, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error("PATCH " + r.status + ": " + await r.text());
+}
+
+// ── Navigation ──
+let activeTab = "overview";
+function showTab(tab) {
+  document.querySelectorAll("[id^='tab-']").forEach(el => el.classList.add("hidden"));
+  document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
+  document.getElementById("tab-" + tab).classList.remove("hidden");
+  event.currentTarget.classList.add("active");
+  activeTab = tab;
+  if (tab === "clients")  loadClients();
+  if (tab === "scanlogs") loadLogs();
+  if (tab === "cache")    loadCache();
+  if (tab === "bot")      loadBotStatus();
+}
+
+// ── Init ──
+async function initAdmin() {
+  await loadOverview();
+}
+
+// ── Overview ──
+async function loadOverview() {
+  try {
+    const [stats, scanlogs] = await Promise.all([
+      sbFetch("v_clients_stats", "select=*"),
+      sbFetch("scan_logs", "select=*&order=created_at.desc&limit=5"),
+    ]);
+
+    const total    = stats.length;
+    const criteres = stats.reduce((s, c) => s + (c.nb_criteres || 0), 0);
+    const alertes  = stats.reduce((s, c) => s + (c.nb_alertes_total || 0), 0);
+    const alertes30= stats.reduce((s, c) => s + (c.alertes_30j || 0), 0);
+    document.getElementById("st-clients").textContent  = total;
+    document.getElementById("st-criteres").textContent = criteres;
+    document.getElementById("st-alertes").textContent  = alertes;
+    document.getElementById("st-alertes30").textContent = alertes30;
+
+    document.getElementById("pack-std").textContent = stats.filter(c => !c.pack || c.pack === "standard").length;
+    document.getElementById("pack-moy").textContent = stats.filter(c => c.pack === "moyen").length;
+    document.getElementById("pack-adv").textContent = stats.filter(c => c.pack === "avance").length;
+
+    const logsHtml = scanlogs.length === 0
+      ? '<p class="text-slate-400 text-sm">Aucun scan enregistré. Vérifiez que la table scan_logs existe (migration_v9.sql).</p>'
+      : scanlogs.map(l => `
+        <div class="flex items-center gap-3 py-2 border-b border-slate-50 last:border-0">
+          <span class="badge badge-${l.radar_type}">${l.radar_type.toUpperCase()}</span>
+          <span class="badge badge-${l.status === 'ok' ? 'ok' : 'err'}">${l.status}</span>
+          <span class="text-slate-600">${new Date(l.created_at).toLocaleString("fr-MA")}</span>
+          <span class="text-slate-400 text-xs">${l.duration_s ? l.duration_s + "s" : "—"} · ${l.items_new || 0} nouveaux · ${l.notifs_sent || 0} notifs</span>
+          ${l.error_msg ? `<span class="text-red-500 text-xs truncate max-w-xs" title="${l.error_msg}">⚠️ ${l.error_msg}</span>` : ""}
+        </div>
+      `).join("");
+    document.getElementById("lastScans").innerHTML = logsHtml;
+
+  } catch (e) {
+    document.getElementById("lastScans").innerHTML = `<div class="text-red-500 text-sm">❌ ${e.message}</div>`;
+  }
+}
+
+// ── Clients ──
+async function loadClients() {
+  const tbody = document.getElementById("clientsTable");
+  tbody.innerHTML = `<tr><td colspan="8" class="py-6 text-center text-slate-400 text-sm">Chargement...</td></tr>`;
+  try {
+    const stats = await sbFetch("v_clients_stats", "select=*&order=nom");
+    const packLabels = { standard: ["badge-std", "Standard"], moyen: ["badge-moy", "Moyen"], avance: ["badge-adv", "Avancé"] };
+    tbody.innerHTML = stats.map(c => {
+      const pack = c.pack || "standard";
+      const [bCls, bLbl] = packLabels[pack] || ["badge-std", pack];
+      const lastAlert = c.derniere_alerte ? new Date(c.derniere_alerte).toLocaleDateString("fr-MA") : "Jamais";
+      return `
+        <tr class="table-row border-b border-slate-50">
+          <td class="py-2.5 pr-4 font-medium text-slate-800">${c.nom}</td>
+          <td class="py-2.5 pr-4">
+            <select onchange="changePack('${c.id}', this.value)" class="border border-slate-200 rounded px-2 py-0.5 text-xs">
+              <option value="standard" ${pack==='standard'?'selected':''}>Standard</option>
+              <option value="moyen"    ${pack==='moyen'   ?'selected':''}>Moyen</option>
+              <option value="avance"   ${pack==='avance'  ?'selected':''}>Avancé</option>
+            </select>
+          </td>
+          <td class="py-2.5 pr-4 text-slate-600">${c.nb_criteres || 0}</td>
+          <td class="py-2.5 pr-4 text-slate-600">${c.nb_alertes_total || 0}</td>
+          <td class="py-2.5 pr-4 font-semibold ${(c.alertes_30j||0) > 0 ? 'text-green-600' : 'text-slate-400'}">${c.alertes_30j || 0}</td>
+          <td class="py-2.5 pr-4">${c.has_telegram ? '✅' : '❌'}</td>
+          <td class="py-2.5 pr-4 text-slate-500 text-xs">${lastAlert}</td>
+          <td class="py-2.5">
+            <button onclick="viewClient('${c.id}','${c.nom}')" class="text-xs text-blue-600 hover:underline">Détails</button>
+          </td>
+        </tr>`;
+    }).join("");
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" class="py-4 text-red-500 text-sm text-center">❌ ${e.message}</td></tr>`;
+  }
+}
+
+async function changePack(clientId, newPack) {
+  try {
+    await sbPatch("clients", "id=eq." + clientId, { pack: newPack });
+    showToast("Pack mis à jour : " + newPack);
+  } catch(e) { showToast("Erreur : " + e.message, true); }
+}
+
+async function viewClient(id, nom) {
+  try {
+    const [criteres, alertes] = await Promise.all([
+      sbFetch("criteres", "select=id,valeur,radar_type,ai_inclusions,ai_exclusions&client_id=eq." + id),
+      sbFetch("bcs_envoyes", "select=*&client_id=eq." + id + "&order=created_at.desc&limit=20"),
+    ]);
+    const html = `
+      <div style="font-family:system-ui;max-width:700px">
+        <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:12px">👤 ${nom}</h3>
+        <h4 style="font-weight:600;margin-bottom:6px">Critères (${criteres.length})</h4>
+        <div style="margin-bottom:16px">${criteres.map(c => `
+          <div style="background:#f8fafc;border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:13px">
+            <span style="background:${c.radar_type==='bc'?'#dbeafe':'#ede9fe'};color:${c.radar_type==='bc'?'#1d4ed8':'#7c3aed'};padding:1px 8px;border-radius:99px;font-size:11px;font-weight:700">${c.radar_type.toUpperCase()}</span>
+            <strong style="margin-left:8px">${c.valeur}</strong>
+            ${(c.ai_inclusions||[]).length > 0 ? `<span style="color:#64748b;font-size:11px;margin-left:8px">${(c.ai_inclusions||[]).length} inclusions IA</span>` : ''}
+          </div>`).join("")}
+        </div>
+        <h4 style="font-weight:600;margin-bottom:6px">Dernières alertes (${alertes.length})</h4>
+        ${alertes.length === 0 ? '<p style="color:#94a3b8;font-size:13px">Aucune alerte envoyée</p>' : alertes.map(a => `
+          <div style="background:#f8fafc;border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:13px">
+            <span style="color:#64748b;font-size:11px">${new Date(a.created_at).toLocaleString("fr-MA")}</span>
+            <span style="background:${a.radar_type==='bc'?'#dbeafe':'#ede9fe'};color:${a.radar_type==='bc'?'#1d4ed8':'#7c3aed'};padding:1px 8px;border-radius:99px;font-size:10px;font-weight:700;margin:0 6px">${(a.radar_type||'bc').toUpperCase()}</span>
+            ${a.item_titre ? `<strong>${a.item_titre}</strong>` : a.bc_id || "—"}
+          </div>`).join("")}
+      </div>`;
+    const w = window.open("", "_blank", "width=750,height=600,scrollbars=yes");
+    w.document.write("<html><body style='padding:24px;font-family:system-ui'>" + html + "</body></html>");
+    w.document.close();
+  } catch(e) { alert("Erreur: " + e.message); }
+}
+
+// ── Scan logs ──
+async function loadLogs() {
+  const tbody = document.getElementById("logsTable");
+  const empty = document.getElementById("logsEmpty");
+  tbody.innerHTML = "";
+  const filter = document.getElementById("logFilter").value;
+  let qs = "select=*&order=created_at.desc&limit=50";
+  if (filter) qs += "&radar_type=eq." + filter;
+  try {
+    const logs = await sbFetch("scan_logs", qs);
+    if (!logs.length) { empty.classList.remove("hidden"); return; }
+    empty.classList.add("hidden");
+    tbody.innerHTML = logs.map(l => `
+      <tr class="table-row border-b border-slate-50">
+        <td class="py-2 pr-4 text-slate-600 text-xs">${new Date(l.created_at).toLocaleString("fr-MA")}</td>
+        <td class="py-2 pr-4"><span class="badge badge-${l.radar_type}">${l.radar_type.toUpperCase()}</span></td>
+        <td class="py-2 pr-4"><span class="badge badge-${l.status === 'ok' ? 'ok' : 'err'}">${l.status}</span></td>
+        <td class="py-2 pr-4 text-slate-500 text-xs">${l.duration_s ? l.duration_s + "s" : "—"}</td>
+        <td class="py-2 pr-4 text-slate-600">${l.items_found ?? "—"}</td>
+        <td class="py-2 pr-4 text-slate-600">${l.items_new ?? "—"}</td>
+        <td class="py-2 text-green-600 font-semibold">${l.notifs_sent ?? "—"}</td>
+      </tr>
+      ${l.error_msg ? `<tr class="bg-red-50"><td colspan="7" class="py-1 px-3 text-red-600 text-xs">⚠️ ${l.error_msg}</td></tr>` : ""}
+    `).join("");
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-red-500 text-sm text-center">❌ ${e.message}</td></tr>`;
+  }
+}
+
+// ── Cache IA ──
+async function loadCache() {
+  document.getElementById("cacheList").innerHTML = '<p class="text-slate-400 text-sm">Chargement...</p>';
+  try {
+    const rows = await sbFetch("ai_cache", "select=*&order=updated_at.desc");
+    if (!rows.length) {
+      document.getElementById("cacheList").innerHTML = '<div class="card text-slate-400 text-sm text-center py-8">Cache vide. Les enrichissements seront stockés ici après le prochain scan.</div>';
+      return;
+    }
+    document.getElementById("cacheList").innerHTML = rows.map(r => `
+      <div class="card">
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-bold text-slate-800">"${r.valeur}"</span>
+          <span class="text-xs text-slate-400">${new Date(r.updated_at).toLocaleString("fr-MA")}</span>
+        </div>
+        <div class="flex gap-4">
+          <div class="flex-1">
+            <div class="text-xs font-semibold text-green-700 mb-1">✅ Inclusions (${(r.inclusions||[]).length})</div>
+            <div class="flex flex-wrap gap-1">${(r.inclusions||[]).map(t => `<span class="bg-green-50 border border-green-200 text-green-800 text-xs px-2 py-0.5 rounded-full">${t}</span>`).join("")}</div>
+          </div>
+          <div class="flex-1">
+            <div class="text-xs font-semibold text-red-700 mb-1">❌ Exclusions (${(r.exclusions||[]).length})</div>
+            <div class="flex flex-wrap gap-1">${(r.exclusions||[]).map(t => `<span class="bg-red-50 border border-red-200 text-red-800 text-xs px-2 py-0.5 rounded-full">${t}</span>`).join("")}</div>
+          </div>
+        </div>
+      </div>`).join("");
+  } catch(e) {
+    document.getElementById("cacheList").innerHTML = `<div class="card text-red-500 text-sm">❌ ${e.message} — Vérifiez que la table ai_cache existe (migration_v9.sql)</div>`;
+  }
+}
+
+// ── Bot status ──
+async function loadBotStatus() {
+  const url = document.getElementById("botUrl").value.trim();
+  localStorage.setItem("admin_bot_url", url);
+  const card = document.getElementById("botStatusCard");
+  card.innerHTML = '<p class="text-slate-400 text-sm">Ping en cours...</p>';
+  try {
+    const r = await fetch(url + "/api/status", { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    card.innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+        <div class="bg-green-50 rounded-lg p-3 text-center"><div class="text-xl font-bold text-green-600">✅ En ligne</div><div class="text-xs text-slate-500 mt-1">v${d.version || "?"}</div></div>
+        <div class="bg-blue-50 rounded-lg p-3 text-center"><div class="text-lg font-bold text-blue-600">${d.uptime || "—"}</div><div class="text-xs text-slate-500 mt-1">Uptime</div></div>
+        <div class="bg-purple-50 rounded-lg p-3 text-center"><div class="text-lg font-bold text-purple-600">${d.cacheEntries || 0}</div><div class="text-xs text-slate-500 mt-1">Entrées cache</div></div>
+      </div>
+      <div class="grid grid-cols-2 gap-4 text-sm">
+        <div><span class="text-slate-500">Dernier scan BC :</span> <span class="font-medium">${d.lastScanBC ? new Date(d.lastScanBC).toLocaleString("fr-MA") : "—"}</span></div>
+        <div><span class="text-slate-500">Dernier scan MP :</span> <span class="font-medium">${d.lastScanMP ? new Date(d.lastScanMP).toLocaleString("fr-MA") : "—"}</span></div>
+        <div><span class="text-slate-500">Scans BC :</span> <span class="font-medium">${d.scanCountBC || 0} (${d.errorCountBC || 0} erreurs)</span></div>
+        <div><span class="text-slate-500">Scans MP :</span> <span class="font-medium">${d.scanCountMP || 0} (${d.errorCountMP || 0} erreurs)</span></div>
+        ${d.lastErrorBC ? `<div class="col-span-2 text-red-500 text-xs">⚠️ Dernière erreur BC : ${d.lastErrorBC}</div>` : ""}
+        ${d.lastErrorMP ? `<div class="col-span-2 text-red-500 text-xs">⚠️ Dernière erreur MP : ${d.lastErrorMP}</div>` : ""}
+      </div>`;
+  } catch(e) {
+    card.innerHTML = `<div class="flex items-center gap-3"><span class="text-2xl">🔴</span><div><div class="font-bold text-red-600">Bot hors ligne ou inaccessible</div><div class="text-sm text-slate-500">${e.message}</div></div></div>`;
+  }
+}
+
+function showToast(msg, isError = false) {
+  const t = document.createElement("div");
+  t.className = `fixed bottom-6 right-6 z-50 px-4 py-2 rounded-lg text-sm font-semibold shadow-lg ${isError ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+</script>
+</body>
+</html>

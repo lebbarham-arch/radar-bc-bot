@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tarifs — Radar Marchés Maroc</title>
+  <meta name="description" content="Recevez les marchés publics et bons de commande qui correspondent à votre métier. À partir de 99 MAD/mois.">
+  <style>
+    :root {
+      --green:  #16a34a;
+      --green2: #15803d;
+      --blue:   #1d4ed8;
+      --gold:   #d97706;
+      --dark:   #0f172a;
+      --mid:    #334155;
+      --light:  #f8fafc;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--light);
+      color: var(--dark);
+      line-height: 1.6;
+    }
+
+    /* ── NAV ── */
+    nav {
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-brand {
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: var(--green);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .nav-brand span { color: var(--dark); }
+    .nav-cta {
+      background: var(--green);
+      color: #fff;
+      padding: 8px 20px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: background 0.2s;
+    }
+    .nav-cta:hover { background: var(--green2); }
+
+    /* ── HERO ── */
+    .hero {
+      text-align: center;
+      padding: 72px 24px 48px;
+      background: linear-gradient(135deg, #f0fdf4 0%, #dbeafe 100%);
+    }
+    .hero-badge {
+      display: inline-block;
+      background: #dcfce7;
+      color: var(--green2);
+      border: 1px solid #bbf7d0;
+      border-radius: 999px;
+      padding: 4px 16px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .hero h1 {
+      font-size: clamp(1.8rem, 5vw, 3rem);
+      font-weight: 900;
+      line-height: 1.15;
+      color: var(--dark);
+      margin-bottom: 16px;
+    }
+    .hero h1 em { color: var(--green); font-style: normal; }
+    .hero p {
+      font-size: 1.1rem;
+      color: var(--mid);
+      max-width: 560px;
+      margin: 0 auto 32px;
+    }
+
+    /* ── TOGGLE BILLING ── */
+    .billing-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 48px;
+    }
+    .billing-toggle label {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--mid);
+      cursor: pointer;
+    }
+    .billing-toggle label.active { color: var(--dark); }
+    .toggle-switch {
+      position: relative;
+      width: 52px;
+      height: 28px;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: var(--green);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+    .slider::before {
+      content: "";
+      position: absolute;
+      width: 20px; height: 20px;
+      left: 4px; top: 4px;
+      background: #fff;
+      border-radius: 50%;
+      transition: 0.3s;
+    }
+    .toggle-switch input:checked + .slider::before { transform: translateX(24px); }
+    .save-badge {
+      background: var(--gold);
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      margin-left: 4px;
+    }
+
+    /* ── PLANS GRID ── */
+    .plans {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+    .plan {
+      background: #fff;
+      border: 2px solid var(--border);
+      border-radius: 16px;
+      padding: 36px 28px;
+      position: relative;
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .plan:hover {
+      box-shadow: 0 12px 40px rgba(0,0,0,0.10);
+      transform: translateY(-3px);
+    }
+    .plan.popular {
+      border-color: var(--green);
+      box-shadow: 0 8px 32px rgba(22,163,74,0.18);
+    }
+    .popular-label {
+      position: absolute;
+      top: -14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--green);
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 800;
+      padding: 4px 18px;
+      border-radius: 999px;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+    .plan-name {
+      font-size: 1rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--mid);
+      margin-bottom: 8px;
+    }
+    .plan.popular .plan-name { color: var(--green2); }
+    .plan-price {
+      font-size: 2.8rem;
+      font-weight: 900;
+      color: var(--dark);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .plan-price sup { font-size: 1.2rem; vertical-align: top; margin-top: 8px; }
+    .plan-price sub { font-size: 0.9rem; font-weight: 500; color: var(--mid); }
+    .plan-price-annual { display: none; }
+    .annual-active .plan-price-monthly { display: none; }
+    .annual-active .plan-price-annual { display: block; }
+    .plan-billing { font-size: 0.8rem; color: var(--mid); margin-bottom: 6px; }
+    .plan-saving {
+      display: inline-block;
+      background: #fef9c3;
+      color: #854d0e;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 999px;
+      margin-bottom: 16px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .annual-active .plan-saving { opacity: 1; }
+    .plan-desc {
+      font-size: 0.88rem;
+      color: var(--mid);
+      margin-bottom: 24px;
+      min-height: 42px;
+    }
+    .plan-cta {
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 13px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+      margin-bottom: 28px;
+    }
+    .plan:not(.popular) .plan-cta {
+      background: var(--light);
+      color: var(--dark);
+      border: 2px solid var(--border);
+    }
+    .plan:not(.popular) .plan-cta:hover { background: #f1f5f9; border-color: #cbd5e1; }
+    .plan.popular .plan-cta {
+      background: var(--green);
+      color: #fff;
+    }
+    .plan.popular .plan-cta:hover { background: var(--green2); }
+
+    /* ── FEATURES LIST ── */
+    .features { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+    .features li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 0.88rem;
+    }
+    .features li .icon {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .icon-yes { background: #dcfce7; color: var(--green2); }
+    .icon-no  { background: #f1f5f9; color: #94a3b8; }
+    .feat-label { color: var(--dark); }
+    .feat-detail { color: var(--mid); font-size: 0.8rem; }
+    hr.feat-sep { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+
+    /* ── COMPARISON TABLE ── */
+    .comparison {
+      max-width: 900px;
+      margin: 0 auto 80px;
+      padding: 0 24px;
+    }
+    .comparison h2 {
+      text-align: center;
+      font-size: 1.6rem;
+      font-weight: 800;
+      margin-bottom: 32px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.07);
+    }
+    th, td {
+      padding: 14px 18px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.88rem;
+    }
+    th:first-child, td:first-child { text-align: left; }
+    thead th {
+      background: var(--dark);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.85rem;
+      letter-spacing: 0.04em;
+    }
+    thead th.col-popular { background: var(--green); }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #f8fafc; }
+    .check { color: var(--green2); font-size: 1.1rem; }
+    .cross { color: #94a3b8; }
+
+    /* ── FAQ ── */
+    .faq {
+      max-width: 720px;
+      margin: 0 auto 80px;
+      padding: 0 24px;
+    }
+    .faq h2 {
+      text-align: center;
+      font-size: 1.6rem;
+      font-weight: 800;
+      margin-bottom: 32px;
+    }
+    details {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 12px;
+      background: #fff;
+      overflow: hidden;
+    }
+    summary {
+      padding: 16px 20px;
+      font-weight: 600;
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.95rem;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "+"; font-size: 1.2rem; color: var(--mid); transition: transform 0.2s; }
+    details[open] summary::after { transform: rotate(45deg); }
+    .faq-body { padding: 0 20px 16px; color: var(--mid); font-size: 0.9rem; line-height: 1.7; }
+
+    /* ── SOCIAL PROOF ── */
+    .proof {
+      background: var(--dark);
+      color: #fff;
+      padding: 60px 24px;
+      text-align: center;
+      margin-bottom: 80px;
+    }
+    .proof h2 { font-size: 1.5rem; font-weight: 800; margin-bottom: 40px; }
+    .proof-stats {
+      display: flex;
+      justify-content: center;
+      gap: 48px;
+      flex-wrap: wrap;
+    }
+    .stat-val {
+      font-size: 2.4rem;
+      font-weight: 900;
+      color: #4ade80;
+    }
+    .stat-label { font-size: 0.85rem; color: #94a3b8; margin-top: 4px; }
+
+    /* ── FINAL CTA ── */
+    .final-cta {
+      text-align: center;
+      padding: 0 24px 100px;
+    }
+    .final-cta h2 { font-size: 2rem; font-weight: 900; margin-bottom: 12px; }
+    .final-cta p { color: var(--mid); margin-bottom: 28px; font-size: 1rem; }
+    .cta-big {
+      display: inline-block;
+      background: var(--green);
+      color: #fff;
+      padding: 16px 40px;
+      border-radius: 12px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.2s;
+    }
+    .cta-big:hover { background: var(--green2); transform: scale(1.03); }
+    .cta-sub { margin-top: 12px; font-size: 0.8rem; color: #94a3b8; }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      text-align: center;
+      padding: 24px;
+      font-size: 0.8rem;
+      color: var(--mid);
+    }
+
+    @media (max-width: 600px) {
+      .plans { grid-template-columns: 1fr; }
+      .proof-stats { gap: 28px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-brand" href="#">📡 <span>Radar Marchés</span> Maroc</a>
+  <a class="nav-cta" href="mailto:contact@radarmarchesmaroc.ma">Démarrer →</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">🇲🇦 Conçu pour le marché marocain</div>
+  <h1>Ne ratez plus aucun<br><em>marché public</em></h1>
+  <p>Recevez instantanément les bons de commande et appels d'offres qui correspondent à votre activité — par Telegram, WhatsApp ou email.</p>
+</section>
+
+<!-- BILLING TOGGLE -->
+<div class="billing-toggle">
+  <label id="lbl-monthly" class="active">Mensuel</label>
+  <label class="toggle-switch">
+    <input type="checkbox" id="billing-toggle">
+    <span class="slider"></span>
+  </label>
+  <label id="lbl-annual">Annuel <span class="save-badge">−25%</span></label>
+</div>
+
+<!-- PLANS -->
+<div class="plans" id="plans-grid">
+
+  <!-- STARTER -->
+  <div class="plan">
+    <div class="plan-name">Starter</div>
+    <div class="plan-price plan-price-monthly"><sup>MAD</sup> 99 <sub>/mois</sub></div>
+    <div class="plan-price plan-price-annual"><sup>MAD</sup> 75 <sub>/mois</sub></div>
+    <div class="plan-billing plan-price-monthly">Facturé mensuellement</div>
+    <div class="plan-billing plan-price-annual">Facturé annuellement (900 MAD/an)</div>
+    <div class="plan-saving">Économie : 288 MAD/an</div>
+    <p class="plan-desc">Idéal pour démarrer et tester la plateforme.</p>
+    <a class="plan-cta" href="mailto:contact@radarmarchesmaroc.ma?subject=Starter">Commencer →</a>
+    <ul class="features">
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">5 mots-clés de veille</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Radar Bons de Commande</span><br><span class="feat-detail">marchespublics.gov.ma</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Alertes Telegram</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Alertes Email</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Enrichissement IA des mots-clés</span><br><span class="feat-detail">Synonymes et variantes auto-générés</span></span></li>
+      <hr class="feat-sep">
+      <li><span class="icon icon-no">–</span><span><span class="feat-label" style="color:#94a3b8">Radar Marchés Publics (AO)</span></span></li>
+      <li><span class="icon icon-no">–</span><span><span class="feat-label" style="color:#94a3b8">Alertes WhatsApp</span></span></li>
+      <li><span class="icon icon-no">–</span><span><span class="feat-label" style="color:#94a3b8">Analyse DAO (CPS/BDP)</span></span></li>
+    </ul>
+  </div>
+
+  <!-- PRO -->
+  <div class="plan popular">
+    <div class="popular-label">⭐ LE PLUS POPULAIRE</div>
+    <div class="plan-name">Pro</div>
+    <div class="plan-price plan-price-monthly"><sup>MAD</sup> 249 <sub>/mois</sub></div>
+    <div class="plan-price plan-price-annual"><sup>MAD</sup> 190 <sub>/mois</sub></div>
+    <div class="plan-billing plan-price-monthly">Facturé mensuellement</div>
+    <div class="plan-billing plan-price-annual">Facturé annuellement (2 280 MAD/an)</div>
+    <div class="plan-saving">Économie : 708 MAD/an</div>
+    <p class="plan-desc">Pour les entreprises actives sur les marchés publics.</p>
+    <a class="plan-cta" href="mailto:contact@radarmarchesmaroc.ma?subject=Pro">Démarrer Pro →</a>
+    <ul class="features">
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">15 mots-clés de veille</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Radar Bons de Commande</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Radar Marchés Publics (AO)</span><br><span class="feat-detail">Listing complet + fiche détaillée</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Alertes Telegram + Email</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Alertes WhatsApp</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Enrichissement IA des mots-clés</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Validation IA des résultats</span><br><span class="feat-detail">Filtre les faux positifs avant envoi</span></span></li>
+      <hr class="feat-sep">
+      <li><span class="icon icon-no">–</span><span><span class="feat-label" style="color:#94a3b8">Analyse DAO (CPS/BDP)</span></span></li>
+    </ul>
+  </div>
+
+  <!-- BUSINESS -->
+  <div class="plan">
+    <div class="plan-name">Business</div>
+    <div class="plan-price plan-price-monthly"><sup>MAD</sup> 599 <sub>/mois</sub></div>
+    <div class="plan-price plan-price-annual"><sup>MAD</sup> 449 <sub>/mois</sub></div>
+    <div class="plan-billing plan-price-monthly">Facturé mensuellement</div>
+    <div class="plan-billing plan-price-annual">Facturé annuellement (5 388 MAD/an)</div>
+    <div class="plan-saving">Économie : 1 800 MAD/an</div>
+    <p class="plan-desc">Pour les cabinets et entreprises multi-secteurs.</p>
+    <a class="plan-cta" href="mailto:contact@radarmarchesmaroc.ma?subject=Business">Démarrer Business →</a>
+    <ul class="features">
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">40 mots-clés de veille</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Radar Bons de Commande</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Radar Marchés Publics (AO)</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Alertes Telegram + Email + WhatsApp</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Enrichissement IA des mots-clés</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Validation IA des résultats</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Analyse DAO complète</span><br><span class="feat-detail">Extraction CPS, BDP, plans ZIP/PDF</span></span></li>
+      <li><span class="icon icon-yes">✓</span><span><span class="feat-label">Support prioritaire</span></span></li>
+    </ul>
+  </div>
+
+</div>
+
+<!-- SOCIAL PROOF -->
+<section class="proof">
+  <h2>Résultats concrets pour nos clients</h2>
+  <div class="proof-stats">
+    <div>
+      <div class="stat-val">< 2 min</div>
+      <div class="stat-label">Délai d'alerte après publication</div>
+    </div>
+    <div>
+      <div class="stat-val">24/7</div>
+      <div class="stat-label">Veille automatique continue</div>
+    </div>
+    <div>
+      <div class="stat-val">3 canaux</div>
+      <div class="stat-label">Telegram · WhatsApp · Email</div>
+    </div>
+    <div>
+      <div class="stat-val">IA</div>
+      <div class="stat-label">Zéro faux positif grâce au filtrage IA</div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPARISON TABLE -->
+<section class="comparison">
+  <h2>Comparatif détaillé</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Fonctionnalité</th>
+        <th>Starter</th>
+        <th class="col-popular">Pro</th>
+        <th>Business</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Mots-clés de veille</td>
+        <td>5</td>
+        <td>15</td>
+        <td>40</td>
+      </tr>
+      <tr>
+        <td>Radar Bons de Commande</td>
+        <td class="check">✓</td>
+        <td class="check">✓</td>
+        <td class="check">✓</td>
+      </tr>
+      <tr>
+        <td>Radar Marchés Publics (AO)</td>
+        <td class="cross">—</td>
+        <td class="check">✓</td>
+        <td class="check">✓</td>
+      </tr>
+      <tr>
+        <td>Alertes Telegram</td>
+        <td class="check">✓</td>
+        <td class="check">✓</td>
+        <td class="check">✓</td>
+      </tr>
+      <tr>
+        <td>Alertes Email</td>
+        <td class="check">✓</td>
+        <td class="check">✓</td>
+        <td class="check">✓</td>
+      </tr>
+      <tr>
+        <td>Alertes WhatsApp</td>
+        <td class="cross">—</td>
+        <td class="check">✓</td>
+        <td class="check">✓</td>
+      </tr>
+      <tr>
+        <td>Enrichissement IA mots-clés</td>
+        <td class="check">✓</td>
+        <td class="check">✓</td>
+        <td class="check">✓</td>
+      </tr>
+      <tr>
+        <td>Validation IA (filtre faux positifs)</td>
+        <td class="cross">—</td>
+        <td class="check">✓</td>
+        <td class="check">✓</td>
+      </tr>
+      <tr>
+        <td>Analyse DAO (CPS / BDP / ZIP)</td>
+        <td class="cross">—</td>
+        <td class="cross">—</td>
+        <td class="check">✓</td>
+      </tr>
+      <tr>
+        <td>Support prioritaire</td>
+        <td class="cross">—</td>
+        <td class="cross">—</td>
+        <td class="check">✓</td>
+      </tr>
+      <tr>
+        <td><strong>Prix mensuel</strong></td>
+        <td><strong>99 MAD</strong></td>
+        <td><strong>249 MAD</strong></td>
+        <td><strong>599 MAD</strong></td>
+      </tr>
+      <tr>
+        <td><strong>Prix annuel (par mois)</strong></td>
+        <td><strong>75 MAD</strong></td>
+        <td><strong>190 MAD</strong></td>
+        <td><strong>449 MAD</strong></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- FAQ -->
+<section class="faq">
+  <h2>Questions fréquentes</h2>
+
+  <details>
+    <summary>Comment fonctionne le radar ?</summary>
+    <div class="faq-body">
+      Notre bot scrute automatiquement le portail marchespublics.gov.ma toutes les 2 heures pour les bons de commande, et toutes les 2 heures pour les marchés publics. Dès qu'un résultat correspond à vos mots-clés, vous êtes notifié instantanément.
+    </div>
+  </details>
+
+  <details>
+    <summary>Puis-je changer de pack en cours de route ?</summary>
+    <div class="faq-body">
+      Oui. Vous pouvez upgrader à tout moment. La différence de prix est calculée au prorata du mois en cours.
+    </div>
+  </details>
+
+  <details>
+    <summary>C'est quoi l'analyse DAO (Business) ?</summary>
+    <div class="faq-body">
+      Pour les marchés publics, le portail propose des Dossiers d'Appel d'Offres (DAO) contenant le CPS (Cahier des Prescriptions Spéciales) et le BDP (Bordereau Des Prix). En pack Business, le bot télécharge et analyse automatiquement ces documents pour vous fournir un résumé : budget, conditions, critères d'éligibilité.
+    </div>
+  </details>
+
+  <details>
+    <summary>Quels canaux de notification sont disponibles ?</summary>
+    <div class="faq-body">
+      Telegram (tous les packs), Email (tous les packs), WhatsApp (Pro et Business). Vous pouvez activer ou désactiver chaque canal depuis votre espace client.
+    </div>
+  </details>
+
+  <details>
+    <summary>Comment l'IA enrichit-elle mes mots-clés ?</summary>
+    <div class="faq-body">
+      L'IA génère automatiquement des synonymes, variantes et termes associés à chaque mot-clé. Par exemple, "nettoyage" générera aussi "entretien", "propreté", "ménage", etc. Cela maximise la couverture sans multiplier les faux positifs.
+    </div>
+  </details>
+
+  <details>
+    <summary>Y a-t-il un engagement minimum ?</summary>
+    <div class="faq-body">
+      Non. Le plan mensuel est sans engagement. Le plan annuel est facturé en une fois avec une réduction de 25%.
+    </div>
+  </details>
+
+  <details>
+    <summary>Comment démarrer ?</summary>
+    <div class="faq-body">
+      Contactez-nous par email à <a href="mailto:contact@radarmarchesmaroc.ma" style="color:var(--green)">contact@radarmarchesmaroc.ma</a>. Nous configurons votre compte dans les 24h avec vos premiers mots-clés.
+    </div>
+  </details>
+</section>
+
+<!-- FINAL CTA -->
+<section class="final-cta">
+  <h2>Prêt à ne plus rater un marché ?</h2>
+  <p>Première configuration incluse. Réponse en moins de 24h.</p>
+  <a class="cta-big" href="mailto:contact@radarmarchesmaroc.ma?subject=Démarrer Radar Marchés Maroc">Démarrer maintenant →</a>
+  <p class="cta-sub">Ou appelez-nous directement — nous configurons votre radar ensemble.</p>
+</section>
+
+<footer>
+  © 2025 Radar Marchés Maroc · <a href="mailto:contact@radarmarchesmaroc.ma" style="color:var(--mid)">contact@radarmarchesmaroc.ma</a>
+</footer>
+
+<script>
+  const toggle = document.getElementById("billing-toggle");
+  const grid   = document.getElementById("plans-grid");
+  const lblM   = document.getElementById("lbl-monthly");
+  const lblA   = document.getElementById("lbl-annual");
+
+  toggle.addEventListener("change", () => {
+    const annual = toggle.checked;
+    grid.classList.toggle("annual-active", annual);
+    lblM.classList.toggle("active", !annual);
+    lblA.classList.toggle("active",  annual);
+  });
+</script>
+</body>
+</html>

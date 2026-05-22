@@ -23,46 +23,108 @@ const CFG = {
   anthropicKey: process.env.ANTHROPIC_API_KEY     || "",
   ollamaUrl:    process.env.OLLAMA_URL            || "",
   ollamaModel:  process.env.OLLAMA_MODEL          || "qwen2.5:32b",
+  resendKey:    process.env.RESEND_API_KEY        || "",
+  fromEmail:    process.env.FROM_EMAIL            || "radar@radarmarchesmaroc.ma",
   // BC - Bons de Commande
   bcListUrl:  "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
   bcLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
-  // MP - Marchés Publics (Appels d'Offres)
+  // MP - Marches Publics (Appels d'Offres)
   mpListUrl:  "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseAdvancedSearch&AllCons&EnCours&searchAnnCons",
   mpLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
 };
+
+// ============================================================
+// LIMITES PAR PACK
+// ============================================================
+const PACK_LIMITS = {
+  starter:  { maxCriteres: 5,  hasMP: false, hasWhatsApp: false, hasDAO: false },
+  pro:      { maxCriteres: 15, hasMP: true,  hasWhatsApp: true,  hasDAO: false },
+  business: { maxCriteres: 40, hasMP: true,  hasWhatsApp: true,  hasDAO: true  },
+};
+
+function getPackLimits(client) {
+  const pack = client.pack || "starter";
+  return PACK_LIMITS[pack] || PACK_LIMITS.starter;
+}
+
+function getCriteresCapped(client, radarType) {
+  const limits = getPackLimits(client);
+  // Starter ne peut pas acceder au radar MP
+  if (radarType === "mp" && !limits.hasMP) return [];
+  const all = (client.criteres || []).filter(c => (c.radar_type || "bc") === radarType);
+  return all.slice(0, limits.maxCriteres);
+}
 
 const delay     = ms     => new Promise(r => setTimeout(r, ms));
 const randDelay = (a, b) => delay(Math.floor(Math.random() * (b - a)) + a);
 const log       = msg    => console.log("[" + new Date().toLocaleTimeString("fr-MA") + "] " + msg);
 
 // ============================================================
-// CACHE LLM LOCAL (ai_cache.json)
-// Evite les appels réseau au redémarrage ou si Supabase KO
+// CACHE LLM — Supabase (persistant) + JSON local (fallback)
+// La table ai_cache persiste entre les redémarrages Fly.io.
+// Le fichier JSON sert de fallback si Supabase est KO.
 // ============================================================
 const AI_CACHE_FILE = path.join(__dirname, "ai_cache.json");
+const AI_CACHE = {};   // cache mémoire (clé=norm(valeur))
 
-function loadAICache() {
+function _loadCacheFromFile() {
   try {
     if (fs.existsSync(AI_CACHE_FILE)) {
       const data = JSON.parse(fs.readFileSync(AI_CACHE_FILE, "utf8"));
-      log("[Cache] " + Object.keys(data).length + " entrées chargées depuis ai_cache.json");
-      return data;
+      Object.assign(AI_CACHE, data);
+      log("[Cache] " + Object.keys(data).length + " entrées chargées depuis ai_cache.json (fallback)");
     }
-  } catch (e) {
-    log("[Cache] Erreur lecture ai_cache.json: " + e.message);
-  }
-  return {};
+  } catch (e) { log("[Cache] Erreur lecture JSON: " + e.message); }
 }
 
-function saveAICache(cache) {
+function _saveCacheToFile() {
+  try { fs.writeFileSync(AI_CACHE_FILE, JSON.stringify(AI_CACHE, null, 2), "utf8"); }
+  catch (e) { log("[Cache] Erreur écriture JSON: " + e.message); }
+}
+
+async function loadCacheFromSupabase() {
   try {
-    fs.writeFileSync(AI_CACHE_FILE, JSON.stringify(cache, null, 2), "utf8");
+    const r = await fetch(CFG.sbUrl + "/rest/v1/ai_cache?select=cache_key,valeur,inclusions,exclusions", {
+      headers: { "apikey": CFG.sbKey, "Authorization": "Bearer " + CFG.sbKey },
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const rows = await r.json();
+    for (const row of rows) {
+      AI_CACHE[row.cache_key] = { valeur: row.valeur, inclusions: row.inclusions, exclusions: row.exclusions };
+    }
+    log("[Cache] " + rows.length + " entrées chargées depuis Supabase ai_cache");
+    _saveCacheToFile(); // sync fichier local
   } catch (e) {
-    log("[Cache] Erreur écriture ai_cache.json: " + e.message);
+    log("[Cache] Supabase KO (" + e.message + "), utilisation fallback JSON");
+    _loadCacheFromFile();
   }
 }
 
-const AI_CACHE = loadAICache();
+async function saveCacheEntry(key, entry) {
+  // 1. Toujours sauvegarder en mémoire + fichier
+  AI_CACHE[key] = entry;
+  _saveCacheToFile();
+  // 2. Upsert dans Supabase
+  try {
+    await fetch(CFG.sbUrl + "/rest/v1/ai_cache", {
+      method: "POST",
+      headers: {
+        "apikey": CFG.sbKey, "Authorization": "Bearer " + CFG.sbKey,
+        "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates",
+      },
+      body: JSON.stringify({
+        cache_key:  key,
+        valeur:     entry.valeur,
+        inclusions: entry.inclusions,
+        exclusions: entry.exclusions || [],
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  } catch (e) { log("[Cache] Erreur upsert Supabase: " + e.message); }
+}
+
+// Chargement initial (appelé au démarrage après init CFG)
+_loadCacheFromFile(); // synchrone, immédiat
 
 // ============================================================
 // NORMALISATION & MATCHING
@@ -261,9 +323,8 @@ const db = {
     sbReq("criteres?id=eq." + critereId, {
       method: "PATCH", prefer: "return=minimal",
       body: JSON.stringify({
-        ai_inclusions:  inclusions  || [],
-        ai_exclusions:  exclusions  || [],
-        ai_enriched_at: new Date().toISOString(),
+        ai_inclusions: inclusions || [],
+        ai_exclusions: exclusions || [],
       }),
     }).catch(e => log("  saveCritereAI: " + e.message)),
 };
@@ -377,37 +438,57 @@ async function enrichCritereWithAI(critere) {
   log('  [IA] "' + critere.valeur + '" -> ' +
     result.inclusions.length + " inclusions, " + (result.exclusions || []).length + " exclusions");
 
-  // 2. Sauvegarder dans le cache local
-  AI_CACHE[cacheKey] = {
+  // 2. Sauvegarder en cache mémoire + Supabase
+  const entry = {
     valeur:     critere.valeur,
     inclusions: result.inclusions,
     exclusions: result.exclusions || [],
-    cached_at:  new Date().toISOString(),
   };
-  saveAICache(AI_CACHE);
+  await saveCacheEntry(cacheKey, entry);
 
   return { inclusions: result.inclusions, exclusions: result.exclusions || [] };
 }
 
-// Prompt 2 : Validation avant envoi notification
+// Cache validation par item (clé = item.id + "|" + critere normalisé)
+// Evite N appels LLM si le même item matche N clients
+const VALIDATION_CACHE = new Map();
+
+// Prompt 2 : Validation + résumé avant envoi notification
+// IMPORTANT : on n'annule JAMAIS une notif sur refus IA seul (trop risqué de rater un vrai marché)
+// Le résultat IA sert à :
+//   - enrichir le message avec un résumé clair
+//   - signaler les matches douteux avec ⚠️ (mais on envoie quand même)
 async function validateMatchWithAI(item, critere, radarType) {
   if (!CFG.ollamaUrl && !CFG.anthropicKey) return null;
+
+  // Cache : même item + même critère → réutiliser
+  const cacheKey = (item.id || "") + "|" + norm(critere.valeur);
+  if (VALIDATION_CACHE.has(cacheKey)) {
+    log("  [IA] Cache hit validation: " + item.id);
+    return VALIDATION_CACHE.get(cacheKey);
+  }
+
+  // Extrait court : objet + désignations articles (max 500 chars)
   const extrait = [
     item.objet || "",
-    (item.articles || []).slice(0, 6)
-      .map(a => (a.designation || "") + (a.specifications ? " - " + a.specifications : "")).join(". "),
-    (item.bodyText || "").slice(0, 600),
-  ].filter(Boolean).join(" | ").slice(0, 1000);
-  const label = radarType === "mp" ? "Marche Public (AO)" : "Bon de Commande";
-  const sys =
-    "Tu analyses des " + label + "s marocains pour verifier leur pertinence. " +
-    "Ignore les erreurs d'OCR. Reponds en JSON strict sans markdown.";
+    (item.articles || []).slice(0, 4)
+      .map(a => a.designation || "").filter(Boolean).join(", "),
+    (item.bodyText || "").slice(0, 200),
+  ].filter(Boolean).join(" | ").slice(0, 500);
+
+  const label = radarType === "mp" ? "AO" : "BC";
+  const sys = "Expert marchés publics Maroc. Analyse pertinence. JSON strict uniquement.";
   const usr =
-    'Besoin client : "' + critere.valeur + '"\n' +
-    'Texte du ' + label + ' : "' + extrait + '"\n\n' +
-    'Format : {"pertinent":true,"raison":"courte phrase","resume":"2 phrases max pour notification"}';
-  const r = await callLLM(sys, usr, 250);
-  if (!r || typeof r.pertinent !== "boolean") return null;
+    'Critere: "' + critere.valeur + '" | ' + label + ': "' + extrait + '"\n' +
+    'JSON: {"pertinent":true/false,"confiance":"haute/moyenne/faible","resume":"1 phrase"}';
+
+  const r = await callLLM(sys, usr, 120);
+  if (!r || typeof r.pertinent !== "boolean") {
+    VALIDATION_CACHE.set(cacheKey, null);
+    return null;
+  }
+
+  VALIDATION_CACHE.set(cacheKey, r);
   return r;
 }
 
@@ -448,6 +529,8 @@ async function sendTelegram(client, msg) {
 }
 
 async function sendWhatsApp(client, msg) {
+  const limits = getPackLimits(client);
+  if (!limits.hasWhatsApp) return; // starter ne peut pas WhatsApp
   const num = (client.phone || "").replace(/\D/g, "");
   if (!num) return;
   try {
@@ -458,6 +541,72 @@ async function sendWhatsApp(client, msg) {
       else log("  WhatsApp -> +" + num);
     }
   } catch (e) { log("  WhatsApp erreur: " + e.message); }
+}
+
+async function sendEmail(client, item, matchedCriteres, radarType, aiResume) {
+  if (!CFG.resendKey) return;
+  const emailTo = client.email_notif || client.email;
+  if (!emailTo) return;
+
+  const label  = radarType === "mp" ? "Marche Public" : "Bon de Commande";
+  const emoji  = radarType === "mp" ? "🏛️" : "📦";
+  const critStr = matchedCriteres.map(c => c.valeur).join(", ");
+  const titre  = item.objet || item.reference || "Nouveau " + label;
+  const budget = item.estimation_totale ? item.estimation_totale + " DH TTC" : null;
+  const url    = item.url || null;
+
+  const htmlBody = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="font-family:system-ui,sans-serif;background:#f0f4f8;margin:0;padding:0">
+<div style="max-width:600px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1)">
+  <div style="background:linear-gradient(135deg,#1a365d,#2b6cb0);padding:24px 28px;color:#fff">
+    <div style="font-size:13px;opacity:.8;margin-bottom:4px">Radar Marchés Maroc ${emoji}</div>
+    <div style="font-size:20px;font-weight:700">${titre}</div>
+  </div>
+  <div style="padding:24px 28px">
+    ${aiResume ? `<div style="background:${aiResume.startsWith('⚠️') ? '#fff3cd' : '#d1fae5'};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px;color:#1a202c">
+      <strong>Analyse IA :</strong> ${aiResume}</div>` : ""}
+    <table style="width:100%;font-size:14px;border-collapse:collapse">
+      <tr><td style="padding:8px 0;color:#718096;width:140px">Type</td><td style="font-weight:600">${label}</td></tr>
+      <tr><td style="padding:8px 0;color:#718096">Critère(s)</td><td style="font-weight:600;color:#2563eb">${critStr}</td></tr>
+      ${item.organisme ? `<tr><td style="padding:8px 0;color:#718096">Organisme</td><td>${item.organisme}</td></tr>` : ""}
+      ${item.wilaya ? `<tr><td style="padding:8px 0;color:#718096">Wilaya</td><td>${item.wilaya}</td></tr>` : ""}
+      ${budget ? `<tr><td style="padding:8px 0;color:#718096">Budget</td><td style="font-weight:600;color:#059669">${budget}</td></tr>` : ""}
+      ${item.date_limite ? `<tr><td style="padding:8px 0;color:#718096">Date limite</td><td style="color:#dc2626;font-weight:600">${item.date_limite}</td></tr>` : ""}
+      ${item.reference ? `<tr><td style="padding:8px 0;color:#718096">Référence</td><td>${item.reference}</td></tr>` : ""}
+    </table>
+    ${(item.articles || []).length > 0 ? `
+    <div style="margin-top:16px">
+      <div style="font-weight:600;margin-bottom:8px;font-size:14px">Articles :</div>
+      <ul style="margin:0;padding-left:20px;font-size:13px;color:#374151">
+        ${(item.articles || []).slice(0, 8).map(a => `<li style="margin-bottom:4px">${a.designation || ""}${a.estimation ? " — " + a.estimation : ""}</li>`).join("")}
+      </ul>
+    </div>` : ""}
+    ${url ? `<div style="margin-top:20px"><a href="${url}" style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">Voir le ${label} →</a></div>` : ""}
+  </div>
+  <div style="background:#f8fafc;padding:16px 28px;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0">
+    Radar Marchés Maroc · Scan automatique toutes les 2h · <a href="#" style="color:#94a3b8">Se désabonner</a>
+  </div>
+</div>
+</body></html>`;
+
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + CFG.resendKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from:    "Radar Marchés Maroc <" + CFG.fromEmail + ">",
+        to:      [emailTo],
+        subject: emoji + " " + label + " : " + titre.slice(0, 80),
+        html:    htmlBody,
+      }),
+    });
+    if (!r.ok) log("  Email erreur " + r.status + ": " + await r.text());
+    else log("  Email -> " + emailTo);
+  } catch (e) { log("  Email erreur: " + e.message); }
 }
 
 function buildMessage(item, matchedCriteres, radarType, aiResume) {
@@ -1554,15 +1703,14 @@ async function loadDetails(browser, items, label, isMP, opts) {
 // radarType: 'bc' ou 'mp'
 // ============================================================
 async function matchClient(client, itemsToCheck, label, radarType) {
-  const criteres = (client.criteres || [])
-    .filter(c => (c.radar_type || "bc") === radarType)
-    .map(c => ({
-      id:            c.id,
-      type:          c.type,
-      valeur:        c.valeur,
-      ai_inclusions: c.ai_inclusions || [],
-      ai_exclusions: c.ai_exclusions || [],
-    }));
+  const rawCriteres = getCriteresCapped(client, radarType);
+  const criteres = rawCriteres.map(c => ({
+    id:            c.id,
+    type:          c.type,
+    valeur:        c.valeur,
+    ai_inclusions: c.ai_inclusions || [],
+    ai_exclusions: c.ai_exclusions || [],
+  }));
   if (!criteres.length) return;
 
   const getSentIds = radarType === "bc" ? db.getBCSentIds : db.getMPSentIds;
@@ -1581,17 +1729,24 @@ async function matchClient(client, itemsToCheck, label, radarType) {
     if (sentIds.has(item.id)) continue;
     const matched = getMatchedCriteres(item, criteres);
 
-    // Validation IA avant envoi
+    // Validation IA — enrichit le message, ne bloque jamais l'envoi
     let aiResume = null;
     if ((CFG.ollamaUrl || CFG.anthropicKey) && matched.length > 0) {
       const v = await validateMatchWithAI(item, matched[0], radarType);
       if (v) {
-        if (!v.pertinent) {
-          log("  [IA] REJETE " + item.id + " - " + (v.raison || ""));
+        if (!v.pertinent && v.confiance === "haute") {
+          // Seul cas de rejet : IA très sûre que c'est hors-sujet
+          log("  [IA] REJETE (confiance haute) " + item.id);
           continue;
         }
-        aiResume = v.resume || null;
-        log("  [IA] VALIDE " + item.id + " - " + (v.raison || ""));
+        if (!v.pertinent) {
+          // Doute IA mais on envoie quand même avec avertissement
+          aiResume = "⚠️ A verifier: " + (v.resume || "pertinence incertaine");
+          log("  [IA] DOUTEUX (envoi quand meme) " + item.id);
+        } else {
+          aiResume = v.resume || null;
+          log("  [IA] VALIDE " + item.id);
+        }
       }
     }
 
@@ -1602,6 +1757,7 @@ async function matchClient(client, itemsToCheck, label, radarType) {
     const msg = buildMessage(item, matched, radarType, aiResume);
     await sendTelegram(client, msg);
     await sendWhatsApp(client, msg);
+    await sendEmail(client, item, matched, radarType, aiResume);
     await markSent(client.id, item.id, matched[0] ? matched[0].type : "", matched[0] ? matched[0].valeur : "", item);
     await delay(300);
   }
@@ -1693,14 +1849,14 @@ async function runGlobalScanMP() {
   } catch (e) { log("Supabase MP: " + e.message); _scanningMP = false; return; }
   if (!clients.length) { log("Aucun client MP actif."); _scanningMP = false; return; }
 
-  // Grouper par pack (défaut = standard si champ pack absent/null)
-  const stdClients = clients.filter(c => !c.pack || c.pack === "standard");
-  const moyClients = clients.filter(c => c.pack === "moyen");
-  const advClients = clients.filter(c => c.pack === "avance");
+  // Grouper par pack (defaut = starter si champ pack absent/null)
+  const stdClients = clients.filter(c => !c.pack || c.pack === "starter" || c.pack === "standard");
+  const moyClients = clients.filter(c => c.pack === "pro" || c.pack === "moyen");
+  const advClients = clients.filter(c => c.pack === "business" || c.pack === "avance");
   log(clients.length + " client(s) MP | " +
-    stdClients.length + " standard | " +
-    moyClients.length + " moyen | " +
-    advClients.length + " avancé");
+    stdClients.length + " starter | " +
+    moyClients.length + " pro | " +
+    advClients.length + " business");
 
   await autoEnrichCriteres(clients, "mp");
   let browser;
@@ -1864,7 +2020,7 @@ async function runGlobalScanMP() {
       const advKnown = allMPsListing.filter(mp =>  vusIds.has(mp.id));
       log("  " + advNew.length + " nouveaux | " + advKnown.length + " connus");
 
-      // Même pré-filtre que MOYEN: popup+DAO uniquement pour candidats listing
+      // Pre-filtre listing: popup+DAO uniquement pour candidats
       const allAdvCriteres = advClients.flatMap(c =>
         (c.criteres || []).filter(cr => cr.radar_type === "mp").map(cr => ({ type: cr.type, valeur: cr.valeur }))
       );
@@ -1878,34 +2034,33 @@ async function runGlobalScanMP() {
       log("  Pre-filtre: " + advNewCands.length + " candidats popup+DAO | " + advNewNonCands.length + " non-candidats (skip)");
 
       const advNewDet = advNewCands.length > 0
-        ? await loadDetails(browser, advNewCands, "MP avance candidats", true, { skipDAO: false })
+        ? await loadDetails(browser, advNewCands, "MP business candidats", true, { skipDAO: false })
         : [];
 
       for (const client of advClients) {
         const sentIds = await db.getMPSentIds(client.id);
         const isNew   = sentIds.size === 0 && vusIds.size > 0;
         if (isNew) {
-          log("  [" + client.nom + "] NOUVEAU CLIENT AVANCE - scan initial...");
+          log("  [" + client.nom + "] NOUVEAU CLIENT BUSINESS - scan initial...");
           const advKnownCands = advKnown.filter(mp => quickListingMatchAdv(mp));
           log("  " + advKnownCands.length + " connus candidats popup+DAO");
           const advKnownDet = advKnownCands.length > 0
-            ? await loadDetails(browser, advKnownCands, "scan initial avance", true, { skipDAO: false })
+            ? await loadDetails(browser, advKnownCands, "scan initial business", true, { skipDAO: false })
             : [];
-          await matchClient(client, [...advKnownDet, ...advNewDet], "scan initial (avance)", "mp");
+          await matchClient(client, [...advKnownDet, ...advNewDet], "scan initial (business)", "mp");
         } else {
-          await matchClient(client, advNewDet, "nouveaux MP (avance)", "mp");
+          await matchClient(client, advNewDet, "nouveaux MP (business)", "mp");
         }
       }
-      // Marquer TOUS les nouveaux comme vus
       for (const mp of [...advNewDet, ...advNewNonCands]) {
         if (!allMarques.find(m => m.id === mp.id)) allMarques.push(mp);
       }
     }
 
-    // Marquer tous les MPs vus (union de tous les packs)
-    if (allMarques.length) {
-      await db.markMPVus(allMarques);
-      log(allMarques.length + " MP ajoutes a mps_vus");
+    // Marquer tous les MPs traites comme vus
+    if (allMarques.length > 0) {
+      await db.markMPsVus(allMarques.map(mp => mp.id));
+      log("\n" + allMarques.length + " MPs marques comme vus.");
     }
 
   } catch (e) {
@@ -1919,27 +2074,27 @@ async function runGlobalScanMP() {
 }
 
 // ============================================================
+// PLANIFICATION CRON
+// ============================================================
+cron.schedule("0 */2 * * *", () => {
+  log("Cron BC declenche");
+  runGlobalScanBC().catch(e => log("Cron BC erreur: " + e.message));
+});
+
+cron.schedule("30 1,3,5,7,9,11,13,15,17,19,21,23 * * *", () => {
+  log("Cron MP declenche");
+  runGlobalScanMP().catch(e => log("Cron MP erreur: " + e.message));
+});
+
+log("Crons BC (0 */2) et MP (30 heures impaires) programmes.");
+
+// ============================================================
 // DEMARRAGE
 // ============================================================
-console.log("================================================");
-console.log("  RADAR MARCHES PUBLICS - Bot v8.1 (IA)");
-console.log("  Packs : standard / moyen / avance");
-console.log("  Cron  : toutes les 2h");
-console.log("  IA    : Ollama local + Claude Haiku fallback");
-console.log("================================================");
-{
-  const _ia = CFG.ollamaUrl
-    ? "Ollama (" + CFG.ollamaModel + ") @ " + CFG.ollamaUrl + (CFG.anthropicKey ? " + Haiku fallback" : "")
-    : CFG.anthropicKey ? "Claude Haiku (cloud)" : "DESACTIVE";
-  console.log("[" + new Date().toISOString().slice(11,19) + "] Supabase: " + (CFG.sbUrl ? CFG.sbUrl.slice(8, 40) + "..." : "MANQUANT"));
-  console.log("[" + new Date().toISOString().slice(11,19) + "] Portail login: " + (CFG.login || "(anonyme)"));
-  console.log("[" + new Date().toISOString().slice(11,19) + "] Telegram token: " + (CFG.tgToken ? "OK" : "MANQUANT"));
-  console.log("[" + new Date().toISOString().slice(11,19) + "] IA: " + _ia);
-  console.log("[" + new Date().toISOString().slice(11,19) + "] Cron: toutes les 2h. Demarrage immediat.");
-}
-console.log("");
-
-// Cron toutes les 2h
-cron.schedule("0 */2 * * *", () => { runGlobalScanMP(); });
-// Lancement immediat au demarrage
-runGlobalScanMP();
+(async () => {
+  log("Bot demarre. Chargement cache Supabase...");
+  await loadCacheFromSupabase();
+  log("Cache charge. Premier scan BC dans 10s, MP dans 65s...");
+  setTimeout(() => runGlobalScanBC().catch(e => log("Init BC: " + e.message)), 10000);
+  setTimeout(() => runGlobalScanMP().catch(e => log("Init MP: " + e.message)), 65000);
+})();
