@@ -65,8 +65,8 @@ CREATE TABLE IF NOT EXISTS pack_config (
 
 INSERT INTO pack_config VALUES
   ('starter',  'Starter',  99,  75,  5,  true, false, true, false, false),
-  ('pro',      'Pro',     249, 190, 15,  true, true,  true, true,  false),
-  ('business', 'Business',599, 449, 40,  true, true,  true, true,  true)
+  ('pro',      'Pro',     249, 190, 20,  true, false, true, true,  false),
+  ('business', 'Business',599, 449, 50,  true, false, true, true,  false)
 ON CONFLICT (pack) DO UPDATE SET
   prix_mensuel = EXCLUDED.prix_mensuel,
   prix_annuel  = EXCLUDED.prix_annuel,
