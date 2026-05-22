@@ -225,6 +225,31 @@ function matchCritere(item, c) {
 function itemMatchesCriteres(item, criteres) { return criteres.some(c => matchCritere(item, c)); }
 function getMatchedCriteres(item, criteres)  { return criteres.filter(c => matchCritere(item, c)); }
 
+// Retourne quel terme précis a déclenché le match (keyword ou enrichissement IA)
+function getMatchTrigger(item, c) {
+  if (!c) return null;
+  if (c.type === "region")    return { keyword: c.valeur, trigger: c.valeur, isEnrichissement: false };
+  if (c.type === "organisme") return { keyword: c.valeur, trigger: c.valeur, isEnrichissement: false };
+  const incl = [c.valeur, ...(c.ai_inclusions || [])];
+  const excl = c.ai_exclusions || [];
+  let text = "";
+  if (c.type === "titre") {
+    text = (item.objet || "") + " " + (item._keyword || "");
+  } else {
+    text = (item.articles || []).map(a => (a.designation||"") + " " + (a.specifications||"")).join(" ")
+         + " " + (item.bodyText || "") + " " + (item.objet || "") + " " + (item._keyword || "");
+  }
+  if (excl.length && excl.some(t => hasKw(text, t))) return { keyword: c.valeur, trigger: c.valeur, isEnrichissement: false };
+  for (let i = 0; i < incl.length; i++) {
+    if (hasKw(text, incl[i])) return { keyword: c.valeur, trigger: incl[i], isEnrichissement: i > 0 };
+  }
+  return { keyword: c.valeur, trigger: c.valeur, isEnrichissement: false };
+}
+
+function escHtml(s) {
+  return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
 // ============================================================
 // SUPABASE
 // ============================================================
@@ -526,14 +551,19 @@ async function autoEnrichCriteres(clients, radarType) {
   }
 }
 
-async function sendTelegram(client, msg) {
+async function sendTelegram(client, htmlMsg) {
   const token = CFG.tgToken || client.tg_token;
   if (!token || !client.tg_chat_id) return;
   try {
     const r = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: client.tg_chat_id, text: msg }),
+      body: JSON.stringify({
+        chat_id:                  client.tg_chat_id,
+        text:                     htmlMsg,
+        parse_mode:               "HTML",
+        disable_web_page_preview: false,
+      }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) log("  Telegram erreur " + r.status + ": " + (d.description || JSON.stringify(d)));
@@ -622,44 +652,82 @@ async function sendEmail(client, item, matchedCriteres, radarType, aiResume) {
   } catch (e) { log("  Email erreur: " + e.message); }
 }
 
+// ── Message TEXTE BRUT (WhatsApp, fallback) ──────────────────────────────────
 function buildMessage(item, matchedCriteres, radarType, aiResume) {
-  const arts = (item.articles || []).slice(0, 10)
-    .map((a, i) => {
-      let line = "  " + (i + 1) + ". " + a.designation;
-      // Montant estimé et caution (extraits du popup PopUpDetailLots)
-      if (a.estimation && a.estimation !== "-" && a.estimation !== "")
-        line += "\n       Estimation : " + a.estimation;
-      if (a.caution && a.caution !== "-" && a.caution !== "" && !/^0[,.]?0*\s*DH?$/i.test(a.caution.trim()))
-        line += " | Caution : " + a.caution;
-      // Fallback quantite (BCs)
-      if (!a.estimation && a.quantite)
-        line += " - " + a.quantite + " " + (a.unite || "");
-      return line;
-    })
-    .join("\n");
-  const more  = item.articles && item.articles.length > 10
-    ? "\n  ... +" + (item.articles.length - 10) + " autres lots" : "";
-  const icons = { region: "[region]", organisme: "[org]", titre: "[titre]", contenu: "[contenu]" };
-  const tags  = matchedCriteres.map(c => icons[c.type] + " " + c.valeur).join(" | ");
-  const header = radarType === "mp" ? "NOUVEAU MARCHE PUBLIC" : "NOUVEAU BC EN COURS";
-  const budgetLine = item.estimation_totale
-    ? "Budget estimatif : " + item.estimation_totale + " DH TTC" : null;
-  const aiLine = aiResume ? "[IA] " + aiResume : null;
+  const header = radarType === "mp" ? "🏛️ NOUVEAU MARCHÉ PUBLIC" : "📦 NOUVEAU BC EN COURS";
+  const trigger = getMatchTrigger(item, matchedCriteres[0]);
+  const critereStr = trigger
+    ? (trigger.isEnrichissement
+        ? `"${trigger.keyword}" → via "${trigger.trigger}"`
+        : `"${trigger.keyword}"`)
+    : "";
+  const plusStr = matchedCriteres.length > 1 ? ` (+${matchedCriteres.length - 1} critère${matchedCriteres.length > 2 ? "s" : ""})` : "";
+
+  const arts = (item.articles || []).slice(0, 5).map(a => {
+    let l = "  • " + a.designation;
+    if (a.estimation && a.estimation !== "-") l += " — " + a.estimation;
+    else if (a.quantite) l += " — " + a.quantite + " " + (a.unite || "");
+    return l;
+  }).join("\n");
+  const moreArts = (item.articles || []).length > 5
+    ? "  (+ " + ((item.articles || []).length - 5) + " autres articles)" : "";
+
   return [
-    header, tags, "",
-    "Ref: "    + (item.reference || item.id || "N/A"),
-    "Org: "    + (item.organisme || "N/A"),
-    "Objet: "  + (item.objet || "N/A"),
-    "Lieu: "   + (item.wilaya || item.lieu || "N/A"),
-    "Limite: " + (item.date_limite || "N/A"),
-    budgetLine,
-    aiLine,
-    "", radarType === "mp" ? "Lots :" : "Articles :",
+    header, "",
+    "📋 " + (item.objet || item.reference || "N/A"),
+    "🏢 " + (item.organisme || "N/A") + (item.wilaya ? " — " + item.wilaya : ""),
+    item.date_limite ? "📅 Date limite : " + item.date_limite + " ⚠️" : null,
+    critereStr ? "🔍 Critère : " + critereStr + plusStr : null,
+    "",
+    arts ? "💼 Articles :" : null,
     arts || "  (voir la fiche)",
-    more, "",
-    "Lien: " + item.url, "",
-    "Radar Marches Maroc - Veille automatique",
-  ].filter(l => l !== undefined && l !== null).join("\n");
+    moreArts || null,
+    aiResume ? "\n💡 " + aiResume : null,
+    "",
+    "🔗 " + (item.url || "Lien non disponible"),
+    "",
+    "Radar Marchés Maroc",
+  ].filter(l => l !== null && l !== undefined).join("\n");
+}
+
+// ── Message HTML (Telegram — liens cliquables, gras, italique) ───────────────
+function buildHtmlMessage(item, matchedCriteres, radarType, aiResume) {
+  const header = radarType === "mp" ? "🏛️ NOUVEAU MARCHÉ PUBLIC" : "📦 NOUVEAU BC EN COURS";
+  const trigger = getMatchTrigger(item, matchedCriteres[0]);
+  const critereHtml = trigger
+    ? (trigger.isEnrichissement
+        ? `<code>${escHtml(trigger.keyword)}</code> → <i>${escHtml(trigger.trigger)}</i>`
+        : `<code>${escHtml(trigger.keyword)}</code>`)
+    : "";
+  const plusHtml = matchedCriteres.length > 1
+    ? ` <i>(+${matchedCriteres.length - 1} critère${matchedCriteres.length > 2 ? "s" : ""})</i>` : "";
+
+  const arts = (item.articles || []).slice(0, 5).map(a => {
+    let l = "• " + escHtml(a.designation);
+    if (a.estimation && a.estimation !== "-") l += " — <b>" + escHtml(a.estimation) + "</b>";
+    else if (a.quantite) l += " — " + escHtml(a.quantite + " " + (a.unite || ""));
+    return l;
+  }).join("\n");
+  const moreArts = (item.articles || []).length > 5
+    ? `<i>+${(item.articles||[]).length - 5} autres articles</i>` : "";
+
+  const url = item.url;
+  return [
+    `🔔 <b>${header}</b>`, "",
+    `📋 <b>${escHtml(item.objet || item.reference || "N/A")}</b>`,
+    `🏢 ${escHtml(item.organisme || "N/A")}${item.wilaya ? " — " + escHtml(item.wilaya) : ""}`,
+    item.date_limite ? `📅 Date limite : <b>${escHtml(item.date_limite)}</b> ⚠️` : null,
+    critereHtml ? `🔍 Critère : ${critereHtml}${plusHtml}` : null,
+    "",
+    arts ? "💼 <b>Articles :</b>" : null,
+    arts || "<i>(voir la fiche)</i>",
+    moreArts || null,
+    aiResume ? `\n💡 <i>${escHtml(aiResume)}</i>` : null,
+    "",
+    url ? `🔗 <a href="${escHtml(url)}">Voir la fiche →</a>` : "🔗 Lien non disponible",
+    "",
+    "<i>Radar Marchés Maroc</i>",
+  ].filter(l => l !== null && l !== undefined).join("\n");
 }
 
 // ============================================================
@@ -1764,13 +1832,16 @@ async function matchClient(client, itemsToCheck, label, radarType) {
       }
     }
 
-    const tag = "[" + radarType.toUpperCase() + "][" + client.nom + "] " + radarType.toUpperCase() + " " + item.id +
-      " [" + matched.map(c => c.valeur).join(", ") + "] " + (item.objet || "").slice(0, 50);
+    const trigger = getMatchTrigger(item, matched[0]);
+    const triggerLog = trigger ? (trigger.isEnrichissement ? trigger.keyword + "→" + trigger.trigger : trigger.keyword) : "";
+    const tag = "[" + radarType.toUpperCase() + "][" + client.nom + "] " + item.id +
+      " [" + triggerLog + "] " + (item.objet || "").slice(0, 50);
     log("  MATCH " + tag);
     sentIds.add(item.id); sent++;
-    const msg = buildMessage(item, matched, radarType, aiResume);
-    await sendTelegram(client, msg);
-    await sendWhatsApp(client, msg);
+    const msgPlain = buildMessage(item, matched, radarType, aiResume);
+    const msgHtml  = buildHtmlMessage(item, matched, radarType, aiResume);
+    await sendTelegram(client, msgHtml);
+    await sendWhatsApp(client, msgPlain);
     await sendEmail(client, item, matched, radarType, aiResume);
     await markSent(client.id, item.id, matched[0] ? matched[0].type : "", matched[0] ? matched[0].valeur : "", item);
     await delay(300);
@@ -2100,3 +2171,17 @@ cron.schedule("0 */2 * * *", () => {
 // cron.schedule("30 1,3,5,7,9,11,13,15,17,19,21,23 * * *", () => {
 //   runGlobalScanMP().catch(e => log("Cron MP erreur: " + e.message));
 // });
+
+log("Crons BC (0 */2) et MP (30 heures impaires) programmes.");
+
+// ============================================================
+// DEMARRAGE
+// ============================================================
+(async () => {
+  log("Bot demarre. Chargement cache Supabase...");
+  await loadCacheFromSupabase();
+  log("Cache charge. Premier scan BC dans 10s, MP dans 65s...");
+  setTimeout(() => runGlobalScanBC().catch(e => log("Init BC: " + e.message)), 10000);
+  // MP desactive en v1
+  // setTimeout(() => runGlobalScanMP().catch(e => log("Init MP: " + e.message)), 65000);
+})();
