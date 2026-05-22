@@ -218,11 +218,14 @@
         <h2 class="text-xl font-bold text-slate-800">Mes critères de recherche</h2>
         <p class="text-slate-500 text-sm">Configurez les alertes pour les Bons de Commande ET les Marchés Publics.</p>
       </div>
-      <!-- Radar type selector -->
+      <!-- Radar type selector — MP desactive en v1 -->
       <div class="flex items-center gap-4 flex-wrap">
         <div class="radar-toggle">
           <button class="rt-bc active" id="crit-rt-bc" onclick="setCritRadar('bc')">📋 Radar BC</button>
-          <button class="rt-mp"        id="crit-rt-mp" onclick="setCritRadar('mp')">🏛️ Radar Marchés Publics</button>
+          <button class="rt-mp" id="crit-rt-mp" disabled title="Bientôt disponible"
+            style="opacity:0.45;cursor:not-allowed;background:transparent;color:#64748b">
+            🏛️ Marchés Publics <span style="font-size:0.7rem;background:#fef9c3;color:#854d0e;padding:1px 6px;border-radius:9999px;font-weight:700">Bientôt</span>
+          </button>
         </div>
         <div id="crit-radar-desc" class="text-sm text-slate-500"></div>
       </div>
@@ -822,9 +825,9 @@ async function deleteCritere(id) {
 
 // ---- Profil ----
 const PACK_META = {
-  starter:  { label:'Starter',  color:'badge-blue',   maxKw:5,  features:{BC:true,MP:false,WA:false,DAO:false,IA:true} },
-  pro:      { label:'Pro',      color:'badge-purple', maxKw:15, features:{BC:true,MP:true, WA:true, DAO:false,IA:true} },
-  business: { label:'Business', color:'badge-amber',  maxKw:40, features:{BC:true,MP:true, WA:true, DAO:true, IA:true} },
+  starter:  { label:'Starter',  color:'badge-blue',   maxKw:5,  features:{BC:true,WA:false,AIValid:false,Support:false} },
+  pro:      { label:'Pro',      color:'badge-purple', maxKw:20, features:{BC:true,WA:true, AIValid:true, Support:false} },
+  business: { label:'Business', color:'badge-amber',  maxKw:50, features:{BC:true,WA:true, AIValid:true, Support:true } },
 };
 async function loadProfil() {
   if(!currentClient||!currentUser) return;
@@ -854,11 +857,11 @@ async function loadPackCard() {
   bar.style.width = pct+'%';
   bar.style.background = pct>=90?'#dc2626':pct>=70?'#d97706':'#2563eb';
   const fDesc = {
-    BC:  ['Radar Bons de Commande', true],
-    MP:  ['Radar Marches Publics',  meta.features.MP],
-    WA:  ['Alertes WhatsApp',       meta.features.WA],
-    DAO: ['Analyse DAO (CPS/BDP)',  meta.features.DAO],
-    IA:  ['Enrichissement IA',      true],
+    BC:      ['Radar Bons de Commande',      true],
+    WA:      ['Alertes WhatsApp',            meta.features.WA],
+    AIValid: ['Validation IA (0 faux positif)', meta.features.AIValid],
+    IAEnrich:['Enrichissement IA mots-clés', true],
+    Support: ['Support prioritaire',         meta.features.Support],
   };
   document.getElementById('pack-features').innerHTML = Object.values(fDesc).map(([label,ok])=>
     `<div class="flex items-center gap-2 text-sm ${ok?'text-slate-700':'text-slate-400'}">

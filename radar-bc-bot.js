@@ -36,10 +36,17 @@ const CFG = {
 // ============================================================
 // LIMITES PAR PACK
 // ============================================================
+// ============================================================
+// FEATURE FLAGS
+// ============================================================
+const FEATURES = {
+  enableMP: false,  // Radar MP desactive en v1 — BC uniquement
+};
+
 const PACK_LIMITS = {
-  starter:  { maxCriteres: 5,  hasMP: false, hasWhatsApp: false, hasDAO: false },
-  pro:      { maxCriteres: 15, hasMP: true,  hasWhatsApp: true,  hasDAO: false },
-  business: { maxCriteres: 40, hasMP: true,  hasWhatsApp: true,  hasDAO: true  },
+  starter:  { maxCriteres: 5,  hasWhatsApp: false, hasAIValidation: false },
+  pro:      { maxCriteres: 20, hasWhatsApp: true,  hasAIValidation: true  },
+  business: { maxCriteres: 50, hasWhatsApp: true,  hasAIValidation: true  },
 };
 
 function getPackLimits(client) {
@@ -48,9 +55,9 @@ function getPackLimits(client) {
 }
 
 function getCriteresCapped(client, radarType) {
+  // MP desactive globalement en v1
+  if (radarType === "mp" && !FEATURES.enableMP) return [];
   const limits = getPackLimits(client);
-  // Starter ne peut pas acceder au radar MP
-  if (radarType === "mp" && !limits.hasMP) return [];
   const all = (client.criteres || []).filter(c => (c.radar_type || "bc") === radarType);
   return all.slice(0, limits.maxCriteres);
 }
@@ -1729,9 +1736,10 @@ async function matchClient(client, itemsToCheck, label, radarType) {
     if (sentIds.has(item.id)) continue;
     const matched = getMatchedCriteres(item, criteres);
 
-    // Validation IA — enrichit le message, ne bloque jamais l'envoi
+    // Validation IA — uniquement pack Pro/Business
     let aiResume = null;
-    if ((CFG.ollamaUrl || CFG.anthropicKey) && matched.length > 0) {
+    const limits = getPackLimits(client);
+    if (limits.hasAIValidation && (CFG.ollamaUrl || CFG.anthropicKey) && matched.length > 0) {
       const v = await validateMatchWithAI(item, matched[0], radarType);
       if (v) {
         if (!v.pertinent && v.confiance === "haute") {
@@ -1835,6 +1843,7 @@ async function runGlobalScanBC() {
 let _scanningMP = false;
 
 async function runGlobalScanMP() {
+  if (!FEATURES.enableMP) { log("Radar MP desactive (v1 BC-only). Skip."); return; }
   if (_scanningMP) { log("Scan MP precedent en cours, skip."); return; }
   _scanningMP = true;
   const now = new Date().toLocaleString("fr-MA", { timeZone: "Africa/Casablanca" });
@@ -2081,10 +2090,10 @@ cron.schedule("0 */2 * * *", () => {
   runGlobalScanBC().catch(e => log("Cron BC erreur: " + e.message));
 });
 
-cron.schedule("30 1,3,5,7,9,11,13,15,17,19,21,23 * * *", () => {
-  log("Cron MP declenche");
-  runGlobalScanMP().catch(e => log("Cron MP erreur: " + e.message));
-});
+// Cron MP reserve pour activation future (FEATURES.enableMP = true)
+// cron.schedule("30 1,3,5,7,9,11,13,15,17,19,21,23 * * *", () => {
+//   runGlobalScanMP().catch(e => log("Cron MP erreur: " + e.message));
+// });
 
 log("Crons BC (0 */2) et MP (30 heures impaires) programmes.");
 
@@ -2096,5 +2105,6 @@ log("Crons BC (0 */2) et MP (30 heures impaires) programmes.");
   await loadCacheFromSupabase();
   log("Cache charge. Premier scan BC dans 10s, MP dans 65s...");
   setTimeout(() => runGlobalScanBC().catch(e => log("Init BC: " + e.message)), 10000);
-  setTimeout(() => runGlobalScanMP().catch(e => log("Init MP: " + e.message)), 65000);
+  // MP desactive en v1
+  // setTimeout(() => runGlobalScanMP().catch(e => log("Init MP: " + e.message)), 65000);
 })();
