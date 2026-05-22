@@ -2268,8 +2268,44 @@ const _httpServer = http.createServer(async (req, res) => {
     }
   }
 
-  // ── 404 ──────────────────────────────────────────────────
+  // ── Fichiers statiques (web/) ─────────────────────
+  const WEB_DIR = path.join(__dirname, "web");
+  const MIME = {
+    ".html": "text/html; charset=utf-8",
+    ".js":   "application/javascript",
+    ".css":  "text/css",
+    ".json": "application/json",
+    ".png":  "image/png",
+    ".ico":  "image/x-icon",
+    ".svg":  "image/svg+xml",
+  };
+
+  // Redirect racine vers portail client
+  if (path_ === "/" || path_ === "") {
+    res.writeHead(302, { "Location": "/web/index.html" });
+    return res.end();
+  }
+
+  // Servir les fichiers du dossier web/
+  if (path_.startsWith("/web/")) {
+    const filePath = path.join(WEB_DIR, path_.slice(5) || "index.html");
+    const ext = path.extname(filePath);
+    try {
+      const data = fs.readFileSync(filePath);
+      res.writeHead(200, { "Content-Type": MIME[ext] || "text/plain" });
+      return res.end(data);
+    } catch (e) {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      return res.end("Fichier non trouvé: " + path_);
+    }
+  }
+
+  // 404 API
   return jsonResp(res, 404, { error: "Route inconnue", routes: [
+    "GET  / → portail client",
+    "GET  /web/index.html → portail client",
+    "GET  /web/admin.html → admin",
+    "GET  /web/pricing.html",
     "GET  /health",
     "GET  /api/status?secret=xxx",
     "POST /api/scan-now?secret=xxx",
