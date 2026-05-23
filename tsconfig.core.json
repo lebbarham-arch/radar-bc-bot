@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "lib": ["ES2022"],
+
+    /* Strictness — aucun any autorisé */
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    /* Output */
+    "outDir": "dist/core",
+    "rootDir": ".",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    /* Interop */
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    /* Paths */
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": ["core/*"]
+    }
+  },
+  "include": ["core/**/*.ts", "tests/unit/**/*.ts"],
+  "exclude": ["node_modules", "dist", "radar-bc-bot.js", "web/**"]
+}
