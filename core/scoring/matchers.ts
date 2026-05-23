@@ -34,7 +34,7 @@ export function normalizeText(text: string): string {
   return text
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')   // strip diacritics
+    .replace(/[\u0300-\u036f]/g, '')      // strip diacritics (NFD combining marks)
     .replace(/[^\w\s]/g, ' ')          // ponctuation → espace
     .replace(/\s+/g, ' ')
     .trim();
@@ -181,5 +181,4 @@ const FR_STOP_WORDS = new Set([
 export function tokenize(text: string): string[] {
   return normalizeText(text)
     .split(/\s+/)
-    .filter(t => t.length >= 2 && !FR_STOP_WORDS.has(t));
-}
+    .filter(t => t.length >= 2 && !FR_
