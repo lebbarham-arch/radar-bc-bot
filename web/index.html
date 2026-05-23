@@ -39,19 +39,26 @@
   @keyframes spin { to { transform:rotate(360deg); } }
   .tab-active   { background:#1e40af; color:#fff; }
   .tab-inactive { background:#f1f5f9; color:#475569; }
+  .feature-pill { display:inline-flex; align-items:center; gap:5px; background:#f0f4ff; color:#3b5bdb; border-radius:9999px; padding:4px 12px; font-size:12px; font-weight:500; }
+  .step-badge { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:#2563eb; color:#fff; font-size:11px; font-weight:700; flex-shrink:0; }
 </style>
 </head>
 <body class="bg-slate-100 min-h-screen">
 
 <!-- AUTH -->
-<div id="page-auth" class="min-h-screen flex items-center justify-center px-4">
+<div id="page-auth" class="min-h-screen flex items-center justify-center px-4 py-10">
   <div class="w-full max-w-md">
-    <div class="text-center mb-8">
+    <div class="text-center mb-6">
       <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 shadow-lg" style="background:linear-gradient(135deg,#2563eb,#1e40af)">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
       </div>
       <h1 class="text-2xl font-bold text-slate-800">Radar BC Maroc</h1>
       <p class="text-slate-500 text-sm mt-1">Surveillance automatique des Bons de Commande</p>
+      <div class="flex justify-center gap-2 mt-3 flex-wrap">
+        <span class="feature-pill">🔔 Alertes temps réel</span>
+        <span class="feature-pill">🤖 Validation IA</span>
+        <span class="feature-pill">📋 Scan toutes les 2h</span>
+      </div>
     </div>
     <div class="card">
       <div class="flex gap-2 mb-6">
@@ -62,21 +69,23 @@
       <div id="form-login">
         <div class="space-y-4">
           <div><label class="block text-sm font-medium text-slate-700 mb-1">Email</label>
-            <input id="login-email" type="email" class="input-field" placeholder="vous@exemple.com" onkeydown="if(event.key==='Enter')doLogin()" /></div>
+            <input id="login-email" type="email" class="input-field" placeholder="vous@exemple.com" autocomplete="email" onkeydown="if(event.key==='Enter')doLogin()" /></div>
           <div><label class="block text-sm font-medium text-slate-700 mb-1">Mot de passe</label>
-            <input id="login-pass" type="password" class="input-field" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()" /></div>
+            <input id="login-pass" type="password" class="input-field" placeholder="Votre mot de passe" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" /></div>
           <button onclick="doLogin()" id="btn-login" class="btn-primary w-full py-2.5">Se connecter</button>
+          <p class="text-center text-xs text-slate-400">Pas encore abonné ? <a href="pricing.html" class="text-blue-500 hover:underline font-medium">Voir les offres →</a></p>
         </div>
       </div>
       <div id="form-register" class="hidden">
         <div class="space-y-4">
           <div><label class="block text-sm font-medium text-slate-700 mb-1">Nom complet</label>
-            <input id="reg-name" type="text" class="input-field" placeholder="Votre nom" /></div>
+            <input id="reg-name" type="text" class="input-field" placeholder="Votre nom" autocomplete="name" /></div>
           <div><label class="block text-sm font-medium text-slate-700 mb-1">Email</label>
-            <input id="reg-email" type="email" class="input-field" placeholder="vous@exemple.com" /></div>
+            <input id="reg-email" type="email" class="input-field" placeholder="vous@exemple.com" autocomplete="email" /></div>
           <div><label class="block text-sm font-medium text-slate-700 mb-1">Mot de passe</label>
-            <input id="reg-pass" type="password" class="input-field" placeholder="Minimum 6 caractères" /></div>
+            <input id="reg-pass" type="password" class="input-field" placeholder="Minimum 6 caractères" autocomplete="new-password" /></div>
           <button onclick="doRegister()" id="btn-register" class="btn-primary w-full py-2.5">Créer mon compte</button>
+          <p class="text-center text-xs text-slate-400">Votre accès sera activé par notre équipe sous 24h.</p>
         </div>
       </div>
     </div>
@@ -101,14 +110,12 @@
         Tableau de bord
       </div>
       <div class="sidebar-link" id="nav-criteres" onclick="showTab('criteres')">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-        Mes critères
-        <span id="badge-criteres" class="ml-auto text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full hidden"></span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/></svg>
+        Mes critères <span id="badge-criteres" class="hidden ml-auto bg-blue-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold"></span>
       </div>
       <div class="sidebar-link" id="nav-alertes" onclick="showTab('alertes')">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-        Mes alertes
-        <span id="badge-alertes" class="ml-auto text-xs bg-green-500 text-white px-2 py-0.5 rounded-full hidden"></span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+        Mes alertes <span id="badge-alertes" class="hidden ml-auto bg-green-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold"></span>
       </div>
       <div class="sidebar-link" id="nav-profil" onclick="showTab('profil')">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
@@ -119,84 +126,112 @@
         Aide
       </div>
     </nav>
-    <div class="p-3 border-t border-slate-700">
-      <div class="text-slate-400 text-xs px-2 mb-2 truncate" id="sidebar-email"></div>
-      <button onclick="doLogout()" class="w-full text-left sidebar-link" style="color:#f87171">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+    <div class="p-4 border-t border-slate-700">
+      <div class="text-slate-400 text-xs truncate mb-2" id="sidebar-email"></div>
+      <button onclick="doLogout()" class="flex items-center gap-2 text-red-400 hover:text-red-300 text-sm transition-colors w-full">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
         Déconnexion
       </button>
     </div>
   </aside>
 
-  <main class="flex-1 overflow-auto">
+  <main class="flex-1 overflow-auto bg-slate-50">
 
     <!-- DASHBOARD -->
     <div id="tab-dashboard" class="p-6 space-y-6">
       <div class="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 class="text-xl font-bold text-slate-800">Tableau de bord</h2>
-          <p class="text-slate-500 text-sm" id="dash-welcome"></p>
+          <p class="text-slate-500 text-sm mt-0.5" id="dash-welcome">Bonjour !</p>
         </div>
         <button onclick="refreshDashboard()" class="btn-ghost text-sm flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
           Actualiser
         </button>
       </div>
-      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+
+      <div class="grid grid-cols-3 gap-4">
         <div class="stat-card">
-          <div class="text-slate-500 text-xs font-medium uppercase tracking-wide mb-1">BCs reçus</div>
-          <div class="text-3xl font-bold text-blue-600" id="stat-total-bc">—</div>
+          <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">BCs reçus</div>
+          <div class="text-3xl font-bold text-slate-800" id="stat-total-bc">—</div>
+          <div class="text-xs text-slate-400 mt-1">Bons de Commande détectés</div>
         </div>
         <div class="stat-card">
-          <div class="text-slate-500 text-xs font-medium uppercase tracking-wide mb-1">Critères actifs</div>
-          <div class="text-3xl font-bold text-amber-600" id="stat-criteres">—</div>
+          <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Critères actifs</div>
+          <div class="text-3xl font-bold text-slate-800" id="stat-criteres">—</div>
+          <div class="text-xs text-slate-400 mt-1">Mots-clés surveillés</div>
         </div>
         <div class="stat-card">
-          <div class="text-slate-500 text-xs font-medium uppercase tracking-wide mb-1">Prochain scan</div>
-          <div class="text-lg font-bold text-slate-700" id="stat-next-scan">—</div>
+          <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Prochain scan</div>
+          <div class="text-2xl font-bold text-blue-600" id="stat-next-scan">—</div>
+          <div class="text-xs text-slate-400 mt-1">Toutes les 2 heures</div>
         </div>
       </div>
-      <div id="dash-empty" class="hidden card text-center py-12">
-        <div class="text-5xl mb-4">📋</div>
-        <h3 class="text-lg font-semibold text-slate-700 mb-2">Aucun BC détecté pour l'instant</h3>
-        <p class="text-slate-500 text-sm mb-4">Le radar scanne toutes les 2h. Ajoutez vos critères pour être alerté.</p>
-        <button onclick="showTab('criteres')" class="btn-primary">Configurer mes critères</button>
+
+      <!-- Empty state onboarding -->
+      <div id="dash-empty" class="hidden card">
+        <div class="text-center py-4 mb-6">
+          <div class="text-5xl mb-3">📋</div>
+          <div class="text-slate-700 font-semibold text-lg">Votre radar est actif — démarrez en 2 étapes</div>
+          <div class="text-slate-400 text-sm mt-1">Le scan tourne toutes les 2h. Dès qu'un BC correspond, vous êtes alerté.</div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto">
+          <div class="bg-blue-50 rounded-xl p-4 flex gap-3">
+            <span class="step-badge mt-0.5">1</span>
+            <div>
+              <div class="font-semibold text-slate-700 text-sm">Ajoutez vos mots-clés</div>
+              <div class="text-slate-500 text-xs mt-1">Définissez les produits ou domaines que vous fournissez (ex: "câble RJ45", "informatique").</div>
+              <button onclick="showTab('criteres')" class="btn-primary text-xs py-1.5 px-3 mt-2">Configurer mes critères →</button>
+            </div>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-4 flex gap-3">
+            <span class="step-badge mt-0.5" style="background:#64748b">2</span>
+            <div>
+              <div class="font-semibold text-slate-700 text-sm">Configurez vos notifications</div>
+              <div class="text-slate-500 text-xs mt-1">Recevez les alertes par Telegram ou email dès qu'un BC est détecté.</div>
+              <button onclick="showTab('profil')" class="btn-ghost text-xs py-1.5 px-3 mt-2 border-slate-300">Mon profil →</button>
+            </div>
+          </div>
+        </div>
       </div>
+
+      <!-- Table BCs -->
       <div id="dash-table-wrap" class="card hidden">
-        <h3 class="font-semibold text-slate-700 mb-4">Bons de Commande détectés</h3>
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-semibold text-slate-700" id="dash-table-title">Derniers BCs reçus</h3>
+          <span class="text-xs text-slate-400" id="dash-count"></span>
+        </div>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
-            <thead>
-              <tr class="text-left text-slate-500 border-b border-slate-100">
-                <th class="pb-3 pr-4 font-medium">Date</th>
-                <th class="pb-3 pr-4 font-medium">Organisme</th>
-                <th class="pb-3 pr-4 font-medium">Objet</th>
-                <th class="pb-3 pr-4 font-medium">Critère</th>
-                <th class="pb-3 pr-4 font-medium">Limite</th>
-                <th class="pb-3 font-medium">Lien</th>
-              </tr>
-            </thead>
+            <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-100">
+              <th class="pb-2 pr-4 font-semibold">Objet</th>
+              <th class="pb-2 pr-4 font-semibold">Organisme</th>
+              <th class="pb-2 pr-4 font-semibold">Région</th>
+              <th class="pb-2 font-semibold">Date</th>
+            </tr></thead>
             <tbody id="dash-tbody"></tbody>
           </table>
         </div>
-        <div class="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
-          <span class="text-xs text-slate-400" id="dash-count"></span>
-          <button onclick="loadMoreItems()" id="btn-load-more" class="btn-ghost text-xs hidden">Voir plus</button>
+        <div class="mt-4 text-center">
+          <button id="btn-load-more" onclick="loadItemsData(true)" class="btn-ghost text-sm hidden">Voir plus</button>
         </div>
       </div>
     </div>
 
-    <!-- CRITERES -->
+    <!-- CRITÈRES -->
     <div id="tab-criteres" class="p-6 space-y-6 hidden">
       <div>
         <h2 class="text-xl font-bold text-slate-800">Mes critères de veille</h2>
-        <p class="text-slate-500 text-sm">Définissez les mots-clés sur lesquels le radar vous alertera.</p>
+        <p class="text-slate-500 text-sm mt-1">Définissez les mots-clés sur lesquels le radar vous alertera.</p>
       </div>
       <div class="card">
-        <h3 class="font-semibold text-slate-700 mb-4">Ajouter un critère</h3>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-slate-700">Ajouter un critère</h3>
+          <span id="crit-pack-info" class="text-xs text-slate-400"></span>
+        </div>
         <div id="crit-msg"></div>
         <div class="flex gap-3 flex-wrap">
-          <select id="crit-type" class="input-field" style="max-width:210px">
+          <select id="crit-type" class="input-field" style="width:auto;min-width:200px">
             <option value="contenu">🔎 Contenu (articles/lots)</option>
             <option value="titre">📌 Titre (objet du BC)</option>
             <option value="region">📍 Région / Wilaya</option>
@@ -205,6 +240,7 @@
           <input id="crit-valeur" type="text" class="input-field flex-1" style="min-width:200px" placeholder="Ex: café, informatique, Casablanca..." onkeydown="if(event.key==='Enter')addCritere()" />
           <button onclick="addCritere()" id="btn-add-crit" class="btn-primary whitespace-nowrap">+ Ajouter</button>
         </div>
+        <p class="text-xs text-slate-400 mt-2">Appuyez sur Entrée ou cliquez "+ Ajouter" pour enregistrer. Les critères sont pris en compte au prochain scan.</p>
         <div class="mt-4 grid grid-cols-2 gap-3 text-xs text-slate-500">
           <div class="bg-slate-50 rounded-lg p-3">
             <div class="font-semibold text-slate-600 mb-1">🔎 Contenu</div>
@@ -239,12 +275,15 @@
           <h2 class="text-xl font-bold text-slate-800">Mes alertes</h2>
           <p class="text-slate-500 text-sm mt-1">Bons de Commande détectés par le radar</p>
         </div>
-        <button onclick="loadAlertes()" class="btn-ghost text-sm">🔄 Actualiser</button>
+        <button onclick="loadAlertes()" class="btn-ghost text-sm flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Actualiser
+        </button>
       </div>
       <div class="grid grid-cols-3 gap-4">
-        <div class="stat-card text-center"><div class="text-2xl font-bold text-blue-600" id="alerte-total">—</div><div class="text-xs text-slate-500 mt-1">Total</div></div>
+        <div class="stat-card text-center"><div class="text-2xl font-bold text-blue-600" id="alerte-total">—</div><div class="text-xs text-slate-500 mt-1">Total reçus</div></div>
         <div class="stat-card text-center"><div class="text-2xl font-bold text-green-600" id="alerte-30j">—</div><div class="text-xs text-slate-500 mt-1">Ce mois</div></div>
-        <div class="stat-card text-center"><div class="text-2xl font-bold text-slate-600 text-base" id="alerte-last">—</div><div class="text-xs text-slate-500 mt-1">Dernière alerte</div></div>
+        <div class="stat-card text-center"><div class="text-slate-700 font-semibold text-sm" id="alerte-last">—</div><div class="text-xs text-slate-500 mt-1">Dernière alerte</div></div>
       </div>
       <div class="card">
         <div id="alertesList">
@@ -252,8 +291,9 @@
         </div>
         <div id="alertesEmpty" class="hidden text-center py-12">
           <div class="text-4xl mb-3">🔔</div>
-          <div class="text-slate-600 font-medium">Aucune alerte pour l'instant</div>
-          <div class="text-slate-400 text-sm mt-1">Le radar vous notifiera dès qu'un BC correspond à vos critères</div>
+          <div class="text-slate-700 font-semibold">Aucune alerte pour l'instant</div>
+          <div class="text-slate-400 text-sm mt-2 max-w-xs mx-auto">Le radar vous notifiera dès qu'un BC correspond à vos critères. Assurez-vous d'avoir ajouté au moins un critère.</div>
+          <button onclick="showTab('criteres')" class="btn-primary text-sm py-2 px-4 mt-4">Configurer mes critères →</button>
         </div>
       </div>
     </div>
@@ -261,7 +301,8 @@
     <!-- PROFIL -->
     <div id="tab-profil" class="p-6 space-y-6 hidden">
       <div>
-        <h2 class="text-xl font-bold text-slate-800">Mon profil &amp; notifications</h2>
+        <h2 class="text-xl font-bold text-slate-800">Mon profil</h2>
+        <p class="text-slate-500 text-sm mt-1">Gérez vos informations et vos canaux de notification.</p>
       </div>
 
       <!-- Abonnement -->
@@ -271,7 +312,7 @@
             <h3 class="font-semibold text-slate-700">Mon abonnement</h3>
             <span id="pack-badge" class="badge badge-blue">—</span>
           </div>
-          <a id="pack-upgrade-cta" href="pricing.html" target="_blank" class="hidden btn-primary text-sm py-1.5 px-4" style="text-decoration:none">Upgrader →</a>
+          <a id="pack-upgrade-cta" href="pricing.html" target="_blank" class="hidden btn-primary text-sm py-1.5 px-4" style="text-decoration:none">Passer à la formule supérieure →</a>
         </div>
         <div class="mb-4">
           <div class="flex justify-between text-xs text-slate-500 mb-1">
@@ -281,49 +322,57 @@
           <div class="w-full bg-slate-100 rounded-full h-2">
             <div id="pack-kw-bar" class="h-2 rounded-full transition-all" style="width:0%;background:#2563eb"></div>
           </div>
+          <p class="text-xs text-slate-400 mt-1">Augmentez votre quota en passant à une formule supérieure.</p>
         </div>
         <div id="pack-features" class="grid grid-cols-2 gap-2 text-sm"></div>
       </div>
 
       <!-- Infos -->
       <div class="card">
-        <h3 class="font-semibold text-slate-700 mb-4">Informations</h3>
+        <h3 class="font-semibold text-slate-700 mb-1">Informations</h3>
+        <p class="text-slate-400 text-xs mb-4">Ces informations sont utilisées pour personnaliser vos alertes.</p>
         <div id="profil-msg"></div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div><label class="block text-sm font-medium text-slate-700 mb-1">Nom</label>
             <input id="profil-nom" type="text" class="input-field" /></div>
           <div><label class="block text-sm font-medium text-slate-700 mb-1">Email (connexion)</label>
-            <input id="profil-email" type="email" class="input-field bg-slate-50" readonly /></div>
+            <input id="profil-email" type="email" class="input-field bg-slate-50" readonly />
+            <p class="text-xs text-slate-400 mt-1">Non modifiable — contact support si besoin.</p>
+          </div>
           <div class="md:col-span-2">
-            <label class="block text-sm font-medium text-slate-700 mb-1">Email de notification <span class="text-slate-400 font-normal">(peut différer de l'email de connexion)</span></label>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Email de notification <span class="text-slate-400 font-normal">(pour recevoir les alertes)</span></label>
             <input id="profil-email-notif" type="email" class="input-field" placeholder="alertes@monentreprise.ma" />
+            <p class="text-xs text-slate-400 mt-1">Peut être différent de votre email de connexion.</p>
           </div>
         </div>
       </div>
 
       <!-- Telegram -->
       <div class="card">
-        <div class="flex items-center gap-3 mb-4">
+        <div class="flex items-center gap-3 mb-1">
           <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-base" style="background:#2AABEE">T</div>
           <h3 class="font-semibold text-slate-700">Notifications Telegram</h3>
           <span id="tg-status-badge" class="badge badge-gray">Non configuré</span>
         </div>
+        <p class="text-slate-400 text-xs mb-4">Telegram est gratuit, instantané et sans limite de messages. Recommandé pour ne rater aucun BC.</p>
         <div class="space-y-3">
           <div><label class="block text-sm font-medium text-slate-700 mb-1">Chat ID Telegram</label>
-            <input id="profil-tg-chat" type="text" class="input-field" placeholder="Ex: 123456789" /></div>
-          <div class="bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
-            <strong>Obtenir votre Chat ID :</strong><br>
-            1. Ouvrez Telegram et démarrez une conversation avec <strong>@RadarBCMarocBot</strong><br>
-            2. Envoyez <code class="bg-blue-100 px-1 rounded">/start</code> — le bot vous envoie votre Chat ID<br>
-            3. Copiez ce numéro ici et enregistrez.
+            <input id="profil-tg-chat" type="text" class="input-field" placeholder="Ex: 123456789" />
+          </div>
+          <div class="bg-blue-50 rounded-lg p-4 text-sm text-blue-700 space-y-1">
+            <div class="font-semibold mb-2">Comment obtenir votre Chat ID :</div>
+            <div class="flex gap-2"><span class="step-badge" style="background:#2AABEE;min-width:22px">1</span><span>Ouvrez Telegram et cherchez <strong>@RadarBCMarocBot</strong></span></div>
+            <div class="flex gap-2"><span class="step-badge" style="background:#2AABEE;min-width:22px">2</span><span>Envoyez <code class="bg-blue-100 px-1 rounded">/start</code> — le bot vous répond avec votre Chat ID</span></div>
+            <div class="flex gap-2"><span class="step-badge" style="background:#2AABEE;min-width:22px">3</span><span>Copiez ce numéro dans le champ ci-dessus et enregistrez</span></div>
           </div>
         </div>
       </div>
 
-      <div class="flex gap-3">
-        <button onclick="saveProfil()" id="btn-save-profil" class="btn-primary">Enregistrer</button>
+      <div class="flex gap-3 items-center flex-wrap">
+        <button onclick="saveProfil()" id="btn-save-profil" class="btn-primary">Enregistrer les modifications</button>
         <button onclick="changePassword()" class="btn-ghost text-sm">Changer le mot de passe</button>
       </div>
+      <p class="text-xs text-slate-400 -mt-4">Les modifications sont appliquées immédiatement.</p>
     </div>
 
     <!-- AIDE -->
@@ -336,20 +385,25 @@
         </div>
         <div>
           <h3 class="font-semibold text-slate-700 mb-2">🔎 Critère "Contenu" vs "Titre"</h3>
-          <p class="text-sm text-slate-600"><strong>Contenu</strong> cherche dans la liste des articles/lots du BC — idéal pour un produit précis (ex: "câble RJ45", "café arabica"). Ne cherche pas dans le titre.<br><strong>Titre</strong> cherche uniquement dans l'objet du BC — utile pour un domaine général (ex: "informatique", "travaux").</p>
+          <p class="text-sm text-slate-600"><strong>Contenu</strong> cherche dans la liste des articles/lots du BC — idéal pour un produit précis (ex: "câble RJ45", "café arabica"). Ne cherche pas dans le titre.<br><br><strong>Titre</strong> cherche uniquement dans l'objet du BC — utile pour un domaine général (ex: "informatique", "travaux").</p>
         </div>
         <div>
-          <h3 class="font-semibold text-slate-700 mb-2">🎯 Conseils</h3>
+          <h3 class="font-semibold text-slate-700 mb-2">🎯 Conseils pour de meilleurs résultats</h3>
           <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside">
             <li>Les accents sont ignorés : "café" trouve aussi "cafe"</li>
             <li>Recherche par mot entier : "eau" ne trouve PAS "carreaux"</li>
             <li>Combinez Contenu + Titre pour couvrir plus de cas</li>
             <li>Utilisez Région pour filtrer par wilaya</li>
+            <li>Utilisez Organisme pour cibler un acheteur spécifique (CHU, Ministère...)</li>
           </ul>
         </div>
         <div>
-          <h3 class="font-semibold text-slate-700 mb-2">📱 Notifications Telegram</h3>
-          <p class="text-sm text-slate-600">Telegram est gratuit, fiable et sans limite de messages. Configurez-le dans "Mon profil" pour ne rater aucun BC.</p>
+          <h3 class="font-semibold text-slate-700 mb-2">📱 Pourquoi activer Telegram ?</h3>
+          <p class="text-sm text-slate-600">Telegram est gratuit, instantané et fiable. Vous recevez une notification dès qu'un BC est détecté, même si vous n'êtes pas connecté au portail. Configurez-le dans "Mon profil".</p>
+        </div>
+        <div class="bg-slate-50 rounded-lg p-4">
+          <h3 class="font-semibold text-slate-700 mb-2">📞 Besoin d'aide ?</h3>
+          <p class="text-sm text-slate-600">Contactez notre équipe pour toute question sur votre abonnement ou la configuration du radar.</p>
         </div>
       </div>
     </div>
@@ -395,43 +449,48 @@ function typeBadge(type) {
 }
 
 // AUTH
-function showAuthTab(tab) {
+function showAuthTab(tab, keepMsg) {
   const isL = tab==='login';
   document.getElementById('form-login').classList.toggle('hidden',!isL);
   document.getElementById('form-register').classList.toggle('hidden',isL);
   document.getElementById('auth-tab-login').className   = 'flex-1 py-2 rounded-lg font-semibold text-sm transition-colors '+(isL?'tab-active':'tab-inactive');
   document.getElementById('auth-tab-register').className = 'flex-1 py-2 rounded-lg font-semibold text-sm transition-colors '+(!isL?'tab-active':'tab-inactive');
-  setMsg('auth-msg','');
+  if(!keepMsg) setMsg('auth-msg','');
 }
 async function doLogin() {
   const email = document.getElementById('login-email').value.trim();
   const pass  = document.getElementById('login-pass').value;
-  if(!email||!pass){setMsg('auth-msg','Remplissez tous les champs.');return;}
+  if(!email||!pass){setMsg('auth-msg','Veuillez remplir l\'email et le mot de passe.');return;}
   const btn = document.getElementById('btn-login');
-  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Connexion…';
   const {error} = await sb.auth.signInWithPassword({email,password:pass});
   btn.disabled=false; btn.textContent='Se connecter';
-  if(error) setMsg('auth-msg','Email ou mot de passe incorrect.');
+  if(error){
+    if(error.code==='email_not_confirmed')
+      setMsg('auth-msg','Votre email n\'est pas encore confirmé. Vérifiez votre boîte mail et cliquez sur le lien de confirmation.');
+    else
+      setMsg('auth-msg','Email ou mot de passe incorrect. Vérifiez vos identifiants.');
+  }
 }
 async function doRegister() {
   const name  = document.getElementById('reg-name').value.trim();
   const email = document.getElementById('reg-email').value.trim();
   const pass  = document.getElementById('reg-pass').value;
-  if(!name||!email||!pass){setMsg('auth-msg','Remplissez tous les champs.');return;}
-  if(pass.length<6){setMsg('auth-msg','Mot de passe : minimum 6 caractères.');return;}
+  if(!name||!email||!pass){setMsg('auth-msg','Veuillez remplir tous les champs.');return;}
+  if(pass.length<6){setMsg('auth-msg','Le mot de passe doit contenir au moins 6 caractères.');return;}
   const btn = document.getElementById('btn-register');
-  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Création…';
   const {data, error} = await sb.auth.signUp({email,password:pass,options:{data:{full_name:name}}});
   if(error){btn.disabled=false;btn.textContent='Créer mon compte';setMsg('auth-msg','Erreur : '+error.message);return;}
+  btn.disabled=false; btn.textContent='Créer mon compte';
   if(data.session){
-    btn.disabled=false; btn.textContent='Créer mon compte';
-    setMsg('auth-msg','✅ Compte créé !','success');
-    onAuthStateChange(data.session.user);
+    setMsg('auth-msg','✅ Compte créé avec succès !','success');
+    setTimeout(()=>onAuthStateChange(data.session.user), 800);
     return;
   }
-  btn.disabled=false; btn.textContent='Créer mon compte';
-  setMsg('auth-msg','✅ Compte créé ! Vérifiez votre email pour confirmer, puis connectez-vous.','success');
-  showAuthTab('login');
+  // Email confirmation required — switch to login tab and show persistent message
+  showAuthTab('login', true);
+  setMsg('auth-msg','✅ Compte créé ! Vérifiez votre boîte email pour confirmer votre adresse, puis connectez-vous.','success');
 }
 async function doLogout() {
   await sb.auth.signOut();
@@ -468,7 +527,8 @@ function showTab(tab) {
 // DASHBOARD
 async function refreshDashboard() {
   if(!currentClient) return;
-  document.getElementById('dash-welcome').textContent = 'Bonjour, '+(currentClient.nom||'')+'';
+  const nom = currentClient.nom || currentUser?.email || '';
+  document.getElementById('dash-welcome').textContent = 'Bonjour, ' + nom;
   itemOffset=0;
   await Promise.all([loadItemsData(false), loadDashStats()]);
 }
@@ -477,11 +537,13 @@ async function loadDashStats() {
     sb.from('bcs_envoyes').select('id',{count:'exact',head:true}).eq('client_id',currentClient.id).eq('radar_type','bc'),
     sb.from('criteres').select('id',{count:'exact',head:true}).eq('client_id',currentClient.id),
   ]);
-  document.getElementById('stat-total-bc').textContent = bcRes.count ?? 0;
-  const nbC = critRes.count ?? 0;
-  document.getElementById('stat-criteres').textContent = nbC;
+  const nbBC  = bcRes.count ?? 0;
+  const nbCrit= critRes.count ?? 0;
+  document.getElementById('stat-total-bc').textContent  = nbBC;
+  document.getElementById('stat-criteres').textContent  = nbCrit;
   const badge = document.getElementById('badge-criteres');
-  if(nbC>0){badge.textContent=nbC;badge.classList.remove('hidden');}
+  if(nbCrit>0){badge.textContent=nbCrit;badge.classList.remove('hidden');}
+  else{badge.classList.add('hidden');}
   const now = new Date();
   const m = now.getMinutes();
   const minsToNext = 120 - (m % 120);
@@ -503,128 +565,114 @@ async function loadItemsData(append=false) {
   document.getElementById('dash-table-wrap').classList.remove('hidden');
   const tbody = document.getElementById('dash-tbody');
   if(!append) tbody.innerHTML='';
-  (data||[]).forEach(row=>{
-    const bc = row.bc_data||{};
-    const tr = document.createElement('tr');
-    tr.className='table-row border-b border-slate-50';
-    tr.innerHTML=`
-      <td class="py-3 pr-4 text-slate-500 whitespace-nowrap text-xs">${fmtDate(row.created_at)}</td>
-      <td class="py-3 pr-4 text-slate-700 text-sm" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${bc.organisme||'—'}</td>
-      <td class="py-3 pr-4 text-slate-800 font-medium text-sm" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(bc.objet||'').replace(/"/g,'&quot;')}">${bc.objet||row.bc_id||'—'}</td>
-      <td class="py-3 pr-4">${typeBadge(row.critere_type)}<span class="text-xs text-slate-500 ml-1">${row.critere_valeur||''}</span></td>
-      <td class="py-3 pr-4 text-slate-500 whitespace-nowrap text-xs">${bc.date_limite||'—'}</td>
-      <td class="py-3">${bc.url?`<a href="${bc.url}" target="_blank" class="text-blue-600 hover:underline text-xs font-medium">Voir →</a>`:'—'}</td>`;
-    tbody.appendChild(tr);
+  (data||[]).forEach(bc=>{
+    const row = document.createElement('tr');
+    row.className='table-row border-b border-slate-50';
+    row.innerHTML=`
+      <td class="py-3 pr-4 text-slate-800 font-medium text-sm" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(bc.objet||'').replace(/"/g,'&quot;')}">${bc.objet||bc.bc_id||'—'}</td>
+      <td class="py-3 pr-4 text-slate-500 text-sm">${bc.organisme||'—'}</td>
+      <td class="py-3 pr-4 text-slate-500 text-sm">${bc.region||'—'}</td>
+      <td class="py-3 text-slate-400 text-xs whitespace-nowrap">${fmtDate(bc.created_at)}</td>`;
+    tbody.appendChild(row);
   });
-  itemOffset += (data||[]).length;
-  document.getElementById('btn-load-more').classList.toggle('hidden', !data||data.length<ITEM_LIMIT);
-  document.getElementById('dash-count').textContent = itemOffset+' BC'+(itemOffset>1?'s':'')+' affichés';
-}
-async function loadMoreItems() { await loadItemsData(true); }
-
-// ALERTES
-async function loadAlertes() {
-  if(!currentClient) return;
-  const list  = document.getElementById('alertesList');
-  const empty = document.getElementById('alertesEmpty');
-  list.innerHTML = '<div class="text-slate-400 text-sm text-center py-8">Chargement...</div>';
-  empty.classList.add('hidden');
-  try {
-    const {data,error} = await sb.from('bcs_envoyes').select('*')
-      .eq('client_id',currentClient.id).eq('radar_type','bc')
-      .order('created_at',{ascending:false}).limit(100);
-    if(error) throw new Error(error.message);
-    const rows = data||[];
-    const now30 = new Date(Date.now()-30*24*60*60*1000);
-    const rows30 = rows.filter(r=>new Date(r.created_at)>now30);
-    document.getElementById('alerte-total').textContent = rows.length;
-    document.getElementById('alerte-30j').textContent   = rows30.length;
-    if(rows.length>0){
-      const diffH = Math.floor((Date.now()-new Date(rows[0].created_at))/3600000);
-      document.getElementById('alerte-last').textContent = diffH<24?'Il y a '+diffH+'h':fmtDate(rows[0].created_at);
-    } else {
-      document.getElementById('alerte-last').textContent = '—';
-    }
-    if(rows30.length>0){
-      const sideB = document.getElementById('badge-alertes');
-      if(sideB){sideB.textContent=rows30.length;sideB.classList.remove('hidden');}
-    }
-    if(!rows.length){ list.innerHTML=''; empty.classList.remove('hidden'); return; }
-    list.innerHTML = rows.map(row=>{
-      const bc = row.bc_data||{};
-      const dt = new Date(row.created_at).toLocaleString('fr-MA',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
-      const titre = bc.objet||row.bc_id||'—';
-      const url   = bc.url||row.item_url;
-      return `<div class="flex items-start gap-4 py-3 border-b border-slate-100 last:border-0">
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-slate-800 text-sm">${url?`<a href="${url}" target="_blank" class="hover:text-blue-600 hover:underline">${titre}</a>`:titre}</div>
-          <div class="text-xs text-slate-500 mt-0.5">${bc.organisme||''} ${bc.date_limite?'· Limite : '+bc.date_limite:''}</div>
-          ${row.critere_valeur?`<div class="mt-1">${typeBadge(row.critere_type)}<span class="text-xs text-slate-400 ml-1">${row.critere_valeur}</span></div>`:''}
-        </div>
-        <div class="flex-shrink-0 text-xs text-slate-400 whitespace-nowrap">${dt}</div>
-      </div>`;
-    }).join('');
-  } catch(e) {
-    list.innerHTML = `<div class="alert alert-error">❌ ${e.message}</div>`;
-  }
+  document.getElementById('dash-count').textContent = (itemOffset+data.length)+' BC'+(itemOffset+data.length>1?'s':'');
+  const btnMore = document.getElementById('btn-load-more');
+  if(data.length===ITEM_LIMIT){ itemOffset+=ITEM_LIMIT; btnMore.classList.remove('hidden'); }
+  else{ btnMore.classList.add('hidden'); }
 }
 
-// CRITERES
+// CRITÈRES
 async function loadCriteres() {
   if(!currentClient) return;
-  const {data,error} = await sb.from('criteres').select('*')
-    .eq('client_id',currentClient.id).eq('radar_type','bc')
-    .order('id',{ascending:true});
-  const container = document.getElementById('criteres-list');
-  if(error){container.innerHTML='<div class="text-red-500 text-sm">Erreur de chargement</div>';return;}
-  if(!data||data.length===0){
-    container.innerHTML='<div class="text-center py-8 text-slate-400 text-sm">Aucun critère. Ajoutez-en un ci-dessus.</div>';
-    return;
-  }
+  const {data,error} = await sb.from('criteres').select('*').eq('client_id',currentClient.id).order('created_at');
   const pack = currentClient.pack||'starter';
   const maxKw = {starter:5,pro:20,business:50}[pack]||5;
+  const used = data ? data.length : 0;
+  const packInfo = document.getElementById('crit-pack-info');
+  if(packInfo) packInfo.textContent = `Pack ${pack.charAt(0).toUpperCase()+pack.slice(1)} — ${used}/${maxKw} critères`;
+  const container = document.getElementById('criteres-list');
+  if(error||!data||data.length===0){
+    container.innerHTML=`<div class="text-center py-10">
+      <div class="text-3xl mb-2">🎯</div>
+      <div class="font-medium text-slate-600 mb-1">Aucun critère pour l\'instant</div>
+      <div class="text-slate-400 text-sm">Utilisez le formulaire ci-dessus pour définir les mots-clés que le radar doit surveiller.</div>
+    </div>`;
+    return;
+  }
   container.innerHTML=data.map((c,i)=>`
     <div class="flex items-center justify-between py-3 border-b border-slate-50 last:border-0 ${i>=maxKw?'opacity-40':''}">
       <div class="flex items-center gap-3">
         ${typeBadge(c.type)}
         <span class="font-medium text-slate-800 text-sm">${c.valeur}</span>
-        ${i>=maxKw?'<span class="badge badge-gray text-xs">hors limite pack</span>':''}
+        ${i>=maxKw?'<span class="badge badge-gray text-xs">hors quota</span>':''}
       </div>
-      <button onclick="deleteCritere('${c.id}')" class="btn-danger">Supprimer</button>
+      <button onclick="deleteCritere('${c.id}')" class="btn-danger text-xs">Supprimer</button>
     </div>`).join('');
-  const badge = document.getElementById('badge-criteres');
-  badge.textContent=data.length; badge.classList.remove('hidden');
 }
 async function addCritere() {
-  if(!currentClient||!currentClient.id){showToast('Compte non activé — contactez le support.',true);return;}
+  if(!currentClient||!currentClient.id){showToast('Compte non encore activé — contactez notre équipe.',true);return;}
   const type  = document.getElementById('crit-type').value;
   const valeur= document.getElementById('crit-valeur').value.trim();
-  if(!valeur){showToast('Saisissez un mot-clé.',true);return;}
+  if(!valeur){showToast('Saisissez un mot-clé avant d\'ajouter.',true);return;}
   const pack = currentClient.pack||'starter';
   const maxKw = {starter:5,pro:20,business:50}[pack]||5;
   const {count} = await sb.from('criteres').select('id',{count:'exact',head:true}).eq('client_id',currentClient.id);
   if(count >= maxKw){
-    setMsg('crit-msg','Limite atteinte ('+maxKw+' mots-clés). <a href="pricing.html" target="_blank" class="underline font-semibold">Upgradez votre pack →</a>','error');
+    setMsg('crit-msg','Limite de votre pack atteinte ('+maxKw+' critères). <a href="pricing.html" target="_blank" class="underline font-semibold">Passez à une formule supérieure →</a>','error');
     return;
   }
   const btn = document.getElementById('btn-add-crit');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   const {error} = await sb.from('criteres').insert({client_id:currentClient.id,type,valeur,radar_type:'bc'});
   btn.disabled=false; btn.textContent='+ Ajouter';
-  if(error){showToast('Erreur: '+error.message,true);return;}
+  if(error){showToast('Erreur : '+error.message,true);return;}
   document.getElementById('crit-valeur').value='';
   setMsg('crit-msg','','success');
-  showToast('Critère ajouté !');
+  showToast('Critère "'+valeur+'" ajouté !');
   await loadCriteres();
   await loadDashStats();
 }
 async function deleteCritere(id) {
-  if(!confirm('Supprimer ce critère ?')) return;
+  if(!confirm('Supprimer ce critère ? Il ne sera plus pris en compte au prochain scan.')) return;
   const {error} = await sb.from('criteres').delete().eq('id',id);
-  if(error){showToast('Erreur suppression',true);return;}
+  if(error){showToast('Erreur lors de la suppression',true);return;}
   showToast('Critère supprimé');
   await loadCriteres();
   await loadDashStats();
+}
+
+// ALERTES
+async function loadAlertes() {
+  if(!currentClient) return;
+  const {data, error} = await sb.from('bcs_envoyes').select('*')
+    .eq('client_id',currentClient.id).eq('radar_type','bc')
+    .order('created_at',{ascending:false}).limit(100);
+  const total = data ? data.length : 0;
+  document.getElementById('alerte-total').textContent = total;
+  const badge = document.getElementById('badge-alertes');
+  if(total>0){badge.textContent=total;badge.classList.remove('hidden');}
+  else badge.classList.add('hidden');
+  if(total>0){
+    const now = new Date(); const start = new Date(now.getFullYear(),now.getMonth(),1);
+    const ce_mois = data.filter(d=>new Date(d.created_at)>=start).length;
+    document.getElementById('alerte-30j').textContent = ce_mois;
+    document.getElementById('alerte-last').textContent = fmtDate(data[0].created_at);
+  } else {
+    document.getElementById('alerte-30j').textContent = '0';
+    document.getElementById('alerte-last').textContent = '—';
+  }
+  const list = document.getElementById('alertesList');
+  const empty = document.getElementById('alertesEmpty');
+  if(!data||data.length===0){list.innerHTML='';empty.classList.remove('hidden');return;}
+  empty.classList.add('hidden');
+  list.innerHTML=data.map(bc=>`
+    <div class="flex items-start justify-between py-3 border-b border-slate-50 last:border-0 gap-3">
+      <div class="flex-1 min-w-0">
+        <div class="font-medium text-slate-800 text-sm truncate">${bc.objet||bc.bc_id||'BC sans titre'}</div>
+        <div class="text-slate-400 text-xs mt-0.5">${bc.organisme||''}${bc.region?' · '+bc.region:''}</div>
+      </div>
+      <div class="text-slate-400 text-xs whitespace-nowrap">${fmtDate(bc.created_at)}</div>
+    </div>`).join('');
 }
 
 // PROFIL
@@ -650,15 +698,14 @@ async function loadPackCard() {
   document.getElementById('pack-upgrade-cta').classList.toggle('hidden',pack==='business');
   const {count:usedKw} = await sb.from('criteres').select('id',{count:'exact',head:true}).eq('client_id',currentClient.id);
   const pct = Math.min(100,Math.round((usedKw||0)/meta.maxKw*100));
-  document.getElementById('pack-kw-count').textContent=(usedKw||0)+' / '+meta.maxKw;
+  document.getElementById('pack-kw-count').textContent=(usedKw||0)+' / '+meta.maxKw+' mots-clés';
   const bar=document.getElementById('pack-kw-bar');
   bar.style.width=pct+'%'; bar.style.background=pct>=90?'#dc2626':pct>=70?'#d97706':'#2563eb';
-  document.getElementById('pack-features').innerHTML=Object.entries(meta.features).map(([k,ok])=>{
-    const labels={Telegram:'Notifications Telegram',Email:'Alertes email',IA:'Validation IA (0 faux positif)',Support:'Support prioritaire'};
-    return `<div class="flex items-center gap-2 text-sm ${ok?'text-slate-700':'text-slate-400'}">
+  const labels={Telegram:'Notifications Telegram',Email:'Alertes email',IA:'Validation IA (0 faux positif)',Support:'Support prioritaire'};
+  document.getElementById('pack-features').innerHTML=Object.entries(meta.features).map(([k,ok])=>`
+    <div class="flex items-center gap-2 text-sm ${ok?'text-slate-700':'text-slate-400'}">
       <span>${ok?'<span class="text-green-600">✓</span>':'<span class="text-slate-300">—</span>'}</span> ${labels[k]||k}
-    </div>`;
-  }).join('');
+    </div>`).join('');
 }
 function updateNotifBadges() {
   const tgOk = !!currentClient.tg_chat_id;
@@ -672,17 +719,17 @@ async function saveProfil() {
   if(!nom){setMsg('profil-msg','Le nom est requis.');return;}
   setMsg('profil-msg','');
   const btn=document.getElementById('btn-save-profil');
-  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Enregistrement…';
   const {error} = await sb.from('clients').update({nom,email_notif:emailNotif||null,tg_chat_id:tgChat||null}).eq('id',currentClient.id);
-  btn.disabled=false; btn.textContent='Enregistrer';
+  btn.disabled=false; btn.textContent='Enregistrer les modifications';
   if(error){setMsg('profil-msg','Erreur : '+error.message);return;}
   Object.assign(currentClient,{nom,email_notif:emailNotif||null,tg_chat_id:tgChat||null});
   updateNotifBadges();
-  showToast('Profil enregistré !');
+  showToast('Profil mis à jour avec succès !');
 }
 async function changePassword() {
   const np = prompt('Nouveau mot de passe (minimum 6 caractères) :');
-  if(!np||np.length<6){if(np!==null)alert('Mot de passe trop court.');return;}
+  if(!np||np.length<6){if(np!==null)alert('Mot de passe trop court (minimum 6 caractères).');return;}
   const {error} = await sb.auth.updateUser({password:np});
   if(error) showToast('Erreur : '+error.message,true);
   else showToast('Mot de passe mis à jour !');
