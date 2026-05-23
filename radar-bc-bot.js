@@ -2187,7 +2187,7 @@ const _httpServer = http.createServer(async (req, res) => {
   const path_  = parsed.pathname;
 
   // ── GET /health  (Fly.io health check) ─────────────
-  if (req.method === "GET" && (path_ === "/health" || path_ === "/")) {
+  if (req.method === "GET" && path_ === "/health") {
     return jsonResp(res, 200, { status: "ok", uptime: Math.floor((Date.now() - _startTime) / 1000) });
   }
 

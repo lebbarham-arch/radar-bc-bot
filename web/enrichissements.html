@@ -340,13 +340,9 @@ function renderCriteres() {
         <div class="critere-body">
           <div class="two-cols">
             <div class="tags-section">
-              <label>✅ Inclusions (${activeIncl} actives / ${inclusions.length} <span style="color:${inclusions.length>=ENRICH_LIMITS.incl?'#e53e3e':'#718096'}">max ${ENRICH_LIMITS.incl}</span>)</label>
-              <div class="tag-toggle-hint">Clic = activer/désactiver · × = supprimer</div>
+              <label>🤖 Inclusions IA (${activeIncl} actives / ${inclusions.length}) <span style="font-size:0.7rem;font-weight:400;color:#718096;text-transform:none">— générées automatiquement par l'IA</span></label>
+              <div class="tag-toggle-hint">Clic = activer/désactiver · × = supprimer (admin seulement)</div>
               <div class="tags-container" id="incl-${critere.id}">${inclTags}</div>
-              <div class="add-tag-row">
-                <input type="text" id="newIncl-${critere.id}" placeholder="${inclusions.length>=ENRICH_LIMITS.incl?'Limite atteinte':'Ajouter une inclusion...'}" ${inclusions.length>=ENRICH_LIMITS.incl?'disabled':''} onkeydown="if(event.key==='Enter') addTag(${critere.id},'incl')">
-                <button class="btn btn-success btn-sm" onclick="addTag(${critere.id},'incl')" ${inclusions.length>=ENRICH_LIMITS.incl?'disabled':''}>+ Ajouter</button>
-              </div>
             </div>
             <div class="tags-section">
               <label>❌ Exclusions (${activeExcl} actives / ${exclusions.length} <span style="color:${exclusions.length>=ENRICH_LIMITS.excl?'#e53e3e':'#718096'}">max ${ENRICH_LIMITS.excl}</span>)</label>
@@ -398,4 +394,19 @@ function toggleTag(id, type, idx) {
   const key     = type === "incl" ? "_disabled_incl" : "_disabled_excl";
   critere[key]  = critere[key] || new Set();
   const term    = list[idx];
-  if (criter
+  if (critere[key].has(term)) critere[key].delete(term);
+  else critere[key].add(term);
+  reopenCard(id);
+}
+
+const ENRICH_LIMITS = { incl: 10, excl: 5 };
+
+function addTag(id, type) {
+  // Inclusions : IA uniquement, pas d'ajout manuel possible
+  if (type === "incl") return;
+  const input = document.getElementById("newExcl-" + id);
+  const val = input.value.trim();
+  if (!val) return;
+  const critere = getCardData(id);
+  if (!critere) return;
+  critere.ai_exclusions = critere.ai_excl
