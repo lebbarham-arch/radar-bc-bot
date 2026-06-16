@@ -2722,8 +2722,13 @@ function fireShadowDetect(item, client, criteres, wasNotifiedLegacy) {
 // Sauvegarde chaque décision de matching pour audit offline.
 // Aucune logique de matching modifiée — observation pure.
 // ============================================================
-const SNAPSHOT_DIR       = path.join(__dirname, "data", "scan-snapshots");
-const INPUT_SNAPSHOT_DIR = path.join(__dirname, "data", "input-snapshots");
+// Configurable via RADAR_BC_SNAPSHOT_DIR (ex: /tmp/radar-bc-snapshots sur Fly.io).
+// Par défaut : data/scan-snapshots et data/input-snapshots à côté du script.
+const _SNAPSHOT_BASE     = process.env.RADAR_BC_SNAPSHOT_DIR
+  ? process.env.RADAR_BC_SNAPSHOT_DIR
+  : path.join(__dirname, "data");
+const SNAPSHOT_DIR       = path.join(_SNAPSHOT_BASE, "scan-snapshots");
+const INPUT_SNAPSHOT_DIR = path.join(_SNAPSHOT_BASE, "input-snapshots");
 // Opt-in : RADAR_BC_WRITE_INPUT_SNAPSHOT=1 → écrit data/input-snapshots/bc-input-<ts>.jsonl
 // Capture les BC détaillés AVANT matching client — snapshot brut d'entrée.
 const WRITE_INPUT_SNAPSHOT = process.env.RADAR_BC_WRITE_INPUT_SNAPSHOT === "1";
@@ -3089,9 +3094,11 @@ function writeScanSnapshot(rows, radarType) {
     const fpath   = path.join(SNAPSHOT_DIR, fname);
     const latest  = path.join(SNAPSHOT_DIR, "latest-" + radarType + "-scan.jsonl");
     const content = rows.map(r => JSON.stringify(r)).join("\n") + "\n";
+    log("[Snapshot] dir=" + SNAPSHOT_DIR);
     fs.writeFileSync(fpath,   content, "utf8");
     fs.writeFileSync(latest,  content, "utf8");
-    log("[Snapshot] " + rows.length + " lignes → " + fname);
+    log("[Snapshot] saved path=" + fpath + " (" + rows.length + " lignes)");
+    log("[Snapshot] latest=" + latest);
   } catch (e) {
     log("[Snapshot] ERREUR ecriture : " + e.message);
   }
@@ -3134,9 +3141,11 @@ function writeInputSnapshot(items) {
       });
       return JSON.stringify(row);
     }).join("\n") + "\n";
+    log("[InputSnapshot] dir=" + INPUT_SNAPSHOT_DIR);
     fs.writeFileSync(fpath,   content, "utf8");
     fs.writeFileSync(latest,  content, "utf8");
-    log("[InputSnapshot] " + items.length + " BCs -> " + fname);
+    log("[InputSnapshot] saved path=" + fpath + " (" + items.length + " BCs)");
+    log("[InputSnapshot] latest=" + latest);
   } catch (e) {
     log("[InputSnapshot] ERREUR ecriture : " + e.message);
   }
@@ -4982,6 +4991,49 @@ const _httpServer = http.createServer(async (req, res) => {
     }
   }
 
+  // ── GET /api/snapshot/latest  (télécharge le dernier snapshot JSONL) ──────────
+  // type=scan   → SNAPSHOT_DIR/latest-bc-scan.jsonl
+  // type=input  → INPUT_SNAPSHOT_DIR/latest-bc-input.jsonl
+  // Protégé par ADMIN_SECRET (checkSecret).
+  // Retourne le fichier en texte brut (application/x-ndjson) → curl-friendly.
+  // Si le fichier n'existe pas, retourne 404 JSON avec un hint.
+  if (req.method === "GET" && path_ === "/api/snapshot/latest") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    const type_ = parsed.query.type || "scan";
+    let latestPath;
+    if (type_ === "input") {
+      latestPath = path.join(INPUT_SNAPSHOT_DIR, "latest-bc-input.jsonl");
+    } else if (type_ === "scan") {
+      latestPath = path.join(SNAPSHOT_DIR, "latest-bc-scan.jsonl");
+    } else {
+      return jsonResp(res, 400, { error: "Paramètre type invalide. Valeurs acceptées : scan | input" });
+    }
+    if (!fs.existsSync(latestPath)) {
+      return jsonResp(res, 404, {
+        error:    "Fichier introuvable",
+        type:     type_,
+        path:     latestPath,
+        hint:     type_ === "scan"
+          ? "Aucun scan enregistré. Lancez un scan (POST /api/scan-now) ou vérifiez RADAR_BC_SNAPSHOT_DIR."
+          : "WRITE_INPUT_SNAPSHOT non activé ou aucun scan effectué. Activez RADAR_BC_WRITE_INPUT_SNAPSHOT=1.",
+      });
+    }
+    try {
+      const stat    = fs.statSync(latestPath);
+      const content = fs.readFileSync(latestPath, "utf8");
+      res.writeHead(200, {
+        "Content-Type":        "application/x-ndjson; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="' + path.basename(latestPath) + '"',
+        "X-Snapshot-Path":     latestPath,
+        "X-Snapshot-Size":     stat.size,
+        "X-Snapshot-Mtime":    stat.mtime.toISOString(),
+      });
+      res.end(content);
+    } catch (e) {
+      return jsonResp(res, 500, { error: "Erreur lecture snapshot : " + e.message, path: latestPath });
+    }
+  }
+
   // 404 API
   return jsonResp(res, 404, { error: "Route inconnue", routes: [
     "GET  / \u2192 portail client",
@@ -4994,6 +5046,7 @@ const _httpServer = http.createServer(async (req, res) => {
     "GET  /api/status?secret=xxx",
     "POST /api/scan-now?secret=xxx",
     "GET  /api/test-notify?secret=xxx[&client_id=yyy]",
+    "GET  /api/snapshot/latest?secret=xxx[&type=scan|input]",
     "GET  /api/replay-notify/list?secret=xxx",
     "GET  /api/replay-notify?secret=xxx&client_id=yyy&bc_id=<id|latest>[&critere=nettoyage]",
     "GET  /api/debug-snapshot-notify?secret=xxx&client_id=yyy[&bc_id=zzz][&critere=nettoyage][&send=false][&limit=10][&search_all_snapshots=false][&only_unsent=false][&only_would_send=false]",
@@ -5074,6 +5127,8 @@ if (SERVER_ONLY) {
       + " tg_token_source=" + (_isValidToken(process.env.TELEGRAM_BOT_TOKEN) ? "env" : "absent")
       + " anthropic=" + (CFG.anthropicKey ? "set" : "empty")
       + " resend=" + (CFG.resendKey ? "set" : "empty"));
+    log("[Snapshot] dir_scan=" + SNAPSHOT_DIR + " dir_input=" + INPUT_SNAPSHOT_DIR
+      + (process.env.RADAR_BC_SNAPSHOT_DIR ? " (RADAR_BC_SNAPSHOT_DIR=" + process.env.RADAR_BC_SNAPSHOT_DIR + ")" : " (défaut)"));
     log("Bot demarre. Chargement cache Supabase...");
     await loadCacheFromSupabase();
     log("Cache charge. Premier scan BC dans " + (STARTUP_BC_SCAN_DELAY_MS / 1000) + "s, MP dans 65s...");
