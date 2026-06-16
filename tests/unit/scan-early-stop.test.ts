@@ -1,0 +1,391 @@
+/**
+ * Tests unitaires — Early stop listing BC + BC_DETAIL_CONCURRENT
+ *
+ * Couvre les deux patches de perf (feat/perf):
+ *   A. scrapeAllItems early stop (BC_LISTING_EARLY_STOP_PAGES)
+ *   B. loadDetails BATCH configurable (BC_DETAIL_CONCURRENT)
+ *
+ * Aucune dépendance Puppeteer : toute la logique est mirrorée ici.
+ *
+ * Nomenclature : ES-N (Early Stop) · DC-N (Detail Concurrent)
+ */
+
+// ─── Helpers de type ──────────────────────────────────────────────────────────
+
+interface BcItem {
+  id: string;
+  objet?: string;
+  reference?: string;
+}
+
+interface PageResult {
+  items: BcItem[];
+  hasNext: boolean;
+  failed?: boolean;
+  _failReason?: string;
+}
+
+interface ScrapeAllResult extends Array<BcItem> {
+  _scanFailed: boolean;
+  _scanFailReason: string;
+}
+
+// ─── Mirror de scrapeAllItems (logique pure, sans Puppeteer) ─────────────────
+//
+// Signature identique au patch :
+//   scrapeAllItems(browser, baseUrl, label, knownIds?)
+// Ici : browser/baseUrl/label sont ignorés — on passe directement les pages.
+
+async function scrapeAllItemsMirror(
+  pages: PageResult[],
+  knownIds: Set<string> | undefined,
+  earlyStopEnv: string | undefined,
+  logs: string[],
+): Promise<ScrapeAllResult> {
+  const all: BcItem[] = [];
+  let pageNum = 1;
+
+  // Résoudre earlyStopN exactement comme le code prod
+  const _earlyStopN = (() => {
+    const raw = parseInt(earlyStopEnv || "", 10);
+    if (!Number.isFinite(raw) || raw <= 0) return 0;
+    return raw;
+  })();
+  const _earlyStopActive = _earlyStopN > 0 && knownIds != null && knownIds.size > 0;
+
+  if (_earlyStopN === 0) {
+    logs.push("[EARLY_STOP] disabled (BC_LISTING_EARLY_STOP_PAGES not set or 0)");
+  } else if (!_earlyStopActive) {
+    logs.push("[EARLY_STOP] disabled (knownIds vide — bcs_vus probablement vide) seuil=" + _earlyStopN);
+  } else {
+    logs.push("[EARLY_STOP] active seuil=" + _earlyStopN + " pages known_ids=" + knownIds!.size);
+  }
+
+  let _pagesWithoutNew = 0;
+
+  for (let idx = 0; idx < pages.length && pageNum <= 500; idx++, pageNum++) {
+    const r = pages[idx]!;
+    let stop = false;
+
+    if (r.failed) {
+      stop = true;
+    } else if (r.items.length === 0) {
+      stop = true;
+    } else {
+      for (const item of r.items) all.push(item);
+
+      // Early stop guard
+      if (_earlyStopActive && pageNum > 1 && r.items.length > 0) {
+        const _newOnPage = r.items.filter((bc) => !knownIds!.has(bc.id)).length;
+        if (_newOnPage === 0) {
+          _pagesWithoutNew++;
+          logs.push(
+            "[EARLY_STOP] page=" + pageNum +
+            " all_known pages_without_new=" + _pagesWithoutNew + "/" + _earlyStopN
+          );
+          if (_pagesWithoutNew >= _earlyStopN) {
+            logs.push(
+              "[EARLY_STOP] triggered pages_without_new=" + _pagesWithoutNew +
+              " → arret listing anticipé"
+            );
+            stop = true;
+          }
+        } else {
+          _pagesWithoutNew = 0;
+        }
+      }
+
+      if (!r.hasNext) stop = true;
+    }
+
+    if (stop) break;
+  }
+
+  const result = all as ScrapeAllResult;
+  result._scanFailed = false;
+  result._scanFailReason = "";
+  return result;
+}
+
+// ─── Mirror de la résolution BATCH de loadDetails ────────────────────────────
+
+function resolveBatch(envValue: string | undefined): number {
+  const raw = parseInt(envValue || "", 10);
+  if (Number.isFinite(raw) && raw >= 1 && raw <= 6) return raw;
+  return 3;
+}
+
+// ─── Helpers de test ─────────────────────────────────────────────────────────
+
+function makeItem(id: string): BcItem {
+  return { id, objet: "BC " + id, reference: "REF-" + id };
+}
+
+function makePage(ids: string[], hasNext = true): PageResult {
+  return { items: ids.map(makeItem), hasNext };
+}
+
+function knownSet(...ids: string[]): Set<string> {
+  return new Set(ids);
+}
+
+// ─── ES — Early Stop listing ──────────────────────────────────────────────────
+
+describe("ES — Early Stop listing BC", () => {
+
+  // ── Comportement désactivé ────────────────────────────────────────────────
+
+  test("ES-1: sans env, early stop désactivé — toutes les pages scrapées", async () => {
+    const pages: PageResult[] = [
+      makePage(["1", "2"]),
+      makePage(["3", "4"]),
+      makePage(["5"], false),  // dernière page
+    ];
+    const known = knownSet("1", "2");
+    const logs: string[] = [];
+    const result = await scrapeAllItemsMirror(pages, known, undefined, logs);
+
+    expect(result).toHaveLength(5);
+    expect(logs[0]).toContain("[EARLY_STOP] disabled (BC_LISTING_EARLY_STOP_PAGES");
+    expect(logs.some(l => l.includes("[EARLY_STOP] triggered"))).toBe(false);
+  });
+
+  test("ES-2: env=0, early stop désactivé explicitement", async () => {
+    const pages: PageResult[] = [
+      makePage(["1", "2"]),
+      makePage(["1", "2"]),  // toutes connues — mais pas d'early stop
+      makePage(["3"], false),
+    ];
+    const known = knownSet("1", "2");
+    const logs: string[] = [];
+    const result = await scrapeAllItemsMirror(pages, known, "0", logs);
+
+    expect(result).toHaveLength(5);  // all 3 pages scraped
+    expect(logs[0]).toContain("[EARLY_STOP] disabled (BC_LISTING_EARLY_STOP_PAGES");
+  });
+
+  test("ES-3: env=5, knownIds vide → early stop désactivé (garde BDD vide)", async () => {
+    const pages: PageResult[] = [
+      makePage(["1", "2"]),
+      makePage(["3", "4"]),
+    ];
+    const known = new Set<string>();  // BDD vide
+    const logs: string[] = [];
+    const result = await scrapeAllItemsMirror(pages, known, "5", logs);
+
+    expect(result).toHaveLength(4);
+    expect(logs[0]).toContain("[EARLY_STOP] disabled (knownIds vide");
+    expect(logs.some(l => l.includes("[EARLY_STOP] triggered"))).toBe(false);
+  });
+
+  test("ES-4: env=5, knownIds undefined → early stop désactivé", async () => {
+    const pages: PageResult[] = [
+      makePage(["1"]),
+      makePage(["1"]),
+    ];
+    const logs: string[] = [];
+    const result = await scrapeAllItemsMirror(pages, undefined, "5", logs);
+
+    expect(result).toHaveLength(2);
+    expect(logs[0]).toContain("[EARLY_STOP] disabled");
+  });
+
+  // ── Garde page 1 ─────────────────────────────────────────────────────────
+
+  test("ES-5: page 1 entièrement connue → pas d'early stop (garde page 1)", async () => {
+    const pages: PageResult[] = [
+      makePage(["1", "2"]),   // page 1 — toutes connues — mais garde : pageNum===1
+      makePage(["3"], false), // page 2 — nouveaux
+    ];
+    const known = knownSet("1", "2");
+    const logs: string[] = [];
+    const result = await scrapeAllItemsMirror(pages, known, "1", logs);
+
+    // Page 1 toujours scrapée, page 2 aussi car garde empêche stop sur p1
+    expect(result).toHaveLength(3);
+    expect(logs.some(l => l.includes("[EARLY_STOP] triggered"))).toBe(false);
+  });
+
+  // ── Déclenchement normal ──────────────────────────────────────────────────
+
+  test("ES-6: N=3 — stop après 3 pages consécutives all-known", async () => {
+    const pages: PageResult[] = [
+      makePage(["10", "11"]),      // p1 — nouveaux
+      makePage(["1", "2"]),        // p2 — all known, pagesWithoutNew=1
+      makePage(["3", "4"]),        // p3 — all known, pagesWithoutNew=2
+      makePage(["5", "6"]),        // p4 — all known, pagesWithoutNew=3 → TRIGGERED
+      makePage(["99"]),            // p5 — ne doit pas être atteinte
+    ];
+    const known = knownSet("1", "2", "3", "4", "5", "6");
+    const logs: string[] = [];
+    const result = await scrapeAllItemsMirror(pages, known, "3", logs);
+
+    // p1(2 items) + p2(2) + p3(2) + p4(2) = 8 — p5 non atteinte
+    expect(result).toHaveLength(8);
+    const triggered = logs.find(l => l.includes("[EARLY_STOP] triggered"));
+    expect(triggered).toBeDefined();
+    expect(triggered).toContain("pages_without_new=3");
+    // p5 (id=99) absent
+    expect(result.map(b => b.id)).not.toContain("99");
+  });
+
+  test("ES-7: N=1 — stop après 1 page all-known (agressif)", async () => {
+    const pages: PageResult[] = [
+      makePage(["10"]),       // p1 — nouveau — pas de check (pageNum===1)
+      makePage(["1", "2"]),   // p2 — all known → triggered N=1
+      makePage(["20"]),       // p3 — ne doit pas être atteinte
+    ];
+    const known = knownSet("1", "2");
+    const logs: string[] = [];
+    const result = await scrapeAllItemsMirror(pages, known, "1", logs);
+
+    expect(result).toHaveLength(3); // p1(1) + p2(2) = 3
+    expect(logs.some(l => l.includes("[EARLY_STOP] triggered"))).toBe(true);
+    expect(result.map(b => b.id)).not.toContain("20");
+  });
+
+  // ── Reset compteur ────────────────────────────────────────────────────────
+
+  test("ES-8: reset compteur si nouveau BC trouvé sur page intermédiaire", async () => {
+    const pages: PageResult[] = [
+      makePage(["10"]),            // p1 — nouveau
+      makePage(["1", "2"]),        // p2 — all known, pagesWithoutNew=1
+      makePage(["NEW"]),           // p3 — nouveau ! → reset pagesWithoutNew=0
+      makePage(["3", "4"]),        // p4 — all known, pagesWithoutNew=1
+      makePage(["5", "6"]),        // p5 — all known, pagesWithoutNew=2
+      makePage(["7", "8"], false), // p6 — all known, pagesWithoutNew=3 → triggered N=3
+    ];
+    const known = knownSet("1", "2", "3", "4", "5", "6", "7", "8");
+    const logs: string[] = [];
+    const result = await scrapeAllItemsMirror(pages, known, "3", logs);
+
+    // Toutes les pages atteintes car reset à p3
+    expect(result.map(b => b.id)).toContain("NEW");
+    const triggered = logs.find(l => l.includes("[EARLY_STOP] triggered"));
+    expect(triggered).toBeDefined();
+  });
+
+  // ── Logs obligatoires ─────────────────────────────────────────────────────
+
+  test("ES-9: logs [EARLY_STOP] page= bien émis avec compteur", async () => {
+    const pages: PageResult[] = [
+      makePage(["10"]),        // p1 — nouveau
+      makePage(["1"]),         // p2 — all known → log page=2 1/3
+      makePage(["2"]),         // p3 — all known → log page=3 2/3
+      makePage(["3"], false),  // p4 — all known → log page=4 3/3 + triggered
+    ];
+    const known = knownSet("1", "2", "3");
+    const logs: string[] = [];
+    await scrapeAllItemsMirror(pages, known, "3", logs);
+
+    const pageLogs = logs.filter(l => l.includes("[EARLY_STOP] page="));
+    expect(pageLogs).toHaveLength(3);
+    expect(pageLogs[0]).toContain("page=2");
+    expect(pageLogs[0]).toContain("pages_without_new=1/3");
+    expect(pageLogs[1]).toContain("page=3");
+    expect(pageLogs[1]).toContain("pages_without_new=2/3");
+    expect(pageLogs[2]).toContain("page=4");
+    expect(pageLogs[2]).toContain("pages_without_new=3/3");
+
+    const triggered = logs.find(l => l.includes("[EARLY_STOP] triggered"));
+    expect(triggered).toContain("pages_without_new=3");
+  });
+
+  test("ES-10: log [EARLY_STOP] active contient seuil et known_ids count", async () => {
+    const pages: PageResult[] = [makePage(["X"], false)];
+    const known = knownSet("A", "B", "C");
+    const logs: string[] = [];
+    await scrapeAllItemsMirror(pages, known, "5", logs);
+
+    expect(logs[0]).toContain("[EARLY_STOP] active seuil=5");
+    expect(logs[0]).toContain("known_ids=3");
+  });
+
+  // ── Arrêt naturel (hasNext=false) non affecté ─────────────────────────────
+
+  test("ES-11: arrêt naturel hasNext=false non affecté par early stop actif", async () => {
+    const pages: PageResult[] = [
+      makePage(["10"]),        // p1 — nouveau
+      makePage(["20"], false), // p2 — nouveau, hasNext=false → arrêt normal
+    ];
+    const known = knownSet("1");
+    const logs: string[] = [];
+    const result = await scrapeAllItemsMirror(pages, known, "5", logs);
+
+    expect(result).toHaveLength(2);
+    expect(logs.some(l => l.includes("[EARLY_STOP] triggered"))).toBe(false);
+  });
+
+  // ── Échec page ────────────────────────────────────────────────────────────
+
+  test("ES-12: failed=true sur une page → arrêt immédiat, early stop non déclenché", async () => {
+    const pages: PageResult[] = [
+      makePage(["10"]),
+      { items: [], hasNext: false, failed: true, _failReason: "NAV_TIMEOUT" },
+      makePage(["99"]), // ne doit pas être atteinte
+    ];
+    const known = knownSet("1");
+    const logs: string[] = [];
+    const result = await scrapeAllItemsMirror(pages, known, "1", logs);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!.id).toBe("10");
+    expect(logs.some(l => l.includes("[EARLY_STOP] triggered"))).toBe(false);
+  });
+});
+
+// ─── DC — BC_DETAIL_CONCURRENT ────────────────────────────────────────────────
+
+describe("DC — BC_DETAIL_CONCURRENT résolution BATCH", () => {
+
+  test("DC-1: sans env → défaut 3", () => {
+    expect(resolveBatch(undefined)).toBe(3);
+  });
+
+  test("DC-2: env vide → défaut 3", () => {
+    expect(resolveBatch("")).toBe(3);
+  });
+
+  test("DC-3: env=3 → 3", () => {
+    expect(resolveBatch("3")).toBe(3);
+  });
+
+  test("DC-4: env=5 → 5 (valeur recommandée)", () => {
+    expect(resolveBatch("5")).toBe(5);
+  });
+
+  test("DC-5: env=1 → 1 (minimum)", () => {
+    expect(resolveBatch("1")).toBe(1);
+  });
+
+  test("DC-6: env=6 → 6 (maximum autorisé)", () => {
+    expect(resolveBatch("6")).toBe(6);
+  });
+
+  test("DC-7: env=7 → défaut 3 (hors borne max 6)", () => {
+    expect(resolveBatch("7")).toBe(3);
+  });
+
+  test("DC-8: env=0 → défaut 3 (hors borne min 1)", () => {
+    expect(resolveBatch("0")).toBe(3);
+  });
+
+  test("DC-9: env=-1 → défaut 3 (négatif)", () => {
+    expect(resolveBatch("-1")).toBe(3);
+  });
+
+  test("DC-10: env=abc → défaut 3 (non numérique)", () => {
+    expect(resolveBatch("abc")).toBe(3);
+  });
+
+  test("DC-11: env=2.9 → défaut 3 (float → parseInt = 2, < 1? non → 2)", () => {
+    // parseInt("2.9") = 2, qui est dans [1,6] → retourne 2
+    expect(resolveBatch("2.9")).toBe(2);
+  });
+
+  test("DC-12: env=6.9 → 6 (parseInt 6.9 = 6, dans [1,6])", () => {
+    expect(resolveBatch("6.9")).toBe(6);
+  });
+});
+
+export {}

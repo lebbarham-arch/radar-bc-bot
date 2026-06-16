@@ -1897,9 +1897,27 @@ async function fetchAllBCsHttp() {
   return all;
 }
 
-async function scrapeAllItems(browser, baseUrl, label) {
+async function scrapeAllItems(browser, baseUrl, label, knownIds) {
   const all = []; let pageNum = 1; const BATCH = 1;
   let _lastFailed = false; let _lastFailReason = "";
+  // ── BC_LISTING_EARLY_STOP_PAGES : arrêt anticipé listing quand N pages consécutives
+  //    sont entièrement connues (tous IDs dans knownIds). Désactivé par défaut (0).
+  //    Garde : désactivé si knownIds absent/vide, ou sur page 1.
+  //    Première activation recommandée : BC_LISTING_EARLY_STOP_PAGES=5.
+  const _earlyStopN = (() => {
+    const raw = parseInt(process.env.BC_LISTING_EARLY_STOP_PAGES || "", 10);
+    if (!Number.isFinite(raw) || raw <= 0) return 0;  // 0 = désactivé (défaut)
+    return raw;
+  })();
+  const _earlyStopActive = _earlyStopN > 0 && knownIds && knownIds.size > 0;
+  if (_earlyStopN === 0) {
+    log("[EARLY_STOP] disabled (BC_LISTING_EARLY_STOP_PAGES not set or 0)");
+  } else if (!_earlyStopActive) {
+    log("[EARLY_STOP] disabled (knownIds vide — bcs_vus probablement vide) seuil=" + _earlyStopN);
+  } else {
+    log("[EARLY_STOP] active seuil=" + _earlyStopN + " pages known_ids=" + knownIds.size);
+  }
+  let _pagesWithoutNew = 0;
   log("  Chargement liste " + label + " (sequentiel, 1 page a la fois)...");
   while (pageNum <= 500) {
     const results = await Promise.all(
@@ -1914,6 +1932,21 @@ async function scrapeAllItems(browser, baseUrl, label) {
       }
       if (r.items.length === 0) { _lastFailed = false; stop = true; break; }
       all.push(...r.items);
+      // ── Early stop : N pages consécutives entièrement connues ─────────────
+      if (_earlyStopActive && pageNum > 1 && r.items.length > 0) {
+        const _newOnPage = r.items.filter(function(bc) { return !knownIds.has(bc.id); }).length;
+        if (_newOnPage === 0) {
+          _pagesWithoutNew++;
+          log("[EARLY_STOP] page=" + pageNum + " all_known pages_without_new=" + _pagesWithoutNew + "/" + _earlyStopN);
+          if (_pagesWithoutNew >= _earlyStopN) {
+            log("[EARLY_STOP] triggered pages_without_new=" + _pagesWithoutNew + " → arret listing anticipé");
+            stop = true; break;
+          }
+        } else {
+          _pagesWithoutNew = 0;  // reset : nouveaux BC trouvés sur cette page
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
       if (!r.hasNext) { stop = true; break; }
     }
     log("  -> Pages " + pageNum + "-" + (pageNum + BATCH - 1) + ": " + all.length + " " + label);
@@ -2425,8 +2458,13 @@ async function scrapeMPDetail(page, mp, opts) {
 async function loadDetails(browser, items, label, isMP, opts) {
   if (!items.length) return [];
   const packLabel = opts && opts.skipDAO === true ? "[MOYEN]" : opts && opts.skipDAO === false ? "[AVANCÉ]" : "";
-  log("  Chargement " + items.length + " fiches " + label + " " + packLabel + " (3 en parallele)...");
-  const result = []; const BATCH = 3;
+  // ── BC_DETAIL_CONCURRENT : parallélisme chargement fiches (défaut 3, max 6) ──
+  const BATCH = (() => {
+    const raw = parseInt(process.env.BC_DETAIL_CONCURRENT || "", 10);
+    if (Number.isFinite(raw) && raw >= 1 && raw <= 6) return raw;
+    return 3;  // défaut inchangé
+  })();
+  log("  Chargement " + items.length + " fiches " + label + " " + packLabel + " (" + BATCH + " en parallele)...");
   // ── BC_DETAIL_TIMEOUT_MS : timeout dur par fiche BC (defaut 45s) ──────────
   const bcDetailTimeoutMs = (() => {
     const raw = parseInt(process.env.BC_DETAIL_TIMEOUT_MS || "", 10);
@@ -3736,8 +3774,10 @@ async function runGlobalScanBC(source) {
     browser = await launchBrowser();
     log("[BROWSER] launched [runId=" + _scanRunId + " source=" + _scanSource
       + " headless=new" + " " + _fmtMem() + "]");
+    // ── Charger vusIds AVANT scrapeAllItems pour permettre early stop listing ──
+    const vusIds  = await db.getBCVusIds();
     // BC listing via Puppeteer sequentiel (1 page a la fois, evite OOM)
-    const allBCs = await scrapeAllItems(browser, CFG.bcListUrl, "BC");
+    const allBCs = await scrapeAllItems(browser, CFG.bcListUrl, "BC", vusIds);
     if (!allBCs.length) {
       if (allBCs._scanFailed) {
         const _techReason = "timeout/navigation portail (" + (allBCs._scanFailReason || "inconnu") + ")";
@@ -3760,7 +3800,6 @@ async function runGlobalScanBC(source) {
     _lastBcScanOk     = true;
     _lastBcScanReason = allBCs.length + " BC recuperes";
     _lastBcScanAt     = new Date().toISOString();
-    const vusIds  = await db.getBCVusIds();
     const newBCs  = allBCs.filter(bc => !vusIds.has(bc.id));
     log(newBCs.length + " nouveaux BC | " + (allBCs.length - newBCs.length) + " deja connus");
     // ── KNOWN_DIAG : diagnostic "BC connus" — storage + échantillons ─────────
