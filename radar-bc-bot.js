@@ -19,12 +19,15 @@ const CFG = {
   sbKey:        process.env.SUPABASE_KEY          || "",
   login:        process.env.PORTAL_LOGIN          || "",
   password:     process.env.PORTAL_PASSWORD       || "",
-  tgToken:      process.env.TELEGRAM_BOT_TOKEN    || "",
+  tgToken:      (process.env.TELEGRAM_BOT_TOKEN || "").trim(),
   anthropicKey: process.env.ANTHROPIC_API_KEY     || "",
   ollamaUrl:    process.env.OLLAMA_URL            || "",
   ollamaModel:  process.env.OLLAMA_MODEL          || "qwen2.5:32b",
   resendKey:    process.env.RESEND_API_KEY        || "",
   fromEmail:    process.env.FROM_EMAIL            || "radar@radarmarchesmaroc.ma",
+  feedbackUrl:     process.env.FEEDBACK_BASE_URL        || "",
+  feedbackAllowed: (process.env.FEEDBACK_ALLOWED_CLIENTS || "")
+    .split(",").map(function(s) { return s.trim(); }).filter(Boolean),
   // BC - Bons de Commande
   bcListUrl:  "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
   bcLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
@@ -169,24 +172,65 @@ function levenshtein(a, b) {
 function hasKwFuzzy(text, kw) {
   if (hasKw(text, kw)) return true;
   const nk = norm(kw);
-  if (nk.length < 5) return false;
+  if (nk.length <= 5) return false; // GD-021 : mots courts <= 5 chars = exact seulement (evite toner/tuner)
   const maxDist = nk.length >= 8 ? 2 : 1;
   return norm(text).split(/\s+/).some(w =>
-    Math.abs(w.length - nk.length) <= maxDist + 1 && levenshtein(w, nk) <= maxDist
+    Math.abs(w.length - nk.length) <= maxDist + 1 &&
+    w[0] === nk[0] && // GD-022 : premiere lettre doit correspondre (evite patisserie/tapisserie)
+    levenshtein(w, nk) <= maxDist
   );
 }
 function hasAnyKw(text, terms) {
   return (terms || []).some(t => hasKwFuzzy(text, t));
 }
 
+/**
+ * Détecte si un texte signale l'annulation de l'avis lui-même.
+ * Patterns : "décision d'annulation", "annulation de l'avis d'achat", etc.
+ * Guard : "non annulable" ou "condition d'annulation" ne déclenchent PAS.
+ * @param {string} text — texte brut ou normalisé à tester
+ * @returns {boolean} true si l'avis est annulé
+ */
+function isCancelledNotice(text) {
+  if (!text) return false;
+  const n = norm(text);
+  const CANCEL_PATTERNS = [
+    "decision d annulation",
+    "annulation de l avis d achat",
+    "annulation de l avis",
+    "avis d achat annule",
+    "avis d achat est annule",
+    "avis annule",
+    "l avis est annule",
+  ];
+  for (const pat of CANCEL_PATTERNS) {
+    const idx = n.indexOf(pat);
+    if (idx === -1) continue;
+    // Guard : "non <pattern>" ne doit pas déclencher
+    const before = n.slice(Math.max(0, idx - 5), idx);
+    if (before.trimEnd().endsWith("non")) continue;
+    return true;
+  }
+  return false;
+}
+
 function isEnCours(item) {
   if (norm(item.objet || "").includes("annul")) return false;
+  // Verifier aussi le bodyText pour les avis annules publis en page de detail (ex: BC 346623)
+  if (isCancelledNotice((item.bodyText || "") + " " + (item.objet || ""))) return false;
   if (item.date_limite) {
-    const m = item.date_limite.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    // Format attendu : DD/MM/YYYY ou DD/MM/YYYY HH:mm (heure locale marocaine)
+    // NE PAS utiliser new Date(string) : les formats DD/MM/YYYY ne sont pas ISO et seraient mal parsed.
+    const m = item.date_limite.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:[T\s]+(\d{1,2}):(\d{2}))?/);
     if (m) {
-      const dStr  = m[3] + "-" + m[2] + "-" + m[1];
-      const grace = new Date(); grace.setDate(grace.getDate() - 30);
-      if (dStr < grace.toISOString().slice(0, 10)) return false;
+      const day = parseInt(m[1], 10);
+      const mon = parseInt(m[2], 10) - 1; // 0-based
+      const yr  = parseInt(m[3], 10);
+      // Si heure absente : fin de journee (23:59) pour ne pas expirer un BC le jour meme sans heure
+      const hh  = m[4] !== undefined ? parseInt(m[4], 10) : 23;
+      const mn  = m[5] !== undefined ? parseInt(m[5], 10) : 59;
+      const deadline = new Date(yr, mon, day, hh, mn, 0, 0);
+      if (deadline < new Date()) return false;
     }
   }
   return true;
@@ -197,7 +241,9 @@ function isEnCours(item) {
 // v8.1 : utilise ai_inclusions/ai_exclusions + fuzzy matching
 // ============================================================
 function matchCritere(item, c) {
-  const incl = [c.valeur, ...(c.ai_inclusions || [])];
+  const incl = LEGACY_USE_AI_INCLUSIONS
+    ? [c.valeur, ...(c.ai_inclusions || [])]
+    : [c.valeur];
   const excl = c.ai_exclusions || [];
   switch (c.type) {
     case "region":
@@ -230,7 +276,9 @@ function getMatchTrigger(item, c) {
   if (!c) return null;
   if (c.type === "region")    return { keyword: c.valeur, trigger: c.valeur, isEnrichissement: false };
   if (c.type === "organisme") return { keyword: c.valeur, trigger: c.valeur, isEnrichissement: false };
-  const incl = [c.valeur, ...(c.ai_inclusions || [])];
+  const incl = LEGACY_USE_AI_INCLUSIONS
+    ? [c.valeur, ...(c.ai_inclusions || [])]
+    : [c.valeur];
   const excl = c.ai_exclusions || [];
   let text = "";
   if (c.type === "titre") {
@@ -536,7 +584,7 @@ async function autoEnrichCriteres(clients, radarType) {
   const toEnrich = [];
   for (const client of clients)
     for (const c of (client.criteres || []))
-      if ((c.radar_type || "bc") === radarType && !c.ai_inclusions)
+      if ((c.radar_type || "bc") === radarType && !(c.ai_inclusions && c.ai_inclusions.length))
         toEnrich.push(c);
   if (!toEnrich.length) { log("  [IA] Criteres deja enrichis."); return; }
   log("  [IA] " + toEnrich.length + " critere(s) a enrichir...");
@@ -551,45 +599,138 @@ async function autoEnrichCriteres(clients, radarType) {
   }
 }
 
+/**
+ * Vérifie qu'une valeur brute de token Telegram est utilisable.
+ * Rejette : null / undefined / string vide / whitespace seul / "null" / "undefined".
+ * Ne jamais afficher la valeur dans les logs.
+ */
+function _isValidToken(raw) {
+  if (!raw || typeof raw !== "string") return false;
+  const t = raw.trim();
+  return !!t && t !== "null" && t !== "undefined";
+}
+
+/**
+ * Résout le token Telegram effectif pour un appel.
+ * Ordre de priorité :
+ *   1. process.env.TELEGRAM_BOT_TOKEN (valeur runtime live)
+ *   2. CFG.tgToken (valeur capturée au boot, stable si Fly.io vide process.env après startup)
+ *   3. client.tg_token (override par-client)
+ * Retourne "" si aucun token valide trouvé.
+ */
+function _resolveTgToken(client) {
+  if (_isValidToken(process.env.TELEGRAM_BOT_TOKEN)) {
+    return process.env.TELEGRAM_BOT_TOKEN.trim();
+  }
+  // CFG.tgToken est capturé une fois au boot — résiste aux modifications de process.env en cours de vie
+  if (_isValidToken(CFG.tgToken)) {
+    return CFG.tgToken;
+  }
+  if (client && _isValidToken(client.tg_token)) {
+    return String(client.tg_token).trim();
+  }
+  return "";
+}
+
+/**
+ * Source unique de vérité pour la décision de livraison Telegram.
+ * Utilisée par sendTelegram ET TG_DECISION — ordre canonique garanti identique :
+ *   1. empty_message  (message HTML vide)
+ *   2. no_token       (aucun token valide résolu)
+ *   3. no_chat_id     (client sans tg_chat_id)
+ *   4. will_attempt   (tous les prérequis réunis)
+ * Ne retourne jamais la valeur du token — masqué en set/empty.
+ */
+function getTelegramDeliveryDecision(client, htmlMsg) {
+  const hasCfgToken         = _isValidToken(process.env.TELEGRAM_BOT_TOKEN);  // process.env live
+  const hasCfgTokenCached   = _isValidToken(CFG.tgToken);                     // valeur boot immuable
+  const hasClientToken      = _isValidToken(client.tg_token);
+  const resolvedTokenPresent = !!_resolveTgToken(client);   // process.env → CFG → client
+  const hasChatId           = !!(client.tg_chat_id);
+
+  let reason;
+  if (!htmlMsg)                reason = "empty_message";
+  else if (!resolvedTokenPresent) reason = "no_token";
+  else if (!hasChatId)         reason = "no_chat_id";
+  else                         reason = "will_attempt";
+
+  return {
+    has_chat_id:              hasChatId,
+    has_cfg_token:            hasCfgToken,         // process.env live
+    has_cfg_token_cached:     hasCfgTokenCached,   // CFG.tgToken (boot)
+    has_client_token:         hasClientToken,
+    resolved_token_present:   resolvedTokenPresent,
+    reason,
+  };
+}
+
 async function sendTelegram(client, htmlMsg) {
-  const token = CFG.tgToken || client.tg_token;
-  if (!token || !client.tg_chat_id) return;
+  const _tgDec = getTelegramDeliveryDecision(client, htmlMsg);
+  if (_tgDec.reason !== "will_attempt") {
+    log("[Telegram] SKIP client=" + (client.nom || client.id)
+      + " reason=" + _tgDec.reason
+      + " cfg_token_env=" + (_tgDec.has_cfg_token ? "set" : "empty")
+      + " cfg_token_cached=" + (_tgDec.has_cfg_token_cached ? "set" : "empty")
+      + " resolved=" + (_tgDec.resolved_token_present ? "set" : "empty")
+      + " client_token=" + (_tgDec.has_client_token ? "set" : "empty"));
+    return false;
+  }
+  // will_attempt : token et chat_id garantis présents par getTelegramDeliveryDecision
+  const token = _resolveTgToken(client);
+  // Telegram limite les messages à 4096 caractères. On tronque proprement en HTML valide.
+  const TG_MAX = 4096;
+  const TG_SUFFIX = "\n\n<i>[message tronqué — voir la fiche en ligne]</i>";
+  const payload = htmlMsg.length > TG_MAX
+    ? htmlMsg.slice(0, TG_MAX - TG_SUFFIX.length) + TG_SUFFIX
+    : htmlMsg;
+  if (htmlMsg.length > TG_MAX) {
+    log("[Telegram] TRUNCATED chat=" + client.tg_chat_id + " len=" + htmlMsg.length + " -> " + TG_MAX);
+  }
   try {
     const r = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id:                  client.tg_chat_id,
-        text:                     htmlMsg,
+        text:                     payload,
         parse_mode:               "HTML",
         disable_web_page_preview: false,
       }),
     });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) log("  Telegram erreur " + r.status + ": " + (d.description || JSON.stringify(d)));
-    else log("  Telegram -> " + client.tg_chat_id);
-  } catch (e) { log("  Telegram erreur: " + e.message); }
+    const d = await r.json().catch(() => null);
+    // Telegram retourne toujours HTTP 200 — il faut vérifier d.ok (champ JSON) pour
+    // détecter les erreurs applicatives (chat introuvable, bot bloqué, token invalide…)
+    if (!r.ok || !d || d.ok !== true) {
+      const desc = d ? (d.description || JSON.stringify(d)) : "réponse JSON invalide";
+      log("[Telegram] FAILED chat=" + client.tg_chat_id + " status=" + r.status + " description=" + desc);
+      return false;
+    }
+    log("[Telegram] OK chat=" + client.tg_chat_id + " message_id=" + (d.result && d.result.message_id ? d.result.message_id : "?"));
+    return true;
+  } catch (e) { log("[Telegram] erreur réseau: " + e.message); return false; }
 }
 
 async function sendWhatsApp(client, msg) {
   const limits = getPackLimits(client);
-  if (!limits.hasWhatsApp) return; // starter ne peut pas WhatsApp
+  if (!limits.hasWhatsApp) return false; // starter ne peut pas WhatsApp
   const num = (client.phone || "").replace(/\D/g, "");
-  if (!num) return;
+  if (!num) return false;
   try {
     if (client.wa_provider === "callmebot") {
       const r = await fetch("https://api.callmebot.com/whatsapp.php?phone=" + num +
         "&text=" + encodeURIComponent(msg) + "&apikey=" + client.wa_apikey);
-      if (!r.ok) log("  WhatsApp erreur HTTP " + r.status);
-      else log("  WhatsApp -> +" + num);
+      if (!r.ok) { log("  WhatsApp erreur HTTP " + r.status); return false; }
+      log("  WhatsApp -> +" + num);
+      return true;
     }
-  } catch (e) { log("  WhatsApp erreur: " + e.message); }
+    return false; // provider inconnu
+  } catch (e) { log("  WhatsApp erreur: " + e.message); return false; }
 }
 
 async function sendEmail(client, item, matchedCriteres, radarType, aiResume) {
-  if (!CFG.resendKey) return;
+  if (!CFG.resendKey) return false;
   const emailTo = client.email_notif || client.email;
-  if (!emailTo) return;
+  if (!emailTo) return false;
 
   const label  = radarType === "mp" ? "Marche Public" : "Bon de Commande";
   const emoji  = radarType === "mp" ? "🏛️" : "📦";
@@ -608,7 +749,7 @@ async function sendEmail(client, item, matchedCriteres, radarType, aiResume) {
   </div>
   <div style="padding:24px 28px">
     ${aiResume ? `<div style="background:${aiResume.startsWith('⚠️') ? '#fff3cd' : '#d1fae5'};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px;color:#1a202c">
-      <strong>Analyse IA :</strong> ${aiResume}</div>` : ""}
+      <strong>Analyse IA :</strong> ${escHtml(aiResume)}</div>` : ""}
     <table style="width:100%;font-size:14px;border-collapse:collapse">
       <tr><td style="padding:8px 0;color:#718096;width:140px">Type</td><td style="font-weight:600">${label}</td></tr>
       <tr><td style="padding:8px 0;color:#718096">Critère(s)</td><td style="font-weight:600;color:#2563eb">${critStr}</td></tr>
@@ -625,7 +766,7 @@ async function sendEmail(client, item, matchedCriteres, radarType, aiResume) {
         ${(item.articles || []).slice(0, 8).map(a => `<li style="margin-bottom:4px">${a.designation || ""}${a.estimation ? " — " + a.estimation : ""}</li>`).join("")}
       </ul>
     </div>` : ""}
-    ${url ? `<div style="margin-top:20px"><a href="${url}" style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">Voir le ${label} →</a></div>` : ""}
+    ${url ? `<div style="margin-top:20px"><a href="${escHtml(url)}" style="background:#2563eb;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">Voir le ${label} →</a></div>` : ""}
   </div>
   <div style="background:#f8fafc;padding:16px 28px;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0">
     Radar Marchés Maroc · Scan automatique toutes les 2h · <a href="#" style="color:#94a3b8">Se désabonner</a>
@@ -647,12 +788,195 @@ async function sendEmail(client, item, matchedCriteres, radarType, aiResume) {
         html:    htmlBody,
       }),
     });
-    if (!r.ok) log("  Email erreur " + r.status + ": " + await r.text());
-    else log("  Email -> " + emailTo);
-  } catch (e) { log("  Email erreur: " + e.message); }
+    if (!r.ok) { log("  Email erreur " + r.status + ": " + await r.text()); return false; }
+    log("  Email -> " + emailTo);
+    return true;
+  } catch (e) { log("  Email erreur: " + e.message); return false; }
 }
 
 // ── Message TEXTE BRUT (WhatsApp, fallback) ──────────────────────────────────
+
+// ── Liens de feedback ─────────────────────────────────────────────────────────
+/**
+ * Construit la section feedback à ajouter aux notifications.
+ * Retourne null si feedbackUrl n'est pas configuré.
+ * @param {string} mode  "html" | "plain"
+ */
+function _buildFeedbackSection(clientId, itemId, critereValeur, radarType, mode, opts) {
+  const base = (CFG.feedbackUrl || "").trim();
+  if (!base) return null;
+
+  const clean = base.replace(/\/$/, "") + "/feedback";
+  const types = [
+    ["relevant",  "✅ Pertinent"],
+    ["irrelevant","❌ Pas pertinent"],
+    ["watch",     "👀 À surveiller"],
+  ];
+
+  function makeUrl(type) {
+    let u = clean
+      + "?client_id=" + encodeURIComponent(clientId)
+      + "&radar_type=" + encodeURIComponent(radarType)
+      + "&item_id="    + encodeURIComponent(itemId)
+      + "&critere="    + encodeURIComponent(critereValeur)
+      + "&type="       + encodeURIComponent(type);
+    if (opts && opts.notifId)      u += "&nid=" + encodeURIComponent(opts.notifId);
+    if (opts && opts.matchedTerms) u += "&mt="  + encodeURIComponent(opts.matchedTerms);
+    if (opts && opts.bcTitle)      u += "&bt="  + encodeURIComponent(String(opts.bcTitle).slice(0, 60));
+    return u;
+  }
+
+  const lines = ["", "Feedback :"];
+  for (const [type, label] of types) {
+    const url = makeUrl(type);
+    if (mode === "html") {
+      lines.push('<a href="' + url + '">' + label + "</a>");
+    } else {
+      lines.push(label + " — " + url);
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Retourne true si les liens feedback doivent être inclus pour ce client.
+ * Si FEEDBACK_ALLOWED_CLIENTS est absent ou vide : tous les clients sont autorisés
+ *   (comportement actuel conservé — rétrocompatibilité totale).
+ * Si FEEDBACK_ALLOWED_CLIENTS contient une liste CSV : seuls les client.id listés
+ *   reçoivent les liens feedback.
+ * Indépendant de feedbackUrl — la garde FEEDBACK_BASE_URL vide reste dans _buildFeedbackSection.
+ */
+function isFeedbackEnabledForClient(clientId) {
+  if (!CFG.feedbackAllowed.length) return true;
+  return CFG.feedbackAllowed.includes(String(clientId));
+}
+
+// ─── Feedback capture helpers ────────────────────────────────────────────────
+
+const _VALID_FEEDBACK_TYPES = ["relevant", "irrelevant", "duplicate", "out_of_scope", "wrong_category", "watch"];
+const _VALID_RADAR_TYPES    = ["bc", "mp"];
+
+/**
+ * Valide les paramètres GET de la route /feedback.
+ * Retourne { valid, error?, data? }
+ */
+function validateFeedbackQuery(query) {
+  const client_id  = (query.client_id  || "").trim();
+  const radar_type = (query.radar_type || "").trim();
+  const item_id    = (query.item_id    || "").trim();
+  const critere    = (query.critere    || "").trim();
+  const type       = (query.type       || "").trim();
+
+  if (!client_id)                               return { valid: false, error: "client_id manquant" };
+  if (!_VALID_RADAR_TYPES.includes(radar_type)) return { valid: false, error: "radar_type invalide" };
+  if (!item_id)                                 return { valid: false, error: "item_id manquant" };
+  if (!critere)                                 return { valid: false, error: "critere manquant" };
+  if (!_VALID_FEEDBACK_TYPES.includes(type))    return { valid: false, error: "type invalide" };
+
+  // Champs optionnels d'enrichissement (FB-3) — présents uniquement dans les liens enrichis
+  const data = { client_id, radar_type, item_id, critere, type };
+  const bc_title      = typeof query.bt  === "string" ? query.bt.slice(0, 60).trim()   : undefined;
+  const matched_terms = typeof query.mt  === "string" ? query.mt.slice(0, 100).trim()  : undefined;
+  const notif_id      = typeof query.nid === "string" ? query.nid.slice(0, 128).trim()  : undefined;
+  if (bc_title      !== undefined) data.bc_title      = bc_title;
+  if (matched_terms !== undefined) data.matched_terms = matched_terms;
+  if (notif_id      !== undefined) data.notif_id      = notif_id;
+
+  return { valid: true, data };
+}
+
+/**
+ * Ajoute un événement feedback en JSONL dans filePath.
+ * Crée le dossier parent si absent.
+ */
+function appendFeedbackEvent(event, filePath) {
+  const dir = require("path").dirname(filePath);
+  if (!require("fs").existsSync(dir)) require("fs").mkdirSync(dir, { recursive: true });
+  require("fs").appendFileSync(filePath, JSON.stringify(event) + "\n", "utf8");
+}
+
+/**
+ * Persiste un événement feedback dans Supabase (table client_feedback_events).
+ * Fire-and-forget : ne bloque jamais la réponse HTTP.
+ * Idempotence : index unique partiel (notif_id, type) WHERE notif_id IS NOT NULL.
+ * Si Supabase n'est pas configuré (CFG.sbUrl / CFG.sbKey absents), skip silencieux.
+ */
+function appendFeedbackToSupabase(event) {
+  if (!CFG.sbUrl || !CFG.sbKey) return;
+  const row = {
+    client_id:   event.client_id,
+    radar_type:  event.radar_type,
+    item_id:     event.item_id,
+    critere:     event.critere,
+    type:        event.type,
+    source:      "web_click",
+    raw_payload: event,
+    created_at:  event.created_at,
+  };
+  if (event.bc_title      !== undefined) row.bc_title      = event.bc_title;
+  if (event.matched_terms !== undefined) row.matched_terms = event.matched_terms;
+  if (event.notif_id      !== undefined) row.notif_id      = event.notif_id;
+  fetch(CFG.sbUrl + "/rest/v1/client_feedback_events", {
+    method:  "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      "apikey":        CFG.sbKey,
+      "Authorization": "Bearer " + CFG.sbKey,
+      "Prefer":        "resolution=ignore-duplicates,return=minimal",
+    },
+    body: JSON.stringify(row),
+  }).then(function(r) {
+    if (r.ok || r.status === 204) return; // 200/201/204 → OK
+    // Lire le body pour distinguer doublon idempotent (23505) d'une vraie erreur
+    return r.text().then(function(body) {
+      if (r.status === 409 && (body.includes("23505") || body.includes("duplicate key"))) {
+        return; // doublon idempotent — index unique partiel (notif_id, type) — silencieux
+      }
+      log("Erreur Supabase feedback (" + r.status + "): " + body.slice(0, 200));
+    }).catch(function() {
+      log("Erreur Supabase feedback: status " + r.status + " (body illisible)");
+    });
+  }).catch(function(e) { log("Erreur Supabase feedback: " + e.message); });
+}
+
+
+// ─── Quality gate runtime helpers ────────────────────────────────────────────
+
+let _qgInstance = undefined;  // undefined = pas encore chargé, null = introuvable
+
+function _getQualityGate() {
+  if (_qgInstance !== undefined) return _qgInstance;
+  try {
+    _qgInstance = require("./core/scoring/notification-quality-gate.runtime.js");
+    log("[GATE] quality gate actif");
+    return _qgInstance;
+  } catch (e) {
+    try {
+      _qgInstance = require("./dist/core/scoring/notification-quality-gate");
+      log("[GATE] quality gate actif (dist)");
+      return _qgInstance;
+    } catch (_) {
+      _qgInstance = null;
+      log("[GATE] quality gate inactif (module introuvable)");
+      return null;
+    }
+  }
+}
+
+function _runQualityGate(input) {
+  const gate = _getQualityGate();
+  if (!gate || typeof gate.checkNotificationQuality !== "function") {
+    return { decision: "allow", reason: "quality gate unavailable", signals: [] };
+  }
+  try {
+    return gate.checkNotificationQuality(input);
+  } catch (e) {
+    log("[GATE] erreur: " + e.message);
+    return { decision: "allow", reason: "quality gate error: " + e.message, signals: [] };
+  }
+}
+
+
 function buildMessage(item, matchedCriteres, radarType, aiResume) {
   const header = radarType === "mp" ? "🏛️ NOUVEAU MARCHÉ PUBLIC" : "📦 NOUVEAU BC EN COURS";
   const trigger = getMatchTrigger(item, matchedCriteres[0]);
@@ -736,7 +1060,14 @@ function buildHtmlMessage(item, matchedCriteres, radarType, aiResume) {
 async function launchBrowser() {
   return puppeteer.launch({
     headless: "new",
-    args: ["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-gpu","--window-size=1440,900"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--window-size=1440,900",
+      "--disable-blink-features=AutomationControlled",
+    ],
   });
 }
 
@@ -745,6 +1076,10 @@ async function newPage(browser) {
   await page.setViewport({ width: 1440, height: 900 });
   await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
   await page.setExtraHTTPHeaders({ "Accept-Language": "fr-FR,fr;q=0.9,ar;q=0.8" });
+  // Masquer navigator.webdriver pour éviter la détection bot
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+  });
   return page;
 }
 
@@ -752,7 +1087,7 @@ async function loginPortal(page, loginUrl) {
   log("Connexion au portail...");
   try {
     // Timeout genereux : le portail marocain est parfois lent depuis l'Europe
-    await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
     await randDelay(800, 1500);
 
     // DEBUG: lister tous les inputs de la page pour trouver les bons selecteurs
@@ -778,7 +1113,7 @@ async function loginPortal(page, loginUrl) {
                 await page.$("input[type='image'][name*='authentification']") ||
                 await page.$("input[type='submit']");
     if (btn) await btn.click(); else await pf.press("Enter");
-    await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 90000 });
     await randDelay(800, 1500);
     await randDelay(800, 1500);
     const pageInfo = await page.evaluate(() => ({
@@ -816,13 +1151,84 @@ async function scrapeOnePage(browser, baseUrl, pageNum) {
   const url = pageNum === 1 ? baseUrl :
     isSPIP ? baseUrl + (baseUrl.includes("?") ? "&" : "?") + "debut_articles=" + ((pageNum - 1) * SPIP_PER_PAGE) :
     baseUrl + (baseUrl.includes("?") ? "&" : "?") + "page=" + pageNum;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (attempt > 0) { log("  Page " + pageNum + " retry..."); await delay(3000); }
+  const _maxAttempts = isBDC ? 3 : 2;  // BC : 3 tentatives (portail lent) ; autres : 2
+  const _navTimeout  = isBDC ? BC_NAV_TIMEOUT_MS : 60000;  // BC : 120s ; autres : 60s
+  const _retryDelay  = isBDC ? 6000 : 3000;                // BC : 6s ; autres : 3s
+  for (let attempt = 0; attempt < _maxAttempts; attempt++) {
+    if (attempt > 0) {
+      log("  [SCRAPE] Page " + pageNum + " retry " + attempt + "/" + (_maxAttempts - 1)
+        + " [source=" + _currentScanSource + "] delai " + (_retryDelay / 1000) + "s...");
+      await delay(_retryDelay);
+    }
     let pg;
+    const _t0 = Date.now();
     try {
       pg = await newPage(browser);
-      await pg.goto(url, { waitUntil: "domcontentloaded", timeout: isBDC ? 35000 : 55000 });
-      await delay(200 + Math.floor(Math.random() * 250));
+      // Log contexte page avant navigation
+      const _ua = await pg.evaluate(() => navigator.userAgent).catch(() => "unavailable");
+      log("  [PAGE] created [source=" + _currentScanSource
+        + " page=" + pageNum + " attempt=" + (attempt + 1) + "/" + _maxAttempts
+        + " ua_short=" + _ua.slice(0, 40)
+        + " viewport=1440x900 timeout=" + _navTimeout + "ms]");
+      // Ecoute requestfailed document principal (net::ERR_TIMED_OUT, etc.)
+      if (isBDC) {
+        pg.once("requestfailed", req => {
+          if (req.resourceType() === "document") {
+            log("  [NET] requestfailed page=" + pageNum
+              + " source=" + _currentScanSource
+              + " url=" + req.url().slice(0, 120)
+              + " err=" + (req.failure() ? req.failure().errorText : "unknown"));
+          }
+        });
+        pg.once("response", resp => {
+          if (resp.request().resourceType() === "document") {
+            log("  [NET] response page=" + pageNum
+              + " source=" + _currentScanSource
+              + " status=" + resp.status()
+              + " url=" + resp.url().slice(0, 120));
+          }
+        });
+      }
+      log("  [SCRAPE] Page " + pageNum + " goto " + url
+        + " (attempt " + (attempt + 1) + "/" + _maxAttempts + " timeout=" + _navTimeout + "ms)");
+      await pg.goto(url, { waitUntil: "domcontentloaded", timeout: _navTimeout });
+      // Attendre que la vraie page charge (challenge Cloudflare → redirect vers contenu réel)
+      if (isBDC) {
+        try {
+          await pg.waitForSelector("a[href*='/show/'], .entreprise__card, #content", { timeout: 30000 });
+        } catch (_e) {
+          log("  [DEBUG] waitForSelector timeout page " + pageNum + " — lecture directe quand meme");
+        }
+      } else {
+        await delay(2000);
+      }
+      // DEBUG BC : voir ce que Puppeteer trouve sur la page (login/session/cloudflare/liens)
+      if (isBDC) {
+        const dbg = await pg.evaluate(() => {
+          const bodyTxt  = document.body ? document.body.innerText.toLowerCase() : "";
+          const show_count = document.querySelectorAll("a[href*='/show/']").length;
+          return {
+            title:           document.title,
+            url:             window.location.href,
+            show_count,
+            has_login_form:  !!(document.querySelector("#ctl0_CONTENU_PAGE_login, input[type='password']") ||
+                               bodyTxt.includes("mot de passe")),
+            session_expired: bodyTxt.includes("session") && (bodyTxt.includes("expir") || bodyTxt.includes("connectez")),
+            cloudflare:      bodyTxt.includes("cloudflare") || /just a moment/i.test(document.title),
+            body_head:       document.body ? document.body.innerText.slice(0, 400) : "BODY NULL",
+          };
+        }).catch(e => ({ title: "EVAL_ERROR:" + (e && e.message ? e.message.slice(0,80) : "?"), url: "", show_count: -1, has_login_form: false, session_expired: false, cloudflare: false, body_head: "" }));
+        log("  [DEBUG BC] title=" + dbg.title + " | show_links=" + dbg.show_count + " | url=" + dbg.url
+          + " | login=" + dbg.has_login_form + " | session_exp=" + dbg.session_expired + " | cloudflare=" + dbg.cloudflare);
+        if (dbg.show_count === 0) {
+          const _bcReason = dbg.cloudflare       ? "0 BC car cloudflare/challenge"
+                          : dbg.has_login_form   ? "0 BC car login/session expiree"
+                          : dbg.session_expired  ? "0 BC car session expiree"
+                          :                        "0 BC car selecteur /show/ absent";
+          log("  [DEBUG BC] " + _bcReason);
+          log("  [DEBUG BC] body_head: " + dbg.body_head.replace(/\n/g, " ").slice(0, 250));
+        }
+      }
       const result = await pg.evaluate((baseUrl, isBDC, isPMMP) => {
         const items = [], seen = new Set();
         const base  = new URL(baseUrl).origin;
@@ -907,11 +1313,27 @@ async function scrapeOnePage(browser, baseUrl, pageNum) {
       await pg.close().catch(() => {});
       return result;
     } catch (e) {
+      const _errRaw = e && e.message ? e.message.split("\n")[0].slice(0, 200) : String(e).slice(0, 200);
+      const _elapsed = Date.now() - _t0;
+      // Catégoriser l'erreur pour diagnostic comparatif startup vs cron
+      const _isNavTimeout   = _errRaw.includes("Navigation timeout");
+      const _isNetTimeout   = _errRaw.includes("ERR_TIMED_OUT");
+      const _isNetReset     = _errRaw.includes("ERR_CONNECTION_RESET") || _errRaw.includes("ERR_EMPTY_RESPONSE");
+      const _errCategory    = _isNavTimeout ? "NAV_TIMEOUT"
+                            : _isNetTimeout ? "NET_ERR_TIMED_OUT"
+                            : _isNetReset   ? "NET_CONNECTION_RESET"
+                            : "OTHER";
+      log("  [SCRAPE_ERR] page=" + pageNum
+        + " attempt=" + (attempt + 1) + "/" + _maxAttempts
+        + " source=" + _currentScanSource
+        + " category=" + _errCategory
+        + " elapsed=" + _elapsed + "ms"
+        + " msg=" + _errRaw);
       if (pg) await pg.close().catch(() => {});
-      if (attempt === 1) return { items: [], hasNext: false, failed: true };
+      if (attempt === _maxAttempts - 1) return { items: [], hasNext: false, failed: true, _failReason: _errCategory + ": " + _errRaw };
     }
   }
-  return { items: [], hasNext: false, failed: true };
+  return { items: [], hasNext: false, failed: true, _failReason: "two attempts failed" };
 }
 
 
@@ -969,7 +1391,7 @@ async function searchPortalByKeyword(browser, keyword, opts) {
     });
 
     try {
-      await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 35000 });
+      await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 60000 });
     } catch (e) { log("  [STD] nav: " + e.message.split("\n")[0]); }
     await delay(800);
 
@@ -987,7 +1409,7 @@ async function searchPortalByKeyword(browser, keyword, opts) {
     });
     if (pageSized) {
       try {
-        await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 });
+        await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 60000 });
         log("  [STD] Page size -> 500 OK");
       } catch(e) { log("  [STD] Page size: " + e.message.split("\n")[0]); }
       await delay(600);
@@ -1123,7 +1545,7 @@ async function scrapeAllMPs(browser) {
     });
     log("  Soumission: " + (submitted || "echec"));
     try {
-      await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 35000 });
+      await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 60000 });
     } catch(e) { log("  waitForNav: " + e.message.split("\n")[0]); }
     await delay(1000);
 
@@ -1141,7 +1563,7 @@ async function scrapeAllMPs(browser) {
     });
     if (pageSized) {
       try {
-        await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 });
+        await pg.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 60000 });
         log("  Page size -> 500 OK");
       } catch(e) { log("  Page size: " + e.message.split("\n")[0]); }
       await delay(800);
@@ -1254,16 +1676,221 @@ async function scrapeAllMPs(browser) {
   return all;
 }
 
+// ============================================================
+// ============================================================
+// DIAGNOSTIC HTTP PAGE BC — fonction pure testable
+// Analyse un HTML + statusCode et retourne un objet diagnostic.
+// Utilisée par debugFetchBcPage() et les tests unitaires.
+// ============================================================
+function analyseBcPageHtml(html, statusCode, urlFetched) {
+  const bodyLow = (html || "").toLowerCase();
+  // Détection login
+  const has_login_form = /id="ctl0_CONTENU_PAGE_login"|input[^>]*type="password"/i.test(html)
+                      || bodyLow.includes("mot de passe") || bodyLow.includes("veuillez vous connecter");
+  // Détection session expirée
+  const has_session_expired = bodyLow.includes("session") && (bodyLow.includes("expir") || bodyLow.includes("connectez-vous"));
+  // Détection Cloudflare
+  const has_cloudflare = bodyLow.includes("cloudflare") || /just a moment/i.test(html);
+  // Présence tableau / cartes BC
+  const has_bc_table = /entreprise__card|href="[^"]*\/show\/\d+"/i.test(html);
+  // Liens /show/ (dom_rows_count = nombre de hrefs /show/ distincts)
+  const showLinks  = html.match(/href="[^"]*\/show\/(\d+)"/g) || [];
+  const dom_rows_count = showLinks.length;
+  // Titre de page
+  const titleM    = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+  const page_title = titleM ? titleM[1].trim().slice(0, 100) : "(no title)";
+  // IDs parsés via regex entreprise__card (même logique que fetchBCListPage)
+  const bc_ids = [];
+  const seen   = new Set();
+  const cardRe = /class="[^"]*entreprise__card[^"]*">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
+  let m;
+  while ((m = cardRe.exec(html)) !== null) {
+    const idM = m[1].match(/\/show\/(\d+)/);
+    if (idM && !seen.has(idM[1])) { seen.add(idM[1]); bc_ids.push(idM[1]); }
+  }
+  const parsed_count = bc_ids.length;
+  // Raison finale
+  let reason;
+  if (statusCode !== 200)    reason = "0 BC car status HTTP " + statusCode;
+  else if (has_cloudflare)   reason = "0 BC car cloudflare/challenge";
+  else if (has_login_form)   reason = "0 BC car login/session expiree";
+  else if (has_session_expired) reason = "0 BC car session expiree (cookie perdu)";
+  else if (!has_bc_table)    reason = "0 BC car selecteur tableau introuvable (structure HTML changee?)";
+  else if (parsed_count === 0) reason = "0 BC car parsing a echoue (cards presentes mais regex ne matche pas)";
+  else                         reason = parsed_count + " BC reel portail";
+  // sample_text : HTML strippé, sans données sensibles, tronqué
+  const sample_text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 400);
+  return {
+    ok:                statusCode === 200 && parsed_count > 0,
+    url_finale:        urlFetched || "",
+    status:            statusCode,
+    page_title,
+    has_login_form,
+    has_session_expired,
+    has_cloudflare,
+    has_bc_table,
+    dom_rows_count,
+    parsed_count,
+    bc_id_sample:      bc_ids.slice(0, 5),
+    reason,
+    sample_text,
+  };
+}
+
+// ── HTTP diagnostic sans Puppeteer — n'interfère pas avec le cron ────────────
+async function debugFetchBcPage(pageNum) {
+  pageNum = pageNum || 1;
+  const base   = CFG.bcListUrl;
+  const urlFetch = pageNum === 1 ? base : base + (base.includes("?") ? "&" : "?") + "page=" + pageNum;
+  const https  = require("https");
+  const t0     = Date.now();
+  return new Promise((resolve) => {
+    const req = https.get(urlFetch, {
+      headers: {
+        "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "fr-FR,fr;q=0.9",
+        "Cache-Control":   "no-cache",
+      },
+      timeout: 20000,
+    }, (res) => {
+      const redirect = res.headers["location"] || null;
+      let html = "";
+      res.setEncoding("utf8");
+      res.on("data", d => { html += d; });
+      res.on("end", () => {
+        const diag = analyseBcPageHtml(html, res.statusCode, urlFetch);
+        diag.redirect    = redirect;
+        diag.elapsed_ms  = Date.now() - t0;
+        diag.html_length = html.length;
+        resolve(diag);
+      });
+    });
+    req.on("error",   (e) => resolve({
+      ok: false, url_finale: urlFetch, status: 0, redirect: null,
+      page_title: "", has_login_form: false, has_session_expired: false,
+      has_cloudflare: false, has_bc_table: false, dom_rows_count: 0,
+      parsed_count: 0, bc_id_sample: [],
+      reason: "0 BC car erreur reseau: " + e.message.slice(0, 100),
+      sample_text: "", elapsed_ms: Date.now() - t0, html_length: 0,
+    }));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve({
+        ok: false, url_finale: urlFetch, status: 0, redirect: null,
+        page_title: "", has_login_form: false, has_session_expired: false,
+        has_cloudflare: false, has_bc_table: false, dom_rows_count: 0,
+        parsed_count: 0, bc_id_sample: [],
+        reason: "0 BC car timeout HTTP (>20s)",
+        sample_text: "", elapsed_ms: Date.now() - t0, html_length: 0,
+      });
+    });
+  });
+}
+
+// FETCH HTTP LISTE BC — remplace Puppeteer pour la liste
+// Le portail est SSR : le HTML contient directement les données.
+// Structure : div.entreprise__card > a[href*=/show/] + texte
+// ============================================================
+async function fetchBCListPage(pageNum) {
+  const base = CFG.bcListUrl;
+  const url  = pageNum === 1 ? base : base + "?page=" + pageNum;
+  const https = require("https");
+  return new Promise((resolve) => {
+    const req = https.get(url, {
+      headers: {
+        "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "fr-FR,fr;q=0.9",
+        "Cache-Control":   "no-cache",
+      },
+      timeout: 20000,
+    }, (res) => {
+      let html = "";
+      res.setEncoding("utf8");
+      res.on("data", d => { html += d; });
+      res.on("end", () => {
+        log("  [HTTP] status=" + res.statusCode + " location=" + (res.headers["location"] || "-") + " len=" + html.length);
+        log("  [HTTP] html_head: " + html.slice(0, 300).replace(/\s+/g, " "));
+        const items = [];
+        const seen  = new Set();
+        // Extraire chaque carte BC
+        const cardRe = /class="[^"]*entreprise__card[^"]*">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
+        let cardMatch;
+        while ((cardMatch = cardRe.exec(html)) !== null) {
+          const block = cardMatch[1];
+          // ID depuis href /show/XXXXX
+          const idM = block.match(/\/show\/(\d+)/);
+          if (!idM) continue;
+          const id = idM[1];
+          if (seen.has(id)) continue;
+          seen.add(id);
+          // Objet
+          const objetM = block.match(/Objet\s*:\s*<\/span>\s*([\s\S]*?)<\/a>/);
+          const objet  = objetM ? objetM[1].replace(/<[^>]+>/g, "").trim() : "";
+          // Acheteur / organisme
+          const acheteurM = block.match(/Acheteur\s*:\s*<\/span>\s*([\s\S]*?)<\/a>/);
+          const organisme = acheteurM ? acheteurM[1].replace(/<[^>]+>/g, "").trim() : "";
+          // Date limite
+          const dateM     = block.match(/(\d{2}\/\d{2}\/\d{4})/);
+          const date_limite = dateM ? dateM[1] : "";
+          // Lieu
+          const lieuM = block.match(/Lieu d.ex.cution[\s\S]*?<\/[^>]+>\s*([\w\s\-]+)/);
+          const lieu  = lieuM ? lieuM[1].trim() : "";
+          items.push({
+            id,
+            reference:   "",
+            objet,
+            organisme,
+            date_limite,
+            lieu,
+            wilaya:      "",
+            url: "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/show/" + id,
+          });
+        }
+        // Détecter si page suivante existe
+        const hasNext = html.includes("?page=" + (pageNum + 1)) || /page suivante|next page/i.test(html);
+        resolve({ items, hasNext: hasNext && items.length > 0 });
+      });
+    });
+    req.on("error",   (e) => { log("  [HTTP] error: " + e.message); resolve({ items: [], hasNext: false, failed: true }); });
+    req.on("timeout", ()  => { log("  [HTTP] timeout page " + pageNum); req.destroy(); resolve({ items: [], hasNext: false, failed: true }); });
+  });
+}
+
+async function fetchAllBCsHttp() {
+  const all = []; const seen = new Set();
+  log("  Chargement liste BC via HTTP fetch...");
+  for (let pageNum = 1; pageNum <= 500; pageNum++) {
+    const r = await fetchBCListPage(pageNum);
+    if (r.failed || r.items.length === 0) break;
+    for (const item of r.items) {
+      if (!seen.has(item.id)) { seen.add(item.id); all.push(item); }
+    }
+    log("  -> Page " + pageNum + ": " + r.items.length + " BC (total: " + all.length + ")");
+    if (!r.hasNext) break;
+    await delay(300);
+  }
+  log("  " + all.length + " BC sur le portail");
+  return all;
+}
+
 async function scrapeAllItems(browser, baseUrl, label) {
-  const all = []; let pageNum = 1; const BATCH = 3;
-  log("  Chargement liste " + label + " (" + BATCH + " pages en parallele)...");
+  const all = []; let pageNum = 1; const BATCH = 1;
+  let _lastFailed = false; let _lastFailReason = "";
+  log("  Chargement liste " + label + " (sequentiel, 1 page a la fois)...");
   while (pageNum <= 500) {
     const results = await Promise.all(
       Array.from({ length: BATCH }, (_, i) => scrapeOnePage(browser, baseUrl, pageNum + i))
     );
     let stop = false;
     for (const r of results) {
-      if (r.failed || r.items.length === 0) { stop = true; break; }
+      if (r.failed) {
+        _lastFailed = true;
+        _lastFailReason = r._failReason || "navigation/timeout";
+        stop = true; break;
+      }
+      if (r.items.length === 0) { _lastFailed = false; stop = true; break; }
       all.push(...r.items);
       if (!r.hasNext) { stop = true; break; }
     }
@@ -1272,7 +1899,17 @@ async function scrapeAllItems(browser, baseUrl, label) {
     pageNum += BATCH;
     await delay(600);
   }
-  log("  " + all.length + " " + label + " sur le portail");
+  if (all.length === 0) {
+    const _finalReason = _lastFailed
+      ? "0 " + label + " car navigation/parsing echoue (" + _lastFailReason + ")"
+      : "0 " + label + " reel portail (page chargee, aucun lien /show/ trouve)";
+    log("  " + _finalReason);
+  } else {
+    log("  " + all.length + " " + label + " sur le portail");
+  }
+  // Propager le statut d'échec technique au caller (les tableaux JS sont des objets)
+  all._scanFailed    = _lastFailed;
+  all._scanFailReason = _lastFailReason;
   return all;
 }
 
@@ -1355,7 +1992,7 @@ function parsePDFArticles(text) {
 // ============================================================
 async function scrapeBCDetail(page, bc) {
   try {
-    await page.goto(bc.url, { waitUntil: "domcontentloaded", timeout: 35000 });
+    await page.goto(bc.url, { waitUntil: "domcontentloaded", timeout: 60000 });
     await delay(250 + Math.floor(Math.random() * 300));
     await page.evaluate(async () => {
       document.querySelectorAll(".accordion-toggle,.collapse-toggle,[data-toggle='collapse'],[data-bs-toggle='collapse'],.panel-heading a,.card-header button,button.accordion-button,summary").forEach(el => {
@@ -1378,13 +2015,16 @@ async function scrapeBCDetail(page, bc) {
       }
       // Articles depuis tableaux HTML
       const articles = [], seen = new Set();
+      const NAV_SKIP = /^(accueil|articles|connexion|contact|home|menu|login|actualit|recherche|portail|retour|suivant|pr[eé]c[eé]dent|imprimer|haut de page|plan du site|#\d)/i;
       document.querySelectorAll("table").forEach(t => {
+        if (t.closest("nav,header,footer,.navbar,.nav,.menu,.breadcrumb,.pagination,.sidebar")) return;
         t.querySelectorAll("tr").forEach((row, i) => {
           if (i === 0) return;
           const cells = row.querySelectorAll("td");
-          if (!cells.length) return;
+          if (cells.length < 2) return;
           const desig = (cells[0].innerText || "").trim();
-          if (!desig || desig.length < 3 || seen.has(desig)) return;
+          if (!desig || desig.length < 5 || seen.has(desig)) return;
+          if (NAV_SKIP.test(desig)) return;
           seen.add(desig);
           articles.push({
             designation:    desig,
@@ -1765,25 +2405,1063 @@ async function loadDetails(browser, items, label, isMP, opts) {
   const packLabel = opts && opts.skipDAO === true ? "[MOYEN]" : opts && opts.skipDAO === false ? "[AVANCÉ]" : "";
   log("  Chargement " + items.length + " fiches " + label + " " + packLabel + " (3 en parallele)...");
   const result = []; const BATCH = 3;
+  // ── BC_DETAIL_TIMEOUT_MS : timeout dur par fiche BC (defaut 45s) ──────────
+  const bcDetailTimeoutMs = (() => {
+    const raw = parseInt(process.env.BC_DETAIL_TIMEOUT_MS || "", 10);
+    return (Number.isFinite(raw) && raw > 0) ? raw : 45000;
+  })();
+  const _fiches_start = Date.now();
+  let _fiches_failed = 0;
+  const PROGRESS_EVERY = items.length >= 100 ? 50 : 25;
   for (let i = 0; i < items.length; i += BATCH) {
     const batch = items.slice(i, i + BATCH);
     const pages = await Promise.all(batch.map(() => newPage(browser)));
-    const detailed = await Promise.all(batch.map((item, idx) =>
-      (isMP ? scrapeMPDetail(pages[idx], item, opts) : scrapeBCDetail(pages[idx], item)).catch(() => item)
-    ));
+    const prevLen = result.length;
+    const detailed = await Promise.all(batch.map((item, idx) => {
+      if (isMP) {
+        return scrapeMPDetail(pages[idx], item, opts).catch(() => item);
+      }
+      // BC : timeout dur via Promise.race
+      const t0 = Date.now();
+      const timeoutReject = new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("TIMEOUT")), bcDetailTimeoutMs));
+      return Promise.race([scrapeBCDetail(pages[idx], item), timeoutReject]).catch(e => {
+        const elapsed = Date.now() - t0;
+        if (e && e.message === "TIMEOUT") {
+          log("[FICHE_ERR] ref=" + (item.reference || item.id) + " category=TIMEOUT elapsed=" + elapsed + " url=" + (item.url || ""));
+        }
+        _fiches_failed++;
+        return item;
+      });
+    }));
     await Promise.all(pages.map(p => p.close().catch(() => {})));
     result.push(...detailed);
-    if (i > 0 && i % 60 === 0) log("  " + i + "/" + items.length + " fiches chargees");
+    // Progress log tous les PROGRESS_EVERY items
+    const prevMilestone = Math.floor(prevLen / PROGRESS_EVERY);
+    const currMilestone = Math.floor(result.length / PROGRESS_EVERY);
+    if (currMilestone > prevMilestone) {
+      const elapsed = Date.now() - _fiches_start;
+      log("[FICHES] loaded=" + result.length + "/" + items.length + " failed=" + _fiches_failed + " elapsed=" + elapsed + "ms");
+    }
     await delay(isMP ? 400 : 200);
   }
   return result;
 }
 
 // ============================================================
+// SHADOW MODE — HOOKS FIRE-AND-FORGET (Livrable 4)
+//
+// Observe le core intelligent EN PARALLÈLE du legacy, sans aucun effet de bord.
+// Aucune notification n'est modifiée. Aucun await bloquant dans le pipeline.
+// Désactivé par défaut (SHADOW_MODE_ENABLED=false → comportement legacy identique).
+//
+// Kill switch immédiat : SHADOW_MODE_EMERGENCY_KILL=true
+// ============================================================
+
+const _SHADOW_ENABLED        = process.env.SHADOW_MODE_ENABLED        === "true";
+const _SHADOW_LLM_ON         = process.env.SHADOW_LLM_ENABLED         === "true";
+const _SHADOW_CLIENT_FILTER  = process.env.SHADOW_CLIENT_FILTER        || "all";
+const _SHADOW_RATE           = parseFloat(process.env.SHADOW_BC_SAMPLE_RATE  || "0.1");
+const _SHADOW_OPP_MAX        = parseInt( process.env.SHADOW_OPPORTUNITY_MAX  || "5", 10);
+const _SHADOW_EMERGENCY      = process.env.SHADOW_MODE_EMERGENCY_KILL  === "true";
+
+/** Singleton lazy du ShadowRunner compilé. null si dist/ absent. */
+let _shadowRunnerInstance = null;
+
+function _getShadowRunner() {
+  if (_shadowRunnerInstance) return _shadowRunnerInstance;
+  try {
+    const { ShadowRunner } = require("./dist/core/shadow/runner");
+    const config = {
+      shadow_mode_enabled:    _SHADOW_ENABLED,
+      shadow_llm_enabled:     _SHADOW_LLM_ON,
+      shadow_client_filter:   _SHADOW_CLIENT_FILTER,
+      shadow_bc_sample_rate:  _SHADOW_RATE,
+      shadow_opportunity_max: _SHADOW_OPP_MAX,
+    };
+    _shadowRunnerInstance = new ShadowRunner(config);
+  } catch (_e) {
+    // dist/ non compilé → shadow inactif, legacy inchangé
+    _shadowRunnerInstance = null;
+  }
+  return _shadowRunnerInstance;
+}
+
+/**
+ * Convertit un item BC legacy en forme compatible ParsedBC.
+ * Ne valide pas via Zod — conversion best-effort.
+ */
+function _toShadowBC(item) {
+  const url = (item.url && item.url.startsWith("http"))
+    ? item.url
+    : "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/show/" + (item.id || "unknown");
+  return {
+    id:          String(item.id          || ""),
+    objet:       String(item.objet       || ""),
+    organisme:   String(item.organisme   || ""),
+    wilaya:      String(item.wilaya      || ""),
+    lieu:        String(item.lieu        || ""),
+    date_limite: String(item.date_limite || ""),
+    reference:   String(item.reference  || ""),
+    url,
+    radar_type:  "bc",
+    articles:    Array.isArray(item.articles) ? item.articles.map(function(a) {
+      return {
+        designation:    String(a.designation    || ""),
+        specifications: String(a.specifications || ""),
+        quantite:       String(a.quantite       || ""),
+        unite:          String(a.unite          || ""),
+      };
+    }) : [],
+    bodyText:    String(item.bodyText || "").slice(0, 10000),
+    montant:     (typeof item.montant === "number" && item.montant > 0) ? item.montant : null,
+  };
+}
+
+/**
+ * Convertit un profil client legacy + critères en forme compatible ClientProfile.
+ * Ne valide pas via Zod — conversion best-effort.
+ */
+function _toShadowClient(client, criteres) {
+  return {
+    id:   String(client.id   || ""),
+    nom:  String(client.nom  || ""),
+    pack: client.pack || "starter",
+    business_profile: {
+      secteurs:          Array.isArray(client.secteurs)          ? client.secteurs          : [],
+      types_prestation:  Array.isArray(client.types_prestation)  ? client.types_prestation  : [],
+      organismes_cibles: Array.isArray(client.organismes_cibles) ? client.organismes_cibles : [],
+      exclusions_metier: Array.isArray(client.exclusions_metier) ? client.exclusions_metier : [],
+    },
+    technical_profile: {
+      produits:       Array.isArray(client.produits)       ? client.produits       : [],
+      specifications: Array.isArray(client.specifications) ? client.specifications : [],
+    },
+    organization_profile: {
+      ville:             String(client.ville || ""),
+      wilayas_couvertes: Array.isArray(client.wilayas_couvertes) ? client.wilayas_couvertes : [],
+      wilayas_exclues:   Array.isArray(client.wilayas_exclues)   ? client.wilayas_exclues   : [],
+    },
+    criteres: Array.isArray(criteres) ? criteres.map(function(c) {
+      return {
+        id:            String(c.id     || ""),
+        type:          c.type || "contenu",
+        valeur:        String(c.valeur || ""),
+        radar_type:    "bc",
+        ai_inclusions: Array.isArray(c.ai_inclusions) ? c.ai_inclusions : [],
+        ai_exclusions: Array.isArray(c.ai_exclusions) ? c.ai_exclusions : [],
+        actif:         true,
+      };
+    }) : [],
+    notifications_enabled: true,
+  };
+}
+
+/**
+ * Persiste un ShadowRunLog dans Supabase — best-effort, jamais fatal.
+ * @param {object} entry — ShadowRunLog
+ */
+function _shadowPersistLog(entry) {
+  if (!CFG.sbUrl || !CFG.sbKey) return;
+  fetch(CFG.sbUrl + "/rest/v1/shadow_run_log", {
+    method:  "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      "apikey":        CFG.sbKey,
+      "Authorization": "Bearer " + CFG.sbKey,
+      "Prefer":        "return=minimal",
+    },
+    body: JSON.stringify(entry),
+  }).catch(function() { /* best-effort — erreur réseau ignorée */ });
+}
+
+/**
+ * Persiste une liste de ShadowOpportunity dans Supabase — best-effort, jamais fatal.
+ * @param {object[]} opps — ShadowOpportunity[]
+ */
+function _shadowPersistOpportunities(opps) {
+  if (!opps.length || !CFG.sbUrl || !CFG.sbKey) return;
+  fetch(CFG.sbUrl + "/rest/v1/shadow_opportunity", {
+    method:  "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      "apikey":        CFG.sbKey,
+      "Authorization": "Bearer " + CFG.sbKey,
+      "Prefer":        "return=minimal",
+    },
+    body: JSON.stringify(opps),
+  }).catch(function() { /* best-effort — erreur réseau ignorée */ });
+}
+
+/**
+ * J1 — Compare la décision legacy vs core pour un BC × critère × client.
+ *
+ * Fire-and-forget : ne bloque jamais le pipeline legacy.
+ * Appelé à deux points :
+ *   - J1-miss  : legacyDecision=false, critereId=""
+ *   - J1-match : legacyDecision=true,  critereId=matched[0].id
+ *
+ * @param {object} item           — item BC legacy (non muté)
+ * @param {object} client         — client legacy (non muté)
+ * @param {object[]} criteres     — critères actifs du client
+ * @param {boolean} legacyDecision
+ * @param {string}  critereId     — ID du critère matchant (ou "" pour miss)
+ */
+function fireShadowEval(item, client, criteres, legacyDecision, critereId) {
+  if (_SHADOW_EMERGENCY || !_SHADOW_ENABLED) return;
+  const runner = _getShadowRunner();
+  if (!runner) return;
+  const legacyScore = legacyDecision ? 100 : 0;
+  const shadowBC     = _toShadowBC(item);
+  const shadowClient = _toShadowClient(client, criteres);
+  void runner.evaluateCritere({
+    bc:              shadowBC,
+    client:          shadowClient,
+    critere_id:      critereId || "",
+    legacy_score:    legacyScore,
+    legacy_decision: legacyDecision,
+  }).then(function(result) {
+    if (!result.skipped) _shadowPersistLog(result.log);
+  }).catch(function() { /* isolation totale — jamais fatal */ });
+}
+
+/**
+ * J1-miss / J2 — Détecte des opportunités cachées pour un BC faible ou déjà notifié.
+ *
+ * Fire-and-forget : ne bloque jamais le pipeline legacy.
+ * Appelé à deux points :
+ *   - J1-miss : wasNotifiedLegacy=false → BC faible, candidat opportunité
+ *   - J2      : wasNotifiedLegacy=true  → runner skippe immédiatement (already_notified)
+ *
+ * @param {object} item              — item BC legacy (non muté)
+ * @param {object} client            — client legacy (non muté)
+ * @param {object[]} criteres        — critères actifs du client
+ * @param {boolean} wasNotifiedLegacy
+ */
+function fireShadowDetect(item, client, criteres, wasNotifiedLegacy) {
+  if (_SHADOW_EMERGENCY || !_SHADOW_ENABLED) return;
+  const runner = _getShadowRunner();
+  if (!runner) return;
+  const legacyScore  = wasNotifiedLegacy ? 100 : 0;
+  const shadowBC     = _toShadowBC(item);
+  const shadowClient = _toShadowClient(client, criteres);
+  void runner.detectOpportunities({
+    bc:                   shadowBC,
+    client:               shadowClient,
+    legacy_score:         legacyScore,
+    was_notified_legacy:  wasNotifiedLegacy,
+  }).then(function(result) {
+    if (!result.skipped && result.opportunities.length > 0) {
+      _shadowPersistOpportunities(result.opportunities.slice());
+    }
+  }).catch(function() { /* isolation totale — jamais fatal */ });
+}
+
+// ============================================================
+// SNAPSHOT LOCAL DU SCAN BC
+// Sauvegarde chaque décision de matching pour audit offline.
+// Aucune logique de matching modifiée — observation pure.
+// ============================================================
+const SNAPSHOT_DIR       = path.join(__dirname, "data", "scan-snapshots");
+const INPUT_SNAPSHOT_DIR = path.join(__dirname, "data", "input-snapshots");
+// Opt-in : RADAR_BC_WRITE_INPUT_SNAPSHOT=1 → écrit data/input-snapshots/bc-input-<ts>.jsonl
+// Capture les BC détaillés AVANT matching client — snapshot brut d'entrée.
+const WRITE_INPUT_SNAPSHOT = process.env.RADAR_BC_WRITE_INPUT_SNAPSHOT === "1";
+
+// ============================================================
+// SHADOW MATCH COMPARISON
+// Activé par RADAR_BC_MATCH_SHADOW=1 — aucun effet sans ce flag.
+// Compare la logique actuelle (legacy) avec un texte propre
+// (objet + articles uniquement, sans boilerplate portail).
+// ============================================================
+const SHADOW_ENABLED = process.env.RADAR_BC_MATCH_SHADOW === "1";
+const SHADOW_DIR          = path.join(__dirname, "data", "shadow");
+const SHADOW_CLIENT_FILTER = process.env.RADAR_BC_MATCH_SHADOW_CLIENT || null;
+// Quand OFF (defaut) : le matching legacy utilise seulement c.valeur.
+// Mettre a "1" pour retrouver l'ancien comportement valeur+ai_inclusions.
+const LEGACY_USE_AI_INCLUSIONS = process.env.RADAR_BC_LEGACY_USE_AI_INCLUSIONS === "1";
+// Seuils de force pour le clean shadow scoring (observation uniquement)
+const CLEAN_WEAK_THRESHOLD   = 5;   // score >= 5  → match_faible (signal unique, incertain)
+const CLEAN_STRONG_THRESHOLD = 15;  // score >= 15 → match_fort (plusieurs signaux concordants)
+// GD-023 : signaux inclusions haute confiance (100% keep, >=3 occurrences humaines)
+// Recevront +10 au lieu de +5 dans _shadowScoreClean — shadow uniquement, pas de notif
+const CLEAN_TRUSTED_INCLUSION_SCORE = new Set([
+  'photocopieur', 'insecticide', 'deratisation', 'desinsectisation',
+  'desinfection', 'savon', 'eau minerale',
+]);
+var   _shadowAccum        = [];  // remis à zéro à chaque rapport
+
+/**
+ * Construit le texte de matching propre :
+ *   objet + articles[] (désignations + spécifications si disponibles)
+ *   + section "Articles" du bodyText en fallback
+ * Exclut : navigation portail, "Nature de prestation", boilerplate.
+ */
+/**
+ * Construit le texte de matching propre pour le shadow :
+ *   objet (direct ou extrait de bodyText) + articles structurés ou section bodyText.
+ *
+ * Différences vs legacy matchCritere :
+ *   - N'utilise PAS item._keyword  (évite les faux positifs keyword de recherche)
+ *   - Cherche "Articles" APRÈS la section OBJET (évite les hits dans la nav portail)
+ *   - Supprime la boilerplate portail connue des désignations d'articles
+ */
+function buildCleanMatchText(item) {
+  var bt = item.bodyText || "";
+
+  // 1. Objet : champ CSS-extrait ou extraction regex depuis bodyText
+  //    (même logique que makeSnapshotRow — évite de retourner "" quand le sélecteur CSS a échoué)
+  var objet = (item.objet || "").trim();
+  if (!objet && bt) {
+    objet = (_snapExtractObjet(bt) || "");
+  }
+
+  // 2. Articles structurés (tables HTML scrappées par scrapeBCDetail)
+  var articlesText = "";
+  if (item.articles && item.articles.length) {
+    articlesText = item.articles.map(function(a) {
+      return [(a.designation || ""), (a.specifications || "")].join(" ");
+    }).join(" ").trim();
+    // Supprimer boilerplate portail connu ("Nature de prestation" systématique)
+    articlesText = articlesText
+      .replace(/Achat de mat[eé]riel technique[,\s]+de logiciels et de mat[eé]riel informatique/gi, " ")
+      .trim();
+  }
+
+  // 3. Fallback bodyText : chercher la section "Articles" APRÈS "OBJET"
+  //    Chercher APRÈS la section OBJET évite les occurrences dans la navigation portail
+  if (!articlesText && bt) {
+    // Point de départ : section OBJET (skip navigation portail ~0–1500 chars)
+    var scanStart = 0;
+    var objPos = bt.search(/\bOBJET\b/i);
+    if (objPos > 0 && objPos < 1500) scanStart = objPos;
+    var searchZone = bt.slice(scanStart);
+
+    // Marqueurs précis d'un vrai tableau d'articles (vs navigation portail)
+    var artMatch = searchZone.match(/Articles\s+(?:Tout afficher|N[°o°\s]|D[eé]signation|\d)/i)
+                || searchZone.match(/D[eé]signation\s+(?:Quantit[eé]|Unit[eé]|Sp[eé]c)/i)
+                || searchZone.match(/(?:Lot|Article)\s+N[°o]/i);
+    if (artMatch) {
+      var artIdx = searchZone.indexOf(artMatch[0]);
+      articlesText = searchZone.slice(artIdx)
+        .replace(/^Articles\s+Tout afficher\s+Tout r[eé]duire\s*/i, "")
+        .replace(/Achat de mat[eé]riel technique[,\s]+de logiciels et de mat[eé]riel informatique/gi, " ")
+        .trim()
+        .slice(0, 2000);
+    }
+  }
+
+  return (objet + " " + articlesText).trim();
+}
+
+/**
+ * Debug shadow — loggue les champs clés des 3 premiers items en cours du client filtré.
+ * No-op si SHADOW_CLIENT_FILTER n'est pas défini ou si le client ne correspond pas.
+ * Appeler AVANT _computeShadowComparison pour diagnostiquer les divergences clean/legacy.
+ */
+function _shadowDebugItems(client, items, criteres) {
+  if (!SHADOW_CLIENT_FILTER) return;
+  var cn = client.nom || "";
+  if (cn !== SHADOW_CLIENT_FILTER && String(client.id) !== SHADOW_CLIENT_FILTER) return;
+
+  // ── 1. Profil critères du client ──────────────────────────────────────────
+  log("[Shadow][Debug] ====== PROFIL CRITERES : " + cn + " ======");
+  log("[Shadow][Debug] nb_criteres=" + criteres.length);
+  criteres.slice(0, 10).forEach(function(c, ci) {
+    var inclStr = (c.ai_inclusions || []).join(" | ") || "(vide)";
+    var exclStr = (c.ai_exclusions || []).join(" | ") || "(vide)";
+    log("[Shadow][Debug] critere[" + ci + "] valeur=" + JSON.stringify(c.valeur) +
+        "  type=" + (c.type||"?") +
+        "  inclusions(" + (c.ai_inclusions||[]).length + ")=" + inclStr.slice(0, 120) +
+        "  exclusions(" + (c.ai_exclusions||[]).length + ")=" + exclStr.slice(0, 80));
+  });
+
+  // Pool total des signaux disponibles (valeur + toutes ai_inclusions)
+  var signalPool = [];
+  criteres.forEach(function(c) {
+    signalPool.push(c.valeur);
+    (c.ai_inclusions || []).forEach(function(t) { if (t) signalPool.push(t); });
+  });
+  log("[Shadow][Debug] signal_pool_total=" + signalPool.length +
+      "  signaux=" + signalPool.slice(0, 20).join(" | "));
+
+  // ── 2. Debug items (3 premiers en cours) ─────────────────────────────────
+  var enCours = items.filter(function(i) { return isEnCours(i); }).slice(0, 3);
+  log("[Shadow][Debug] items_en_cours=" +
+      items.filter(function(i) { return isEnCours(i); }).length +
+      "  debug sur " + enCours.length + " items");
+
+  enCours.forEach(function(item, n) {
+    var cleanText   = buildCleanMatchText(item);
+    var legacyMatch = itemMatchesCriteres(item, criteres);
+    var cleanResult = _shadowScoreClean(item, criteres);
+
+    log("[Shadow][Debug " + (n+1) + "/3] bc_id=" + (item.id||"?") +
+        "  legacy=" + legacyMatch + "  clean=" + cleanResult.match +
+        "  clean_score=" + cleanResult.score +
+        "  decision=" + cleanResult.decision);
+    log("  objet.len=" + (item.objet||"").length +
+        "  bodyText.len=" + (item.bodyText||"").length +
+        "  articles.len=" + (item.articles||[]).length +
+        "  _keyword=" + JSON.stringify((item._keyword||"").slice(0, 40)));
+    log("  objet[:100]=" + JSON.stringify((item.objet||"").slice(0, 100)));
+    log("  clean_text[:150]=" + JSON.stringify(cleanText.slice(0, 150)));
+    log("  matched_signals=" + JSON.stringify(cleanResult.signals));
+    // Signaux du pool disponibles dans le clean text (pour diagnostiquer si signal existe mais non scoré)
+    var availInText = signalPool.filter(function(t) { return hasAnyKw(cleanText, [t]); });
+    log("  signals_in_clean_text=" + JSON.stringify(availInText));
+    if (item.articles && item.articles[0]) {
+      log("  articles[0].designation=" + JSON.stringify((item.articles[0].designation||"").slice(0, 100)));
+    }
+  });
+  log("[Shadow][Debug] ====== FIN PROFIL : " + cn + " ======");
+}
+
+/**
+ * Score enrichi pour le shadow clean — calqué sur la logique replay.
+ *
+ * Pondération (shadow uniquement — n'affecte pas matchCritere) :
+ *   valeur (critère principal)  → +10
+ *   ai_inclusions[i]            → +5 chacun  (synonymes métier)
+ *   ai_exclusions               → bloque si trouvé
+ *
+ * Décision :
+ *   match_fort   → score ≥ 15  (critère principal + au moins un synonyme)
+ *   match_faible → score ≥ 5   (au moins un signal — inclusions suffisent)
+ *   bloque       → exclusion détectée avec signal principal
+ *   no_match     → score < 5
+ *
+ * Différences vs matchCritere (legacy) :
+ *   - N'utilise PAS item._keyword (source principale de FP en scan réel)
+ *   - Pondère valeur (×10) vs inclusions (×5 chacune) au lieu de les traiter à égalité
+ *   - Retourne un objet riche {match, score, signals, decision, reason} pour le rapport
+ */
+function _shadowScoreClean(item, criteres) {
+  var cleanText = buildCleanMatchText(item);
+  var score           = 0;
+  var signals         = [];   // tous signaux (affichage)
+  var primarySignals  = [];   // valeur principale qui a matché
+  var inclusionSignals = [];  // inclusions qui ont matché
+  var blocked   = false;
+  var hasSignal = false;
+
+  // Table de déduplication : évite de compter deux fois le même signal normalisé
+  // (ex. "reseau" et "réseau" → même clé normalisée)
+  var seenNorm = {};
+  var guardBlockedList = []; // GD-024e : signaux filtrés par guard (read-only, reporting)
+  var purchaseIntentSignals = []; // GD-027 : signaux rescapés par PI bypass
+  var outOfScopePenaltyReason = null; // GD-027
+
+  criteres.forEach(function(c) {
+    var excl = c.ai_exclusions || [];
+
+    // Exclusions — bloque le critère si trouvé dans le texte propre
+    if (excl.length && excl.some(function(t) { return hasKw(cleanText, t); })) {
+      blocked = true;
+      signals.push("bloque(" + c.valeur + ")");
+      return;
+    }
+
+    // Critère principal (valeur) → +10, dédupliqué
+    var normV = _normSignal(c.valeur);
+    if (_shadowHasAnyKw(cleanText, [c.valeur]) && _shadowContextGuardBlocked(normV, cleanText)) {
+      // GD-024e : guard spécifique actif — tenter PI bypass (GD-027)
+      var piSpecific = _purchaseIntent.detectPurchaseIntentNear(cleanText, c.valeur);
+      if (piSpecific.detected && !seenNorm[normV]) {
+        seenNorm[normV] = true;
+        score += _purchaseIntent.PURCHASE_INTENT_SCORE;
+        signals.push(c.valeur); primarySignals.push(c.valeur); hasSignal = true;
+        purchaseIntentSignals.push({ signal: c.valeur, pattern: piSpecific.pattern });
+      } else if (!seenNorm['__gb__' + normV]) {
+        seenNorm['__gb__' + normV] = true;
+        guardBlockedList.push(_explainShadowContextGuard(normV, cleanText));
+      }
+    } else if (_shadowHasAnyKw(cleanText, [c.valeur]) && !_shadowContextGuardBlocked(normV, cleanText)) {
+      // GD-024f : guard contexte faible appliqué aussi aux signaux primaires
+      // (ex. "produits alimentaires pour manifestation" = faux positif même sur c.valeur)
+      var weakGuardPrimary = _shadowWeakContextBlocked(normV, cleanText);
+      if (weakGuardPrimary.blocked) {
+        // guard faible actif — tenter PI bypass (GD-027)
+        var piWeak = _purchaseIntent.detectPurchaseIntentNear(cleanText, c.valeur);
+        if (piWeak.detected && !seenNorm[normV]) {
+          seenNorm[normV] = true;
+          score += _purchaseIntent.PURCHASE_INTENT_SCORE;
+          signals.push(c.valeur); primarySignals.push(c.valeur); hasSignal = true;
+          purchaseIntentSignals.push({ signal: c.valeur, pattern: piWeak.pattern });
+        } else if (!seenNorm['__wg__' + normV]) {
+          seenNorm['__wg__' + normV] = true;
+          guardBlockedList.push(weakGuardPrimary);
+        }
+      } else if (!seenNorm[normV]) {
+        seenNorm[normV] = true;
+        score += 10;
+        signals.push(c.valeur);
+        primarySignals.push(c.valeur);
+        hasSignal = true;
+      }
+    }
+
+    // Inclusions (synonymes métier) → +5 standard, +10 pour trusted (GD-023)
+    // Shadow uniquement — n'affecte pas le matching legacy ni les notifications
+    (c.ai_inclusions || []).forEach(function(t) {
+      if (!t) return;
+      var normT = _normSignal(t);
+      if (!_shadowHasAnyKw(cleanText, [t])) return; // signal absent du texte
+      if (_shadowContextGuardBlocked(normT, cleanText)) {
+        // GD-024e : guard spécifique — tenter PI bypass (GD-027)
+        var piInclSpec = _purchaseIntent.detectPurchaseIntentNear(cleanText, t);
+        if (piInclSpec.detected && !seenNorm[normT]) {
+          seenNorm[normT] = true;
+          score += _purchaseIntent.PURCHASE_INTENT_SCORE;
+          signals.push(t); inclusionSignals.push(t); hasSignal = true;
+          purchaseIntentSignals.push({ signal: t, pattern: piInclSpec.pattern });
+        } else if (!seenNorm['__gb__' + normT]) {
+          seenNorm['__gb__' + normT] = true;
+          guardBlockedList.push(_explainShadowContextGuard(normT, cleanText));
+        }
+        return;
+      }
+      // GD-024f : guard contexte faible — tenter PI bypass (GD-027)
+      var weakGuard = _shadowWeakContextBlocked(normT, cleanText);
+      if (weakGuard.blocked) {
+        var piInclWeak = _purchaseIntent.detectPurchaseIntentNear(cleanText, t);
+        if (piInclWeak.detected && !seenNorm[normT]) {
+          seenNorm[normT] = true;
+          score += _purchaseIntent.PURCHASE_INTENT_SCORE;
+          signals.push(t); inclusionSignals.push(t); hasSignal = true;
+          purchaseIntentSignals.push({ signal: t, pattern: piInclWeak.pattern });
+        } else if (!seenNorm['__wg__' + normT]) {
+          seenNorm['__wg__' + normT] = true;
+          guardBlockedList.push(weakGuard);
+        }
+        return;
+      }
+      // Pas bloqué — scorer normalement
+      if (!seenNorm[normT]) {
+        seenNorm[normT] = true;
+        score += CLEAN_TRUSTED_INCLUSION_SCORE.has(normT) ? 10 : 5; // GD-023
+        signals.push(t);
+        inclusionSignals.push(t);
+        hasSignal = true;
+      }
+    });
+  });
+
+  // GD-027 : out-of-scope penalty (si aucun PI bypass actif)
+  if (!purchaseIntentSignals.length) {
+    var oosResult = _purchaseIntent.detectOutOfScopeContext(cleanText);
+    if (oosResult.blocked && score > 0) {
+      score = Math.max(0, score - _purchaseIntent.OUT_OF_SCOPE_PENALTY);
+      outOfScopePenaltyReason = oosResult.reason;
+    }
+  }
+
+  var decision;
+  if (blocked && hasSignal) {
+    decision = "bloque";
+  } else if (!hasSignal || score < 5) {
+    decision = "no_match";
+  } else if (score >= 15) {
+    decision = "match_fort";
+  } else {
+    decision = "match_faible";
+  }
+
+  return {
+    match:                 hasSignal && !blocked && score >= 5,
+    score:                 score,
+    signals:               signals,
+    primarySignals:        primarySignals,
+    inclusionSignals:      inclusionSignals,
+    blocked:               blocked,
+    decision:              decision,
+    reason:   signals.filter(function(s) { return s.indexOf("bloque(") === -1; })
+                     .slice(0, 3).join(", ") || "aucun signal",
+    guardBlockedList:      guardBlockedList,       // GD-024e
+    purchaseIntentSignals: purchaseIntentSignals,  // GD-027
+    outOfScopePenalty:     outOfScopePenaltyReason, // GD-027
+  };
+}
+
+/**
+ * Matching propre : délègue à _shadowScoreClean (score ≥ 5, sans exclusion).
+ * Utilisé uniquement pour la comparaison shadow — aucune notification.
+ */
+// GD-024 : normSignal + shadowContextGuardBlocked extraits dans core/shadow/context-guards.runtime.js
+const _purchaseIntent = require('./core/shadow/purchase-intent.runtime.js'); // GD-027
+const { normSignal: _normSignal, shadowContextGuardBlocked: _shadowContextGuardBlocked,
+        explainShadowContextGuard: _explainShadowContextGuard,
+        shadowWeakContextBlocked: _shadowWeakContextBlocked } =
+  require('./core/shadow/context-guards.runtime.js');
+function _shadowHasAnyKw(text, terms) {
+  return (terms || []).some(function(t) {
+    if (!t) return false;
+    var nk = norm(t);
+    if (!nk) return false;
+    // Signaux courts (≤ 4 chars normalisés) : mot complet strict des deux côtés
+    // "pc" → \bpc\b : ne matche plus pcb, pcr, spc
+    if (nk.length <= 4) {
+      var esc = nk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp('\\b' + esc + '\\b').test(norm(text));
+    }
+    // Signaux longs : comportement standard (fuzzy inclus, \b au début)
+    return hasKwFuzzy(text, t);
+  });
+}
+
+function _itemMatchesCleanCriteres(item, criteres) {
+  return _shadowScoreClean(item, criteres).match;
+}
+
+/**
+ * Écrit les lignes de snapshot dans :
+ *   data/scan-snapshots/bc-scan-YYYYMMDD-HHMMSS.jsonl
+ *   data/scan-snapshots/latest-bc-scan.jsonl  (alias mis à jour)
+ *
+ * Silencieux en cas d'erreur (jamais bloquant).
+ */
+function writeScanSnapshot(rows, radarType) {
+  if (!rows || rows.length === 0) return;
+  try {
+    fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+    const ts      = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const fname   = radarType + "-scan-" + ts + ".jsonl";
+    const fpath   = path.join(SNAPSHOT_DIR, fname);
+    const latest  = path.join(SNAPSHOT_DIR, "latest-" + radarType + "-scan.jsonl");
+    const content = rows.map(r => JSON.stringify(r)).join("\n") + "\n";
+    fs.writeFileSync(fpath,   content, "utf8");
+    fs.writeFileSync(latest,  content, "utf8");
+    log("[Snapshot] " + rows.length + " lignes → " + fname);
+  } catch (e) {
+    log("[Snapshot] ERREUR ecriture : " + e.message);
+  }
+}
+
+/**
+ * Snapshot brut d'entrée — capture les BC détaillés AVANT matching client.
+ *
+ * Activé par RADAR_BC_WRITE_INPUT_SNAPSHOT=1.
+ * Écrit dans data/input-snapshots/bc-input-<ts>.jsonl.
+ * 1 ligne = 1 BC complet : bodyText, articles, organisme, objet, url…
+ * N'écrit JAMAIS : client_id, client_name, critere_valeur, matched_terms,
+ *                  decision, score, status, reason, body_excerpt, _keyword.
+ */
+function writeInputSnapshot(items) {
+  if (!WRITE_INPUT_SNAPSHOT || !items || !items.length) return;
+  try {
+    fs.mkdirSync(INPUT_SNAPSHOT_DIR, { recursive: true });
+    const ts     = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const fname  = "bc-input-" + ts + ".jsonl";
+    const fpath  = path.join(INPUT_SNAPSHOT_DIR, fname);
+    const latest = path.join(INPUT_SNAPSHOT_DIR, "latest-bc-input.jsonl");
+    const scanTs = new Date().toISOString();
+    // Champs interdits — contaminants de matching post-décision
+    const FORBIDDEN = new Set([
+      "client_id", "client_name", "critere_valeur", "matched_terms",
+      "decision", "score", "status", "reason", "body_excerpt", "_keyword",
+    ]);
+    const content = items.map(function(item) {
+      var row = { scan_timestamp: scanTs, bc_id: item.id || "" };
+      ["objet", "reference", "organisme", "lieu", "wilaya", "date_limite",
+       "url", "articles", "bodyText"].forEach(function(k) {
+        if (item[k] !== undefined && item[k] !== null && item[k] !== "") {
+          if (!FORBIDDEN.has(k)) row[k] = item[k];
+        }
+      });
+      // Champs supplémentaires présents sur l'item (ex: acheteur) non interdits
+      Object.keys(item).forEach(function(k) {
+        if (!FORBIDDEN.has(k) && row[k] === undefined) row[k] = item[k];
+      });
+      return JSON.stringify(row);
+    }).join("\n") + "\n";
+    fs.writeFileSync(fpath,   content, "utf8");
+    fs.writeFileSync(latest,  content, "utf8");
+    log("[InputSnapshot] " + items.length + " BCs -> " + fname);
+  } catch (e) {
+    log("[InputSnapshot] ERREUR ecriture : " + e.message);
+  }
+}
+
+/**
+ * Calcule la comparaison shadow (legacy vs clean) pour un client+items.
+ * N'envoie rien, n'écrit rien dans Supabase.
+ *
+ * Si RADAR_BC_MATCH_SHADOW_CLIENT est défini et ne correspond pas à ce client,
+ * les listes legacy_only/clean_only sont tronquées à [] (compteurs conservés).
+ *
+ * @param {object} client
+ * @param {Array}  items       — même liste que itemsToCheck
+ * @param {Array}  criteres    — critères normalisés (valeur + inclusions)
+ * @param {string} radarType
+ * @returns {object} entrée shadow pour _shadowAccum
+ */
+// Déduplique une liste d'entrées shadow par bc_id.
+// En cas de doublon, conserve l'entrée avec le clean_score le plus élevé.
+function _dedupByBcId(list) {
+  var seen = {};
+  var result = [];
+  list.forEach(function(e) {
+    var key = String(e.bc_id || "");
+    if (!seen[key]) {
+      seen[key] = { entry: e, idx: result.length };
+      result.push(e);
+    } else {
+      // Doublon : garder le score le plus élevé
+      if ((e.clean_score || 0) > (seen[key].entry.clean_score || 0)) {
+        result[seen[key].idx] = e;
+        seen[key].entry = e;
+      }
+    }
+  });
+  return result;
+}
+
+function _computeShadowComparison(client, items, criteres, radarType) {
+  var both = 0, legacyOnlyList = [], cleanOnlyList = [], neitherCount = 0;
+  var bothScores = [];  // scores clean des items "both" pour calcul strong/weak
+  var clientName  = client.nom || "";
+  var wantDetail  = !SHADOW_CLIENT_FILTER ||
+                    clientName === SHADOW_CLIENT_FILTER ||
+                    String(client.id) === SHADOW_CLIENT_FILTER;
+
+  items.forEach(function(item) {
+    if (!isEnCours(item)) return;  // mêmes exclusions que le scan réel
+    var legacy = itemMatchesCriteres(item, criteres);
+    var clean  = _itemMatchesCleanCriteres(item, criteres);
+    if (legacy && clean) {
+      var cleanResultBoth = _shadowScoreClean(item, criteres);
+      bothScores.push(cleanResultBoth.score);
+      both++;
+    } else if (legacy && !clean) {
+      if (wantDetail) {
+        var matched       = getMatchedCriteres(item, criteres);
+        var cleanResult   = _shadowScoreClean(item, criteres);
+        var legacyExcerpt = ((item.objet || "") + " " + (item.bodyText || "")).slice(0, 150);
+        var cleanExcerpt  = buildCleanMatchText(item).slice(0, 150);
+        // Tous les signaux du profil client présents dans le clean text
+        // (y compris ceux qui n'ont pas suffi à dépasser le seuil)
+        var _signalPool = [];
+        criteres.forEach(function(_c) {
+          _signalPool.push(_c.valeur);
+          (_c.ai_inclusions || []).forEach(function(_t) { if (_t) _signalPool.push(_t); });
+        });
+        var _cleanTextForPool = buildCleanMatchText(item);
+        var _availSignals = _signalPool.filter(function(_t) {
+          return hasAnyKw(_cleanTextForPool, [_t]);
+        });
+        legacyOnlyList.push({
+          client:                clientName,
+          bc_id:                 item.id || "",
+          objet:                 (item.objet || "").slice(0, 120),
+          critere:               matched[0] ? matched[0].valeur : "",
+          legacy_text_excerpt:   legacyExcerpt,
+          clean_text_excerpt:    cleanExcerpt,
+          clean_score:           cleanResult.score,
+          matched_signals:       cleanResult.signals,
+          clean_decision:        cleanResult.decision,
+          reason:                cleanResult.reason || "aucun signal propre détecté",
+          available_signal_count: _availSignals.length,
+          available_signals:      _availSignals.slice(0, 10),
+          guard_blocked_signals:  cleanResult.guardBlockedList || [], // GD-024e
+        });
+      } else {
+        legacyOnlyList.push({ bc_id: item.id || "", critere: "" }); // compteur minimal
+      }
+    } else if (!legacy && clean) {
+      if (wantDetail) {
+        var cleanResult2      = _shadowScoreClean(item, criteres);
+        var cleanTextExcerpt2 = buildCleanMatchText(item).slice(0, 200);
+        var cleanSigs2        = cleanResult2.signals.filter(function(s) { return s.indexOf('bloque(') === -1; });
+        var primCount2        = cleanResult2.primarySignals.length;
+        var inclCount2        = cleanResult2.inclusionSignals.length;
+        var isWeakSingle2     = cleanSigs2.length === 1 && cleanResult2.score < CLEAN_STRONG_THRESHOLD;
+        var isStrong2         = cleanResult2.score >= CLEAN_STRONG_THRESHOLD;
+        var exclusionHit2     = cleanResult2.blocked;
+        var isAutoCandidate2  = isStrong2 && !isWeakSingle2 && !exclusionHit2;
+        // strength_reason : générique, basé sur la structure des signaux
+        var strengthReason2;
+        if (exclusionHit2) {
+          strengthReason2 = "exclu (ai_exclusions)";
+        } else if (primCount2 > 0 && inclCount2 > 0) {
+          strengthReason2 = "valeur_principale + inclusions (" + primCount2 + "p+" + inclCount2 + "i)";
+        } else if (primCount2 > 0) {
+          strengthReason2 = "valeur_principale seule (" + primCount2 + "p)";
+        } else if (inclCount2 >= 2) {
+          strengthReason2 = "inclusions_multiples (" + inclCount2 + "i, score=" + cleanResult2.score + ")";
+        } else if (isWeakSingle2) {
+          strengthReason2 = "signal_secondaire_unique (" + (cleanSigs2[0] || "?") + ")";
+        } else {
+          strengthReason2 = "inclusions_faibles (score=" + cleanResult2.score + ")";
+        }
+        cleanOnlyList.push({
+          client:                clientName,
+          bc_id:                 item.id || "",
+          objet:                 (item.objet || "").slice(0, 120),
+          clean_score:           cleanResult2.score,
+          matched_signals:       cleanResult2.signals,
+          clean_decision:        cleanResult2.decision,
+          reason:                cleanResult2.reason,
+          signal_origin:         primCount2 > 0 ? "primary" : "inclusion",
+          primary_signal_count:  primCount2,
+          inclusion_signal_count: inclCount2,
+          exclusion_hit:         exclusionHit2 || undefined,
+          strength:              isStrong2 ? "strong" : "weak",
+          strength_reason:       strengthReason2,
+          clean_text_excerpt:    cleanTextExcerpt2,
+          weak_single_signal:    isWeakSingle2 || undefined,
+          auto_notify_candidate: isAutoCandidate2 || undefined,
+          review_candidate:      (!isAutoCandidate2 && cleanResult2.score >= CLEAN_WEAK_THRESHOLD) || undefined,
+        });
+      } else {
+        cleanOnlyList.push({ bc_id: item.id || "" });
+      }
+    } else {
+      neitherCount++;
+    }
+  });
+
+  // top critères responsables des legacy_only
+  var critCount = {};
+  legacyOnlyList.forEach(function(e) {
+    var c = e.critere || "inconnu";
+    critCount[c] = (critCount[c] || 0) + 1;
+  });
+  var topCriteria = Object.keys(critCount)
+    .sort(function(a, b) { return critCount[b] - critCount[a]; })
+    .slice(0, 5)
+    .map(function(c) { return { critere: c, count: critCount[c] }; });
+
+  // Déduplication par bc_id (un même BC peut apparaître plusieurs fois
+  // si plusieurs critères le capturent dans des passages distincts)
+  var legacyOnlyUniq  = _dedupByBcId(legacyOnlyList);
+  var cleanOnlyUniq   = _dedupByBcId(cleanOnlyList);
+  var legacyDupCount  = legacyOnlyList.length - legacyOnlyUniq.length;
+  var cleanDupCount   = cleanOnlyList.length  - cleanOnlyUniq.length;
+
+  // ── Compteurs de force ─────────────────────────────────────────────
+  var bothStrongCount = bothScores.filter(function(s) { return s >= CLEAN_STRONG_THRESHOLD; }).length;
+  var bothWeakCount   = bothScores.filter(function(s) { return s < CLEAN_STRONG_THRESHOLD; }).length;
+
+  var cleanOnlyStrong = cleanOnlyUniq.filter(function(e) { return e.strength === "strong"; });
+  var cleanOnlyWeak   = cleanOnlyUniq.filter(function(e) { return e.strength === "weak"; });
+  var weakSingleCount = cleanOnlyUniq.filter(function(e) { return e.weak_single_signal; }).length;
+  var autoNotifCands  = cleanOnlyUniq.filter(function(e) { return e.auto_notify_candidate; });
+  var reviewCands     = cleanOnlyUniq.filter(function(e) { return e.review_candidate && !e.auto_notify_candidate; });
+  var primaryBased    = cleanOnlyUniq.filter(function(e) { return e.signal_origin === "primary"; });
+  var inclusionOnly   = cleanOnlyUniq.filter(function(e) { return e.signal_origin === "inclusion"; });
+
+  var legacyTotal  = both + legacyOnlyUniq.length;
+  var cleanTotal   = both + cleanOnlyUniq.length;
+  var fpRate       = legacyTotal > 0 ? Math.round(legacyOnlyUniq.length / legacyTotal * 100) : 0;
+
+  // ── Recommandation ─────────────────────────────────────────────────
+  var recommendation;
+  if (cleanOnlyStrong.length >= 5 && weakSingleCount < cleanOnlyUniq.length * 0.5) {
+    recommendation = "candidate_for_clean_shadow_review";
+  } else {
+    recommendation = "keep_legacy_production";
+  }
+
+  return {
+    client_id:                  client.id,
+    client_name:                clientName,
+    radar_type:                 radarType,
+    total_checked:              items.filter(function(i) { return isEnCours(i); }).length,
+    legacy:                     legacyTotal,
+    clean:                      cleanTotal,
+    both_match:                 both,
+    both_strong_count:          bothStrongCount,
+    both_weak_count:            bothWeakCount,
+    clean_strong_count:         bothStrongCount + cleanOnlyStrong.length,
+    clean_weak_count:           bothWeakCount   + cleanOnlyWeak.length,
+    legacy_only_count:          legacyOnlyUniq.length,
+    legacy_only_unique_count:   legacyOnlyUniq.length,
+    clean_only_count:           cleanOnlyUniq.length,
+    clean_only_unique_count:    cleanOnlyUniq.length,
+    clean_only_strong_count:    cleanOnlyStrong.length,
+    clean_only_weak_count:      cleanOnlyWeak.length,
+    weak_single_signal_count:   weakSingleCount,
+    duplicate_count:            legacyDupCount + cleanDupCount,
+    neither:                    neitherCount,
+    fp_rate_pct:                fpRate,
+    top_criteria_legacy_only:   topCriteria,
+    clean_auto_notify_candidates: autoNotifCands.length,
+    clean_review_candidates:      reviewCands.length,
+    clean_blocked_or_weak:        weakSingleCount,
+    primary_based_matches:        primaryBased.length,
+    inclusion_only_matches:       inclusionOnly.length,
+    recommendation:               recommendation,
+    legacy_only:                wantDetail ? legacyOnlyUniq : [],
+    clean_only:                 wantDetail ? cleanOnlyUniq  : [],
+    // Section dédiée : uniquement les candidats à revue manuelle
+    review_candidates_detail:   wantDetail ? reviewCands : [],
+    detail_available:           wantDetail,
+  };
+}
+
+/**
+ * Écrit le rapport shadow dans data/shadow/shadow-bc-YYYY-MM-DDTHH-MM-SS.json,
+ * loggue un résumé par client, et remet _shadowAccum à zéro.
+ *
+ * Si RADAR_BC_MATCH_SHADOW_CLIENT est défini, seul ce client a le détail
+ * (legacy_only[]) dans le JSON — les autres ont legacy_only:[].
+ */
+function writeShadowReport() {
+  if (!_shadowAccum.length) return;
+  try {
+    fs.mkdirSync(SHADOW_DIR, { recursive: true });
+    const ts    = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const fname = "shadow-bc-" + ts + ".json";
+    const fpath = path.join(SHADOW_DIR, fname);
+
+    // ── Résumé global ──────────────────────────────────────────────────────
+    const totLegacy     = _shadowAccum.reduce(function(s, e) { return s + e.legacy; }, 0);
+    const totClean      = _shadowAccum.reduce(function(s, e) { return s + e.clean; }, 0);
+    const totLegacyOnly = _shadowAccum.reduce(function(s, e) { return s + e.legacy_only_count; }, 0);
+    const totCleanOnly  = _shadowAccum.reduce(function(s, e) { return s + e.clean_only_count; }, 0);
+    const fpRate        = totLegacy > 0 ? Math.round(totLegacyOnly / totLegacy * 100) : 0;
+
+    // ── Log par client ──────────────────────────────────────────────────────
+    _shadowAccum.forEach(function(e) {
+      log("[Shadow][" + e.client_name + "]" +
+          "  legacy="        + e.legacy +
+          "  clean="         + e.clean +
+          "  clean_strong="  + (e.clean_strong_count || 0) +
+          "  clean_weak="    + (e.clean_weak_count   || 0) +
+          "  both="          + e.both_match +
+          "  legacy_only="   + e.legacy_only_count +
+          " (" + e.fp_rate_pct + "% FP)" +
+          "  clean_only="         + e.clean_only_count +
+          "  clean_only_strong="  + (e.clean_only_strong_count || 0) +
+          "  clean_only_weak="    + (e.clean_only_weak_count   || 0) +
+          "  weak_single="        + (e.weak_single_signal_count || 0) +
+          "  auto_candidates="    + (e.clean_auto_notify_candidates || 0) +
+          "  review_candidates="  + (e.clean_review_candidates || 0) +
+          "  => " + (e.recommendation || "?"));
+    });
+    log("[Shadow] TOTAL  legacy=" + totLegacy + "  clean=" + totClean +
+        "  legacy_only=" + totLegacyOnly + " (" + fpRate + "% FP global)" +
+        "  clean_only=" + totCleanOnly +
+        (SHADOW_CLIENT_FILTER ? "  [filtre: " + SHADOW_CLIENT_FILTER + "]" : ""));
+
+    const report = {
+      scan_date:     new Date().toISOString(),
+      client_filter: SHADOW_CLIENT_FILTER || null,
+      summary: {
+        total_legacy_matches: totLegacy,
+        total_clean_matches:  totClean,
+        total_legacy_only:    totLegacyOnly,
+        total_clean_only:     totCleanOnly,
+        fp_rate_pct:          fpRate,
+      },
+      clients: _shadowAccum,
+    };
+    fs.writeFileSync(fpath, JSON.stringify(report, null, 2), "utf8");
+    log("[Shadow] Rapport écrit : " + fname);
+
+    // Export optionnel des review candidates (RADAR_BC_EXPORT_REVIEW_CANDIDATES=1)
+    if (process.env.RADAR_BC_EXPORT_REVIEW_CANDIDATES === "1") {
+      var allReviewCands = [];
+      _shadowAccum.forEach(function(e) {
+        (e.review_candidates_detail || []).forEach(function(rc) {
+          allReviewCands.push(rc);
+        });
+      });
+      if (allReviewCands.length) {
+        var rcFname = "review-candidates-" + ts + ".json";
+        var rcFpath = path.join(SHADOW_DIR, rcFname);
+        var rcReport = {
+          scan_date:         new Date().toISOString(),
+          source_report:     fname,
+          total_candidates:  allReviewCands.length,
+          candidates:        allReviewCands,
+        };
+        fs.writeFileSync(rcFpath, JSON.stringify(rcReport, null, 2), "utf8");
+        log("[Shadow] Review candidates exportés : " + rcFname + " (" + allReviewCands.length + " entrées)");
+      }
+    }
+
+    _shadowAccum = [];
+  } catch (e) {
+    log("[Shadow] Erreur ecriture rapport : " + e.message);
+  }
+}
+
+/**
+ * Construit une ligne de snapshot à partir d'une décision de matching.
+ *
+ * Enrichissement inline (pas de require circulaire) :
+ *   - objet   : extrait de bodyText si item.objet est vide
+ *   - body_excerpt : nettoyé du boilerplate portail, cadré sur OBJET
+ */
+function _snapExtractObjet(bodyText) {
+  if (!bodyText || bodyText.trim() === "") return null;
+  var m = bodyText.match(/\bOBJET\s*[:\-]?\s*([^\n\r]{10,200})/i);
+  if (m) return m[1].trim().replace(/\s+/g, " ").slice(0, 200);
+  var lines = bodyText.split(/[\n\r]+/);
+  var BOILER = ["accueil", "liste des avis", "avis d'achat", "marchespublics", "portail"];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (line.length < 15) continue;
+    var lower = line.toLowerCase();
+    if (BOILER.some(function(p) { return lower.indexOf(p) !== -1; })) continue;
+    if (/^\d+$/.test(line)) continue;
+    if (/^(date|organisme|acheteur|lieu|reference|N[o\xb0])/i.test(line)) continue;
+    return line.slice(0, 200);
+  }
+  return null;
+}
+
+function _snapCleanBody(bodyText, maxLen) {
+  maxLen = maxLen || 400;
+  if (!bodyText || bodyText.trim() === "") return "";
+  var text = bodyText;
+  var objIdx = text.search(/\bOBJET\b/i);
+  if (objIdx > 0 && objIdx < 600) {
+    text = text.slice(objIdx);
+  } else {
+    var lower = text.toLowerCase();
+    var boiler = ["accueil", "liste des avis"];
+    for (var i = 0; i < boiler.length; i++) {
+      var pIdx = lower.indexOf(boiler[i]);
+      if (pIdx !== -1 && pIdx < 100) {
+        var nlIdx = text.indexOf("\n", pIdx);
+        if (nlIdx !== -1) { text = text.slice(nlIdx + 1).trim(); }
+        break;
+      }
+    }
+  }
+  return text.slice(0, maxLen).trim();
+}
+
+function makeSnapshotRow(scanTs, client, item, radarType, status, critereValeur, matchedTerms, reason) {
+  var rawObjet = item.objet || "";
+  var objet = rawObjet.trim()
+    ? rawObjet.slice(0, 200)
+    : (_snapExtractObjet(item.bodyText || "") || "");
+  return {
+    scan_timestamp:  scanTs,
+    client_id:       client.id,
+    client_name:     client.nom || client.name || "",
+    radar_type:      radarType,
+    bc_id:           item.id || "",
+    critere_valeur:  critereValeur  || null,
+    status:          status,
+    reason:          reason         || null,
+    score:           null,           // non calculé dans le legacy engine
+    matched_terms:   matchedTerms   || null,
+    objet:           objet,
+    url:             item.url       || null,
+    date_limite:     item.date_limite || null,
+    body_excerpt:    _snapCleanBody(item.bodyText || "", 400),
+  };
+}
+
+// ============================================================
 // MATCHING PAR CLIENT
 // radarType: 'bc' ou 'mp'
 // ============================================================
-async function matchClient(client, itemsToCheck, label, radarType) {
+async function matchClient(client, itemsToCheck, label, radarType, snapshotRows, _noDeliverySet) {
   const rawCriteres = getCriteresCapped(client, radarType);
   const criteres = rawCriteres.map(c => ({
     id:            c.id,
@@ -1799,16 +3477,48 @@ async function matchClient(client, itemsToCheck, label, radarType) {
 
   const sentIds = await getSentIds(client.id);
   let found = 0, sent = 0;
+  const _snapTs = new Date().toISOString(); // timestamp partagé pour toutes les lignes de ce client
 
   for (const item of itemsToCheck) {
     if (!isEnCours(item)) {
       log("  skip " + (item.id || "") + " expire (date_limite=" + (item.date_limite || "none") + ")");
+      // ── snapshot : item expiré ou annulé ─────────────────────────────────
+      if (snapshotRows) {
+        const isCancelled = isCancelledNotice((item.bodyText || "") + " " + (item.objet || ""));
+        snapshotRows.push(makeSnapshotRow(
+          _snapTs, client, item, radarType,
+          isCancelled ? "blocked_cancelled" : "skipped_expired",
+          null, null,
+          isCancelled ? "notice annulee" : ("date_limite=" + (item.date_limite || "none")),
+        ));
+      }
       continue;
     }
-    if (!itemMatchesCriteres(item, criteres)) continue;
+    if (!itemMatchesCriteres(item, criteres)) {
+      fireShadowEval(item, client, criteres, false, "");    // J1-miss : core évalue sans match legacy
+      fireShadowDetect(item, client, criteres, false);      // J1-miss : BC faible → candidat opportunité
+      // ── snapshot : aucun critère ne matche ───────────────────────────────
+      // (non loggué en masse — trop volumineux ; on saute les no-match)
+      continue;
+    }
     found++;
-    if (sentIds.has(item.id)) continue;
+    if (sentIds.has(item.id)) {
+      log("[SEND] ALREADY_SENT_SKIP client=" + client.nom + " item=" + item.id);
+      // ── snapshot : déjà envoyé ────────────────────────────────────────────
+      if (snapshotRows) {
+        const matched0 = getMatchedCriteres(item, criteres);
+        snapshotRows.push(makeSnapshotRow(
+          _snapTs, client, item, radarType,
+          "skipped_already_sent",
+          matched0[0] ? matched0[0].valeur : null,
+          matched0.map(c => c.valeur),
+          "deja notifie",
+        ));
+      }
+      continue;
+    }
     const matched = getMatchedCriteres(item, criteres);
+    fireShadowEval(item, client, criteres, true, matched[0] ? matched[0].id : "");  // J1-match
 
     // Validation IA — uniquement pack Pro/Business
     let aiResume = null;
@@ -1819,6 +3529,16 @@ async function matchClient(client, itemsToCheck, label, radarType) {
         if (!v.pertinent && v.confiance === "haute") {
           // Seul cas de rejet : IA très sûre que c'est hors-sujet
           log("  [IA] REJETE (confiance haute) " + item.id);
+          // ── snapshot : rejeté par IA ──────────────────────────────────────
+          if (snapshotRows) {
+            snapshotRows.push(makeSnapshotRow(
+              _snapTs, client, item, radarType,
+              "skipped_ai_rejected",
+              matched[0] ? matched[0].valeur : null,
+              matched.map(c => c.valeur),
+              "IA confiance haute : hors-sujet",
+            ));
+          }
           continue;
         }
         if (!v.pertinent) {
@@ -1837,76 +3557,259 @@ async function matchClient(client, itemsToCheck, label, radarType) {
     const tag = "[" + radarType.toUpperCase() + "][" + client.nom + "] " + item.id +
       " [" + triggerLog + "] " + (item.objet || "").slice(0, 50);
     log("  MATCH " + tag);
-    sentIds.add(item.id); sent++;
-    const msgPlain = buildMessage(item, matched, radarType, aiResume);
-    const msgHtml  = buildHtmlMessage(item, matched, radarType, aiResume);
-    await sendTelegram(client, msgHtml);
-    await sendWhatsApp(client, msgPlain);
-    await sendEmail(client, item, matched, radarType, aiResume);
-    await markSent(client.id, item.id, matched[0] ? matched[0].type : "", matched[0] ? matched[0].valeur : "", item);
+    fireShadowDetect(item, client, criteres, true);           // J2 : legacy va notifier → runner skippe (already_notified)
+
+    // ── Quality gate ──────────────────────────────────────────────────────
+    const _effectiveObjet = item.objet || _snapExtractObjet(item.bodyText || "") || "";
+    const _qg = _runQualityGate({
+      critere_valeur: matched[0] ? matched[0].valeur : "",
+      objet:          _effectiveObjet,
+      bodyText:       item.bodyText || "",
+      matched_terms:  matched.map(function(c) { return c.valeur; }),
+      radar_type:     radarType,
+      is_cancelled:   false,
+    });
+    if (_qg.decision === "block") {
+      log("[GATE] BLOQUE client=" + client.nom + " item=" + item.id +
+          " critere=" + (matched[0] ? matched[0].valeur : "") +
+          " reason=" + _qg.reason);
+      if (snapshotRows) {
+        snapshotRows.push(makeSnapshotRow(
+          _snapTs, client, item, radarType,
+          "blocked_quality_gate",
+          matched[0] ? matched[0].valeur : null,
+          matched.map(function(c) { return c.valeur; }),
+          _qg.reason || "quality gate block",
+        ));
+      }
+      continue;
+    }
+    if (_qg.decision === "warn") {
+      log("[GATE] WARN client=" + client.nom + " item=" + item.id +
+          " critere=" + (matched[0] ? matched[0].valeur : "") +
+          " reason=" + _qg.reason);
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
+    const _critereForFb = matched[0] ? matched[0].valeur : "";
+    const _fbNotifId    = require("crypto")
+      .createHash("sha1")
+      .update(String(client.id) + String(item.id) + String(radarType) + String(_critereForFb))
+      .digest("hex").slice(0, 8);
+    const _fbOpts = {
+      notifId:      _fbNotifId,
+      matchedTerms: triggerLog || "",
+      bcTitle:      (item.objet || "").slice(0, 60),
+    };
+    const _fbHtml  = isFeedbackEnabledForClient(client.id) ? _buildFeedbackSection(client.id, item.id, _critereForFb, radarType, "html",  _fbOpts) : null;
+    const _fbPlain = isFeedbackEnabledForClient(client.id) ? _buildFeedbackSection(client.id, item.id, _critereForFb, radarType, "plain", _fbOpts) : null;
+    const msgPlain = buildMessage(item, matched, radarType, aiResume) + (_fbPlain || "");
+    const msgHtml  = buildHtmlMessage(item, matched, radarType, aiResume) + (_fbHtml || "");
+    // TG_DECISION : utilise getTelegramDeliveryDecision — même ordre que sendTelegram
+    const _dec       = getTelegramDeliveryDecision(client, msgHtml);
+    const _tgDecision = _dec.reason;
+    log("[SEND] TG_DECISION client=" + client.nom + " item=" + item.id
+      + " has_tg_chat_id=" + _dec.has_chat_id
+      + " cfg_token_env=" + (_dec.has_cfg_token ? "set" : "empty")
+      + " cfg_token_cached=" + (_dec.has_cfg_token_cached ? "set" : "empty")
+      + " resolved=" + (_dec.resolved_token_present ? "set" : "empty")
+      + " has_client_token=" + (_dec.has_client_token ? "set" : "empty")
+      + " msg_len=" + msgHtml.length
+      + " reason=" + _tgDecision);
+    const _tgOk  = await sendTelegram(client, msgHtml);
+    log("[SEND] TG_POST client=" + client.nom + " item=" + item.id + " tg=" + _tgOk);
+    const _waOk  = await sendWhatsApp(client, msgPlain);
+    const _emlOk = client.email_notif ? await sendEmail(client, item, matched, radarType, aiResume) : false;
+    log("[SEND] RESULT client=" + client.nom + " item=" + item.id + " tg=" + _tgOk + " wa=" + _waOk + " email=" + _emlOk);
+    const _delivered = _tgOk || _waOk || _emlOk;
+    if (_delivered) {
+      sentIds.add(item.id); sent++;
+      // ── snapshot : match envoyé ─────────────────────────────────────────
+      if (snapshotRows) {
+        snapshotRows.push(makeSnapshotRow(
+          _snapTs, client, item, radarType,
+          "sent",
+          matched[0] ? matched[0].valeur : null,
+          matched.map(function(c) { return c.valeur; }),
+          triggerLog || null,
+        ));
+      }
+      await markSent(client.id, item.id, matched[0] ? matched[0].type : "", matched[0] ? matched[0].valeur : "", item);
+    } else {
+      log("[SEND] NO_DELIVERY_RETRYABLE client=" + client.nom + " item=" + item.id
+        + " tg=" + _tgOk + " wa=" + _waOk + " email=" + _emlOk);
+      if (_noDeliverySet) _noDeliverySet.add(item.id);
+    }
     await delay(300);
   }
   await db.writeLog(client.id, itemsToCheck.length, found, sent, radarType);
   log("  [" + client.nom + "|" + radarType.toUpperCase() + "] " + label + ": " + found + " match(s) | " + sent + " envoye(s)");
+
+  // ── Shadow comparison — observation pure, aucun effet sur la production ──
+  if (SHADOW_ENABLED && radarType === "bc") {
+    _shadowDebugItems(client, itemsToCheck, criteres);  // no-op sans SHADOW_CLIENT_FILTER
+    const _se = _computeShadowComparison(client, itemsToCheck, criteres, radarType);
+    _shadowAccum.push(_se);
+  }
 }
 
 // ============================================================
 // SCAN BC (Bons de Commande)
 // ============================================================
-let _scanningBC = false;
 
-async function runGlobalScanBC() {
-  if (_scanningBC) { log("Scan BC precedent en cours, skip."); return; }
+// ── Diagnostic helpers ────────────────────────────────────────────────────────
+/** Identifiant court (6 hex) pour corréler toutes les lignes d'un même scan. */
+function _makeScanRunId() {
+  return Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, "0");
+}
+/** Résumé mémoire rss/heap en MB arrondi. */
+function _fmtMem() {
+  try {
+    const m = process.memoryUsage();
+    return "rss=" + Math.round(m.rss / 1048576) + "MB heap=" + Math.round(m.heapUsed / 1048576) + "MB";
+  } catch (_e) { return "mem=unavailable"; }
+}
+/** Uptime process en secondes depuis _startTime. */
+function _fmtUptime() {
+  return Math.round((Date.now() - _startTime) / 1000) + "s";
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _scanningBC = false;
+let _currentScanSource = "unknown";  // source du scan en cours (startup/cron/manual) — pour logs retry
+// État du dernier scan BC — exposé dans /api/status pour diagnostic prod
+let _lastBcScanOk     = null;   // null=jamais lancé, true=OK, false=échec technique
+let _lastBcScanReason = "";     // raison lisible du dernier résultat
+let _lastBcScanAt     = null;   // ISO timestamp de fin du dernier scan
+
+async function runGlobalScanBC(source) {
+  const _scanSource = source || "unknown";
+  if (_scanningBC) { log("Scan BC precedent en cours, skip. [source=" + _scanSource + "]"); return; }
   _scanningBC = true;
+  _currentScanSource = _scanSource;  // propagé dans les logs de retry scraping
+  const _scanRunId = _makeScanRunId();  // corrélation lignes de ce scan
   const now = new Date().toLocaleString("fr-MA", { timeZone: "Africa/Casablanca" });
   log("\n" + "=".repeat(60));
-  log("SCAN BC - " + now);
+  log("SCAN BC - " + now + " [source=" + _scanSource + " runId=" + _scanRunId + "]");
   log("=".repeat(60));
+  log("[CTX] source=" + _scanSource
+    + " runId=" + _scanRunId
+    + " uptime=" + _fmtUptime()
+    + " " + _fmtMem()
+    + " scanningBC=" + _scanningBC
+    + " currentSrc=" + _currentScanSource);
   let clients = [];
   try {
     const raw = await db.getClients();
     clients = (raw || []).filter(c => (c.criteres || []).some(cr => (cr.radar_type || "bc") === "bc"));
   } catch (e) { log("Supabase: " + e.message); _scanningBC = false; return; }
   if (!clients.length) { log("Aucun client BC actif."); _scanningBC = false; return; }
-  log(clients.length + " client(s) BC actif(s)");
+  log(clients.length + " client(s) BC actif(s) [runId=" + _scanRunId + "]");
+  log("  [Legacy] ai_inclusions: " + (LEGACY_USE_AI_INCLUSIONS
+    ? "ON  (valeur + ai_inclusions — RADAR_BC_LEGACY_USE_AI_INCLUSIONS=1)"
+    : "OFF (valeur seul — defaut conservateur)"));
   await autoEnrichCriteres(clients, "bc");
   let browser;
   try {
     browser = await launchBrowser();
-    if (CFG.login && CFG.password) {
-      const lp = await newPage(browser);
-      await loginPortal(lp, CFG.bcLoginUrl);
-      await lp.close().catch(() => {});
-    }
+    log("[BROWSER] launched [runId=" + _scanRunId + " source=" + _scanSource
+      + " headless=new" + " " + _fmtMem() + "]");
+    // BC listing via Puppeteer sequentiel (1 page a la fois, evite OOM)
     const allBCs = await scrapeAllItems(browser, CFG.bcListUrl, "BC");
-    if (!allBCs.length) { log("Aucun BC recupere."); return; }
+    if (!allBCs.length) {
+      if (allBCs._scanFailed) {
+        const _techReason = "timeout/navigation portail (" + (allBCs._scanFailReason || "inconnu") + ")";
+        log("SCAN BC FAILED: " + _techReason + " [source=" + _scanSource + "]");
+        log("  -> Aucun BC ajoute a bcs_vus (echec technique avant parsing fiable)");
+        if (_scanSource === "startup") {
+          log("  -> [source=startup] echec scraping startup — le prochain cron horaire prendra le relais automatiquement");
+        }
+        _lastBcScanOk     = false;
+        _lastBcScanReason = _techReason;
+        _lastBcScanAt     = new Date().toISOString();
+      } else {
+        log("Aucun BC recupere (0 BC reel portail).");
+        _lastBcScanOk     = true;
+        _lastBcScanReason = "0 BC reel portail";
+        _lastBcScanAt     = new Date().toISOString();
+      }
+      return;
+    }
+    _lastBcScanOk     = true;
+    _lastBcScanReason = allBCs.length + " BC recuperes";
+    _lastBcScanAt     = new Date().toISOString();
     const vusIds  = await db.getBCVusIds();
     const newBCs  = allBCs.filter(bc => !vusIds.has(bc.id));
     log(newBCs.length + " nouveaux BC | " + (allBCs.length - newBCs.length) + " deja connus");
-    const newDetailed = await loadDetails(browser, newBCs, "BC nouveaux", false);
+    // ── KNOWN_DIAG : diagnostic "BC connus" — storage + échantillons ─────────
+    {
+      const _knownOnPortal = allBCs.filter(bc => vusIds.has(bc.id));
+      log("[KNOWN_DIAG] storage=supabase:bcs_vus known_count=" + vusIds.size
+        + " portal_total=" + allBCs.length + " new=" + newBCs.length);
+      log("[KNOWN_DIAG] sample_known_refs="
+        + (_knownOnPortal.length
+          ? _knownOnPortal.slice(0, 5).map(bc => bc.id).join(",")
+          : "(none — bcs_vus vide ou ids non correspondants)"));
+      log("[KNOWN_DIAG] sample_new_refs="
+        + newBCs.slice(0, 5).map(bc => bc.id + "=" + (bc.objet || "").slice(0, 25)).join(" | "));
+    }
+    // ── MAX_NEW_BC_DETAILS_PER_SCAN : cap chargement fiches (defaut 250, 0=sans limite) ──
+    const _maxNewBCDetails = (() => {
+      const raw = parseInt(process.env.MAX_NEW_BC_DETAILS_PER_SCAN || "", 10);
+      if (!Number.isFinite(raw) || raw < 0) return 250;
+      return raw; // 0 = pas de limite explicite
+    })();
+    const bcToLoad  = _maxNewBCDetails === 0 ? newBCs : newBCs.slice(0, _maxNewBCDetails);
+    const bcSkipped = _maxNewBCDetails === 0 ? [] : newBCs.slice(_maxNewBCDetails);
+    if (bcSkipped.length > 0) {
+      log("[FICHES] cap applied total_new=" + newBCs.length + " limit=" + _maxNewBCDetails + " skipped_for_next_scan=" + bcSkipped.length);
+    }
+    const newDetailed = await loadDetails(browser, bcToLoad, "BC nouveaux", false);
+    writeInputSnapshot(newDetailed); // opt-in RADAR_BC_WRITE_INPUT_SNAPSHOT=1
     log("\nMatching clients BC...");
+    const _noDeliveryIds = new Set();  // BC matchés mais non livrés — conservés hors bcs_vus
+    const snapshotRows = []; // collecteur de snapshot — observation pure
     for (const client of clients) {
       const sentIds    = await db.getBCSentIds(client.id);
       const isNewClient = sentIds.size === 0 && vusIds.size > 0;
       if (isNewClient) {
         log("  [" + client.nom + "] NOUVEAU CLIENT BC - scan initial...");
         const historical = await db.getBCVusBCData();
-        await matchClient(client, [...historical, ...newDetailed], "scan initial", "bc");
+        await matchClient(client, [...historical, ...newDetailed], "scan initial", "bc", snapshotRows, _noDeliveryIds);
       } else {
-        await matchClient(client, newDetailed, "nouveaux BC", "bc");
+        await matchClient(client, newDetailed, "nouveaux BC", "bc", snapshotRows, _noDeliveryIds);
       }
     }
     if (newDetailed.length) {
-      await db.markBCVus(newDetailed);
-      log(newDetailed.length + " BC ajoutes a bcs_vus");
+      // Séparer items livrés (→ bcs_vus) et non-livrés (→ retry prochain scan)
+      const _vusItems   = newDetailed.filter(bc => !_noDeliveryIds.has(bc.id));
+      const _retryItems = newDetailed.filter(bc =>  _noDeliveryIds.has(bc.id));
+      if (_retryItems.length) {
+        log("[SEEN] " + _retryItems.length
+          + " BC no_delivery_retryable → non ajoute a bcs_vus (retry prochain scan)");
+        _retryItems.forEach(bc =>
+          log("[SEEN] item=" + bc.id + " added_to_bcs_vus=false reason=no_delivery_retryable"));
+      }
+      if (_vusItems.length) {
+        await db.markBCVus(_vusItems);
+        log("[SEEN] " + _vusItems.length + " BC ajoutes a bcs_vus reason=delivered_or_no_match");
+      }
+      log("[KNOWN_DIAG] markBCVus_result vus_added=" + _vusItems.length
+        + " no_delivery_retry=" + _retryItems.length
+        + " loaded_this_scan=" + newDetailed.length
+        + " skipped_for_next=" + bcSkipped.length);
     }
+    writeScanSnapshot(snapshotRows, "bc"); // toujours après markBCVus
+    if (SHADOW_ENABLED) writeShadowReport();
   } catch (e) {
     log("Erreur BC: " + e.message);
     if (e.stack) log(e.stack.split("\n").slice(0,3).join("\n"));
   } finally {
     if (browser) await browser.close().catch(() => {});
     _scanningBC = false;
-    log("Scan BC termine.");
+    log(_lastBcScanOk === false
+      ? "Scan BC termine avec erreur technique (" + _lastBcScanReason + ")"
+      : "Scan BC termine.");
   }
 }
 
@@ -2167,6 +4070,20 @@ const urlMod  = require("url");
 
 const HTTP_PORT    = parseInt(process.env.PORT || "3000", 10);
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
+// Mode server-only : désactive cron + scan initial (tests locaux)
+const SERVER_ONLY  = process.env.RADAR_BC_SERVER_ONLY === "1";
+// Délai avant le premier scan BC au démarrage (configurable, défaut 15 min)
+// Augmenté à 900s pour laisser le portail se stabiliser après deploy
+const _rawStartupDelay = parseInt(process.env.STARTUP_BC_SCAN_DELAY_MS || "", 10);
+const STARTUP_BC_SCAN_DELAY_MS = (Number.isFinite(_rawStartupDelay) && _rawStartupDelay > 0)
+  ? _rawStartupDelay
+  : 900000;
+// Timeout navigation scraping BC (configurable, défaut 120s — portail parfois lent depuis EU)
+const _rawBcNavTimeout = parseInt(process.env.BC_NAV_TIMEOUT_MS || "", 10);
+const BC_NAV_TIMEOUT_MS = (Number.isFinite(_rawBcNavTimeout) && _rawBcNavTimeout > 0)
+  ? _rawBcNavTimeout
+  : 120000;
+const _reviewStore = require('./core/shadow/review-store.runtime.js'); // GD-029
 
 const _startTime = Date.now();
 
@@ -2178,8 +4095,19 @@ function checkSecret(req) {
 
 function jsonResp(res, status, data) {
   const body = JSON.stringify(data, null, 2);
-  res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*" });
   res.end(body);
+}
+
+// ── readJsonBody helper (GD-029) ─────────────────────────────────────────
+async function _readJsonBody(req) {
+  const chunks = [];
+  await new Promise(function(resolve, reject) {
+    req.on('data', function(d) { chunks.push(d); });
+    req.on('end', resolve);
+    req.on('error', reject);
+  });
+  return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 }
 
 const _httpServer = http.createServer(async (req, res) => {
@@ -2202,16 +4130,34 @@ const _httpServer = http.createServer(async (req, res) => {
       scanningMP:  _scanningMP,
       cache_size:  cacheSize,
       version:     "9.5",
+      last_bc_scan_ok:     _lastBcScanOk,
+      last_bc_scan_reason: _lastBcScanReason,
+      last_bc_scan_at:     _lastBcScanAt,
     });
   }
 
-  // ── POST /api/scan-now  (déclenche scan BC immédiat) ─────
+  // ── POST /api/scan-now  (déclenche scan BC manuel — admin sécurisé) ──────
+  // Usage PowerShell : Invoke-RestMethod -Method POST "$BASE_URL/api/scan-now?secret=XXXX"
+  // Réponses :
+  //   401 { ok:false, reason:"unauthorized" }            — secret absent/invalide
+  //   409 { ok:false, reason:"scan_already_running" }    — scan BC déjà actif
+  //   200 { ok:true,  accepted:true, source:"manual", accepted_at:... } — scan lancé
   if (req.method === "POST" && path_ === "/api/scan-now") {
-    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
-    if (_scanningBC) return jsonResp(res, 409, { error: "Scan BC déjà en cours" });
-    log("[HTTP] Scan BC déclenché manuellement via /api/scan-now");
-    runGlobalScanBC().catch(e => log("[HTTP] Scan BC erreur: " + e.message));
-    return jsonResp(res, 202, { message: "Scan BC lancé", time: new Date().toISOString() });
+    // 1. Auth — checkSecret ne logue jamais la valeur du secret
+    if (!checkSecret(req)) {
+      log("[HTTP] /api/scan-now refusé: secret absent ou invalide");
+      return jsonResp(res, 401, { ok: false, reason: "unauthorized" });
+    }
+    // 2. Anti-doublon — refus si scan BC déjà actif
+    if (_scanningBC) {
+      log("[HTTP] /api/scan-now refusé: scan BC déjà en cours [source=" + _currentScanSource + "]");
+      return jsonResp(res, 409, { ok: false, reason: "scan_already_running", current_source: _currentScanSource });
+    }
+    // 3. Lancer en arrière-plan sans bloquer la réponse HTTP
+    const _acceptedAt = new Date().toISOString();
+    log("[HTTP] /api/scan-now accepté [source=manual accepted_at=" + _acceptedAt + "]");
+    runGlobalScanBC("manual").catch(e => log("[HTTP] Scan BC manual erreur: " + e.message));
+    return jsonResp(res, 200, { ok: true, accepted: true, source: "manual", accepted_at: _acceptedAt });
   }
 
   // ── GET /api/test-notify  (envoie notif de test à un client) ─
@@ -2229,24 +4175,31 @@ const _httpServer = http.createServer(async (req, res) => {
         id:        "TEST-" + Date.now(),
         objet:     "BON DE COMMANDE TEST — Fourniture de matériel informatique",
         organisme: "Ministère de l'Économie et des Finances",
-        dateLimit: new Date(Date.now() + 7 * 86400000).toLocaleDateString("fr-MA"),
+        date_limite: new Date(Date.now() + 7 * 86400000).toLocaleDateString("fr-MA"),
         url:       "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
         montant:   null,
         articles:  [{ designation: "Ordinateurs portables", specifications: "Core i7, 16Go RAM" }],
         bodyText:  "fourniture matériel informatique ordinateur portable",
         _keyword:  "informatique",
       };
-      const fakeMatched = {
+      const fakeMatched = [{
         valeur:        "informatique",
         type:          "titre",
         ai_inclusions: ["matériel informatique", "ordinateur"],
         ai_exclusions: [],
-      };
-      const msgPlain = buildMessage(fakeItem, fakeMatched, "bc", "Résumé IA test — marché de fourniture informatique pour administration.");
-      const msgHtml  = buildHtmlMessage(fakeItem, fakeMatched, "bc", "Résumé IA test — marché de fourniture informatique pour administration.");
+      }];
+      // Liens feedback si le client est autorisé (FB-6C — utilise les mêmes gardes que le scan réel)
+      const _fbTestHtml  = isFeedbackEnabledForClient(client.id)
+        ? _buildFeedbackSection(client.id, fakeItem.id, "informatique", "bc", "html",  { notifId: "test-preview" })
+        : null;
+      const _fbTestPlain = isFeedbackEnabledForClient(client.id)
+        ? _buildFeedbackSection(client.id, fakeItem.id, "informatique", "bc", "plain", { notifId: "test-preview" })
+        : null;
+      const msgPlain = buildMessage(fakeItem, fakeMatched, "bc", "Résumé IA test — marché de fourniture informatique pour administration.") + (_fbTestPlain || "");
+      const msgHtml  = buildHtmlMessage(fakeItem, fakeMatched, "bc", "Résumé IA test — marché de fourniture informatique pour administration.") + (_fbTestHtml  || "");
 
       const results = {};
-      if (client.telegram_chat_id) {
+      if (client.tg_chat_id) {
         try { await sendTelegram(client, msgHtml); results.telegram = "ok"; }
         catch (e) { results.telegram = "erreur: " + e.message; }
       } else { results.telegram = "non configuré"; }
@@ -2265,6 +4218,330 @@ const _httpServer = http.createServer(async (req, res) => {
       return jsonResp(res, 200, { client: client.nom, channels: results });
     } catch (e) {
       return jsonResp(res, 500, { error: e.message });
+    }
+  }
+
+  // ── GET /api/replay-notify/list  (diagnostic — liste les snapshots disponibles) ──
+  // Lecture seule : aucun scan, aucune écriture DB.
+  if (req.method === "GET" && path_ === "/api/replay-notify/list") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    try {
+      const snapshotFile = path.join(INPUT_SNAPSHOT_DIR, "latest-bc-input.jsonl");
+
+      // Lister tous les fichiers du répertoire snapshot
+      let filesFound = [];
+      if (fs.existsSync(INPUT_SNAPSHOT_DIR)) {
+        filesFound = fs.readdirSync(INPUT_SNAPSHOT_DIR)
+          .filter(function(f) { return f.endsWith(".jsonl"); })
+          .sort().reverse(); // plus récent en premier
+      }
+
+      // Lire le fichier utilisé par /api/replay-notify
+      let items = [];
+      const snapshotExists = fs.existsSync(snapshotFile);
+      if (snapshotExists) {
+        const lines = fs.readFileSync(snapshotFile, "utf8").split("\n").filter(Boolean);
+        for (const line of lines) {
+          try { items.push(JSON.parse(line)); } catch (_e) { /* ignorer lignes malformées */ }
+        }
+      }
+
+      // 20 derniers bc_id (les plus récents = fin du fichier)
+      const last20 = items.slice(-20).reverse().map(function(item) {
+        return {
+          bc_id: item.bc_id || item.id || "?",
+          objet: item.objet || item.reference || "(sans objet)",
+        };
+      });
+
+      return jsonResp(res, 200, {
+        snapshot_dir:   INPUT_SNAPSHOT_DIR,
+        files_found:    filesFound,
+        file_used:      snapshotExists ? snapshotFile : null,
+        item_count:     items.length,
+        last_20_bc_ids: last20,
+      });
+    } catch (e) {
+      return jsonResp(res, 500, { error: e.message });
+    }
+  }
+
+  // ── GET /api/replay-notify  (rejoue la notif Telegram d'un BC réel sans markSent) ──
+  // Charge le client + l'item depuis le snapshot local, construit le message
+  // identique au cron, appelle sendTelegram uniquement.
+  // N'écrit JAMAIS dans bcs_envoyes — aucun appel à markSent.
+  if (req.method === "GET" && path_ === "/api/replay-notify") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    const clientId = parsed.query.client_id;
+    const bcId     = parsed.query.bc_id;
+    const critereQ = parsed.query.critere || null;
+
+    if (!clientId) return jsonResp(res, 400, { error: "Paramètre client_id manquant" });
+    if (!bcId)     return jsonResp(res, 400, { error: "Paramètre bc_id manquant" });
+
+    try {
+      // 1. Charger le client (lecture Supabase, pas d'écriture)
+      const clients = await db.getClients();
+      const client  = clients.find(c => String(c.id) === String(clientId));
+      if (!client) return jsonResp(res, 404, { error: "Client introuvable: " + clientId });
+
+      // 2. Lire l'item depuis le snapshot d'entrée local (lecture seule, pas de scan)
+      const snapshotFile = path.join(INPUT_SNAPSHOT_DIR, "latest-bc-input.jsonl");
+
+      // Charger toutes les lignes valides du snapshot
+      let snapshotItems = [];
+      if (fs.existsSync(snapshotFile)) {
+        const lines = fs.readFileSync(snapshotFile, "utf8").split("\n").filter(Boolean);
+        for (const line of lines) {
+          try { snapshotItems.push(JSON.parse(line)); } catch (_e) { /* ignorer lignes malformées */ }
+        }
+      }
+
+      // Snapshot vide ou absent → réponse claire
+      if (snapshotItems.length === 0) {
+        return jsonResp(res, 404, {
+          ok:    false,
+          error: "Aucun snapshot disponible ou snapshot vide",
+          hint:  "Attendre un scan avec BC récupérés (RADAR_BC_WRITE_INPUT_SNAPSHOT=1 requis)",
+          snapshot_dir: INPUT_SNAPSHOT_DIR,
+          file_used: fs.existsSync(snapshotFile) ? snapshotFile : null,
+        });
+      }
+
+      // Support bc_id=latest → dernier item du snapshot (BC le plus récent)
+      let item = null;
+      const useLatest = (String(bcId).toLowerCase() === "latest");
+      if (useLatest) {
+        item = snapshotItems[snapshotItems.length - 1];
+        log("[REPLAY] bc_id=latest → résolu en " + (item.bc_id || item.id || "?"));
+      } else {
+        for (const row of snapshotItems) {
+          if (String(row.bc_id || row.id || "") === String(bcId)) { item = row; break; }
+        }
+      }
+
+      if (!item) {
+        return jsonResp(res, 404, {
+          error:          "BC introuvable dans le snapshot local",
+          bc_id:          bcId,
+          item_count:     snapshotItems.length,
+          sample_bc_ids:  snapshotItems.slice(-5).map(function(r) { return r.bc_id || r.id || "?"; }).reverse(),
+          hint:           "Utiliser bc_id=latest pour rejouer le dernier item, ou /api/replay-notify/list pour voir les bc_id disponibles.",
+        });
+      }
+      // Normaliser : le snapshot stocke l'identifiant dans bc_id — reconstruire item.id
+      if (!item.id) item = Object.assign({}, item, { id: item.bc_id });
+
+      // 3. Construire matchedCriteres
+      //    Priorité : ?critere= → premier critère du client → fallback "—"
+      const critereVal = critereQ
+        || (client.criteres && client.criteres.length > 0 ? client.criteres[0].valeur : null)
+        || "—";
+      const matchedCriteres = [{
+        valeur:        critereVal,
+        type:          "titre",
+        ai_inclusions: [],
+        ai_exclusions: [],
+      }];
+
+      // 4. Construire le message HTML (mêmes builders que le cron réel)
+      const _fbReplayHtml = isFeedbackEnabledForClient(client.id)
+        ? _buildFeedbackSection(client.id, item.id, critereVal, "bc", "html", { notifId: "replay" })
+        : null;
+      const msgHtml = buildHtmlMessage(item, matchedCriteres, "bc", null) + (_fbReplayHtml || "");
+
+      // 5. Détecter la troncature (Patch B — limite 4096 chars)
+      const TG_MAX    = 4096;
+      const msgLen    = msgHtml.length;
+      const truncated = msgLen > TG_MAX;
+
+      // 6. Vérifier que le client a un tg_chat_id configuré
+      if (!client.tg_chat_id) {
+        return jsonResp(res, 400, {
+          ok: false, error: "Client sans tg_chat_id — Telegram impossible",
+          client_id: clientId, bc_id: bcId,
+        });
+      }
+
+      // 7. Envoyer via Telegram uniquement — jamais markSent, jamais bcs_envoyes
+      const tgOk = await sendTelegram(client, msgHtml);
+      const resolvedBcId = item.bc_id || item.id || bcId;
+      log("[REPLAY] client=" + client.nom + " item=" + resolvedBcId + " tg=" + tgOk + " len=" + msgLen);
+
+      return jsonResp(res, 200, {
+        ok:        tgOk,
+        client_id: clientId,
+        bc_id:     resolvedBcId,
+        tg_ok:     tgOk,
+        msg_len:   msgLen,
+        truncated: truncated,
+        critere:   critereVal,
+      });
+    } catch (e) {
+      log("[REPLAY] ERREUR: " + e.message);
+      return jsonResp(res, 500, { error: e.message });
+    }
+  }
+
+  // ── POST /api/onboarding/enrich-criteria ──────────────────────────────────
+  // Analyse locale des critères bêta — aucun appel IA, aucune écriture DB.
+  if (req.method === "POST" && path_ === "/api/onboarding/enrich-criteria") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    try {
+      const chunks = [];
+      await new Promise(function(resolve, reject) {
+        req.on("data", function(d) { chunks.push(d); });
+        req.on("end",  resolve);
+        req.on("error", reject);
+      });
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      if (!body.criteria || !Array.isArray(body.criteria)) {
+        return jsonResp(res, 400, { error: "criteria doit être un tableau de chaînes" });
+      }
+      const { enrichCriteriaList } = require("./core/onboarding/criteria-enrichment.runtime.js");
+      const result = enrichCriteriaList({
+        client_name: body.client_name || "",
+        radar_type:  body.radar_type  || "bc",
+        criteria:    body.criteria,
+      });
+      return jsonResp(res, 200, result);
+    } catch (e) {
+      log("[HTTP] Erreur enrich-criteria: " + e.message);
+      return jsonResp(res, 500, { error: "Erreur interne: " + e.message });
+    }
+  }
+
+  // ── POST /api/onboarding/ai-profile-questions ────────────────────────────
+  if (req.method === "POST" && path_ === "/api/onboarding/ai-profile-questions") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    try {
+      const chunks = [];
+      await new Promise(function(resolve, reject) {
+        req.on("data", function(d) { chunks.push(d); });
+        req.on("end",  resolve);
+        req.on("error", reject);
+      });
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      if (!body.business_description) return jsonResp(res, 400, { error: "business_description requis" });
+      const { generateProfileQuestions } = require("./core/onboarding/dynamic-profile-ai.runtime");
+      const result = await generateProfileQuestions({
+        client_name:          body.client_name || "",
+        radar_type:           body.radar_type  || "bc",
+        business_description: body.business_description,
+      });
+      return jsonResp(res, 200, result);
+    } catch (e) {
+      log("[HTTP] Erreur ai-profile-questions: " + e.message);
+      return jsonResp(res, 500, { error: "Erreur interne: " + e.message });
+    }
+  }
+
+  // ── POST /api/onboarding/ai-profile-finalize ──────────────────────────────
+  if (req.method === "POST" && path_ === "/api/onboarding/ai-profile-finalize") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    try {
+      const chunks = [];
+      await new Promise(function(resolve, reject) {
+        req.on("data", function(d) { chunks.push(d); });
+        req.on("end",  resolve);
+        req.on("error", reject);
+      });
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+      if (!body.business_description) return jsonResp(res, 400, { error: "business_description requis" });
+      if (!body.answers || typeof body.answers !== "object") return jsonResp(res, 400, { error: "answers requis (objet)" });
+      const { finalizeProfileFromAnswers } = require("./core/onboarding/dynamic-profile-ai.runtime");
+      const result = await finalizeProfileFromAnswers({
+        client_name:          body.client_name || "",
+        radar_type:           body.radar_type  || "bc",
+        business_description: body.business_description,
+        answers:              body.answers,
+      });
+      return jsonResp(res, 200, result);
+    } catch (e) {
+      log("[HTTP] Erreur ai-profile-finalize: " + e.message);
+      return jsonResp(res, 500, { error: "Erreur interne: " + e.message });
+    }
+  }
+
+  // ── POST /api/onboarding/ai-enrich-criterion ──────────────────────────────
+  if (req.method === "POST" && path_ === "/api/onboarding/ai-enrich-criterion") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    try {
+      const { enrichCriterionWithAI } = require("./core/onboarding/criteria-ai-enrichment.runtime");
+      const body = await readJsonBody(req);
+      if (!body.criterion) return jsonResp(res, 400, { error: "criterion requis" });
+      const result = await enrichCriterionWithAI({
+        criterion:      body.criterion,
+        radar_type:     body.radar_type || "bc",
+        client_context: body.client_context || undefined,
+      });
+      return jsonResp(res, 200, result);
+    } catch (e) {
+      log("[HTTP] Erreur ai-enrich-criterion: " + e.message);
+      return jsonResp(res, 500, { error: "Erreur interne: " + e.message });
+    }
+  }
+
+  // ── GET /api/admin/shadow-review/latest ── GD-029 ───────────────────────────
+  if (req.method === "GET" && path_ === "/api/admin/shadow-review/latest") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    try {
+      const DATA_DIR      = path.join(__dirname, "data");
+      const shadowDir     = path.join(DATA_DIR, "shadow");
+      const decisionsDir  = path.join(DATA_DIR, "review-decisions");
+      const report = _reviewStore.getConsolidatedRows({ shadowDir, decisionsDir });
+      return jsonResp(res, 200, report);
+    } catch (e) {
+      log("[HTTP] shadow-review/latest erreur: " + e.message);
+      return jsonResp(res, 500, { error: "Erreur interne: " + e.message });
+    }
+  }
+
+  // ── POST /api/admin/shadow-review/decide ── GD-029 ──────────────────────────
+  if (req.method === "POST" && path_ === "/api/admin/shadow-review/decide") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    try {
+      const body = await _readJsonBody(req);
+      const { client, bc_id, decision, matched_signals, clean_score,
+              signal_origin, strength_reason, clean_text_excerpt } = body;
+      const decisionsDir = path.join(__dirname, "data", "review-decisions");
+      const result = _reviewStore.saveDecision(
+        { client, bc_id, decision, matched_signals: matched_signals || [],
+          clean_score: clean_score || 0, signal_origin, strength_reason, clean_text_excerpt },
+        decisionsDir
+      );
+      if (!result.ok) return jsonResp(res, 400, { error: result.error });
+      log("[HTTP] shadow-review décision: " + decision + " bc=" + bc_id + " client=" + client);
+      return jsonResp(res, 200, { ok: true, file: result.file, decision, bc_id, client });
+    } catch (e) {
+      log("[HTTP] shadow-review/decide erreur: " + e.message);
+      return jsonResp(res, 500, { error: "Erreur interne: " + e.message });
+    }
+  }
+
+  // ── POST /api/admin/onboarding/criteria/persist ────────────────────────────
+  if (path_ === "/api/admin/onboarding/criteria/persist") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    try {
+      const { handleOnboardingAdminRoute, readJsonBody } = require("./dist/core/onboarding/admin-router");
+      const { persistPreparedCriteriaBatch }             = require("./dist/core/onboarding/criteria-repository");
+      const { makeSbCriteriaClient }                     = require("./dist/core/onboarding/criteria-supabase-client");
+
+      const body = await readJsonBody(req);
+
+      const routerDeps = {
+        env: process.env,
+        persistBatch: (batch, opts) => {
+          const client = makeSbCriteriaClient(CFG.sbUrl, CFG.sbKey);
+          return persistPreparedCriteriaBatch(batch, opts, client);
+        },
+      };
+
+      const result = await handleOnboardingAdminRoute(req.method, path_, body, routerDeps);
+      if (result !== null) return jsonResp(res, result.status, result.body);
+    } catch (e) {
+      log("[HTTP] Erreur onboarding admin route: " + e.message);
+      return jsonResp(res, 500, { ok: false, error: "Erreur interne serveur onboarding" });
     }
   }
 
@@ -2300,16 +4577,370 @@ const _httpServer = http.createServer(async (req, res) => {
     }
   }
 
+  // GET /feedback — capture d'un événement feedback
+  if (req.method === "GET" && parsed.pathname === "/feedback") {
+    const validation = validateFeedbackQuery(parsed.query);
+    if (!validation.valid) {
+      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+      return res.end("<html><body><p>Erreur : " + validation.error + "</p></body></html>");
+    }
+    const event = Object.assign({}, validation.data, { created_at: new Date().toISOString() });
+    // \u00c9criture Supabase \u2014 fire-and-forget, ne bloque jamais la r\u00e9ponse HTTP
+    appendFeedbackToSupabase(event);
+    // \u00c9criture JSONL locale \u2014 miroir/fallback, jamais bloquante
+    const fbFile = require("path").join(__dirname, "data", "feedback", "feedback-events.jsonl");
+    try {
+      appendFeedbackEvent(event, fbFile);
+    } catch (e) {
+      log("Erreur \u00e9criture feedback JSONL: " + e.message);
+      // JSONL non bloquant : Supabase a pu capturer l'\u00e9v\u00e9nement
+    }
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    return res.end(
+      "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
+      "<title>Feedback enregistr\u00e9</title></head><body>" +
+      "<p>\u2705 Merci, votre retour a \u00e9t\u00e9 enregistr\u00e9.</p>" +
+      "</body></html>"
+    );
+  }
+
+  // ── GET /api/debug-snapshot-notify  (diagnostic matching + Telegram sans cron) ──────────────
+  // Lit le snapshot local, evalue chaque item contre le client (is_en_cours,
+  // already_sent, matching, quality_gate) et retourne un diagnostic JSON.
+  // Mode dry-run par defaut (send=false) : aucun Telegram, aucun markSent.
+  // Mode send=true : envoie UN seul item (bc_id requis) via sendTelegram, SANS markSent.
+  if (req.method === "GET" && path_ === "/api/debug-snapshot-notify") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+
+    const clientId      = parsed.query.client_id;
+    const bcIdQ         = parsed.query.bc_id        || null;
+    const critereQ      = parsed.query.critere       || null;
+    const sendMode      = String(parsed.query.send   || "false").toLowerCase() === "true";
+    const limit         = Math.min(parseInt(parsed.query.limit || "10", 10) || 10, 100);
+    const searchAll     = String(parsed.query.search_all_snapshots || "false").toLowerCase() === "true";
+    const onlyUnsent    = String(parsed.query.only_unsent    || "false").toLowerCase() === "true";
+    const onlyWouldSend = String(parsed.query.only_would_send || "false").toLowerCase() === "true";
+
+    if (!clientId) return jsonResp(res, 400, { error: "Parametre client_id manquant" });
+    if (sendMode && !bcIdQ) return jsonResp(res, 400, { error: "send=true requiert bc_id" });
+
+    try {
+      // 1. Charger le client depuis Supabase (lecture seule)
+      const allClients = await db.getClients();
+      const client = allClients.find(c => String(c.id) === String(clientId));
+      if (!client) return jsonResp(res, 404, { error: "Client introuvable: " + clientId });
+
+      // 2. Construire la liste des fichiers snapshot a inspecter
+      // input-snapshots : latest-bc-input.jsonl + bc-input-*.jsonl
+      // scan-snapshots  : bc-scan-*.jsonl (SNAPSHOT_DIR)
+      const latestFile = path.join(INPUT_SNAPSHOT_DIR, "latest-bc-input.jsonl");
+      let filesToCheck = [latestFile];
+      if (searchAll) {
+        // Collecter depuis input-snapshots (bc-input-*.jsonl, hors latest)
+        const inputArchives = fs.existsSync(INPUT_SNAPSHOT_DIR)
+          ? fs.readdirSync(INPUT_SNAPSHOT_DIR)
+              .filter(function(f) {
+                return f.endsWith(".jsonl") && f.startsWith("bc-input-") &&
+                  f !== "latest-bc-input.jsonl";
+              })
+              .sort().reverse()
+              .map(function(f) { return path.join(INPUT_SNAPSHOT_DIR, f); })
+          : [];
+        // Collecter depuis scan-snapshots (bc-scan-*.jsonl)
+        const scanArchives = fs.existsSync(SNAPSHOT_DIR)
+          ? fs.readdirSync(SNAPSHOT_DIR)
+              .filter(function(f) {
+                return f.endsWith(".jsonl") && f.startsWith("bc-scan-");
+              })
+              .sort().reverse()
+              .map(function(f) { return path.join(SNAPSHOT_DIR, f); })
+          : [];
+        // Fusionner : latest en premier, puis toutes archives triees newest-first, sans doublons
+        const latestNorm = path.resolve(latestFile);
+        const seen = new Set([latestNorm]);
+        const allArchives = inputArchives.concat(scanArchives)
+          .sort(function(a, b) { return b.localeCompare(a); }) // newest-first par nom
+          .filter(function(f) {
+            const n = path.resolve(f);
+            if (seen.has(n)) return false;
+            seen.add(n);
+            return true;
+          });
+        filesToCheck = [latestFile].concat(allArchives);
+      }
+
+      let snapshotItems = [];
+      let snapshotFileUsed = null;
+      const filesChecked = [];
+      const fileForItem = new Map(); // itemId -> fichier source
+
+      if (bcIdQ && searchAll) {
+        // Mode recherche : parcourir les fichiers jusqu'a trouver bc_id
+        for (const f of filesToCheck) {
+          if (!fs.existsSync(f)) continue;
+          filesChecked.push(f);
+          const rawLines = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
+          const parsedItems = [];
+          for (const line of rawLines) {
+            try { parsedItems.push(JSON.parse(line)); } catch (_e) {}
+          }
+          const hit = parsedItems.find(function(r) {
+            return String(r.id || r.bc_id || "") === String(bcIdQ);
+          });
+          if (hit) {
+            snapshotItems = parsedItems;
+            snapshotFileUsed = f;
+            log("[DEBUG-SNAPSHOT] bc_id=" + bcIdQ + " trouve dans " + f);
+            break;
+          }
+        }
+        // bc_id introuvable dans tous les snapshots
+        if (snapshotItems.length === 0 && filesChecked.length > 0) {
+          const sampleIds = [];
+          for (const f of filesChecked) {
+            if (!fs.existsSync(f)) continue;
+            const rawLines = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
+            for (const line of rawLines.slice(-5)) {
+              try { sampleIds.push(JSON.parse(line).id || JSON.parse(line).bc_id || "?"); } catch (_e) {}
+            }
+            if (sampleIds.length >= 10) break;
+          }
+          return jsonResp(res, 404, {
+            ok:                     false,
+            bc_found:               false,
+            bc_id:                  bcIdQ,
+            error:                  "bc_id introuvable dans tous les snapshots inspectes",
+            snapshot_files_checked: filesChecked,
+            sample_bc_ids:          sampleIds.slice(0, 10),
+          });
+        }
+      } else if (!bcIdQ && searchAll) {
+        // Mode critere multi-snapshot : parcourir tous les fichiers, dedupliquer par id
+        const seenItemIds = new Set();
+        for (const f of filesToCheck) {
+          if (!fs.existsSync(f)) continue;
+          filesChecked.push(f);
+          const rawLines = fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
+          for (const line of rawLines) {
+            try {
+              const item = JSON.parse(line);
+              const itemId = String(item.id || item.bc_id || "");
+              if (itemId && seenItemIds.has(itemId)) continue;
+              if (itemId) seenItemIds.add(itemId);
+              fileForItem.set(itemId, f);
+              snapshotItems.push(item);
+            } catch (_e) {}
+          }
+          if (!snapshotFileUsed) snapshotFileUsed = f;
+        }
+      } else {
+        // Mode normal : latest seulement
+        if (fs.existsSync(latestFile)) {
+          filesChecked.push(latestFile);
+          const rawLines = fs.readFileSync(latestFile, "utf8").split("\n").filter(Boolean);
+          for (const line of rawLines) {
+            try {
+              const item = JSON.parse(line);
+              const itemId = String(item.id || item.bc_id || "");
+              if (itemId) fileForItem.set(itemId, latestFile);
+              snapshotItems.push(item);
+            } catch (_e) {}
+          }
+          snapshotFileUsed = latestFile;
+        }
+      }
+
+      if (snapshotItems.length === 0) {
+        return jsonResp(res, 404, {
+          ok:                     false,
+          error:                  "Snapshot vide ou absent",
+          hint:                   "Attendre un run de cron avec RADAR_BC_WRITE_INPUT_SNAPSHOT=1",
+          snapshot_file:          latestFile,
+          snapshot_files_checked: filesChecked,
+        });
+      }
+
+      // 3. Normaliser les items (bc_id -> id)
+      snapshotItems = snapshotItems.map(function(r) {
+        return r.id ? r : Object.assign({}, r, { id: r.bc_id });
+      });
+
+      // 4. Filtrer : par bc_id ou par critere textuel si fourni
+      let candidates = snapshotItems;
+      if (bcIdQ) {
+        candidates = snapshotItems.filter(function(r) {
+          return String(r.id || r.bc_id || "") === String(bcIdQ);
+        });
+      } else if (critereQ) {
+        const cq = critereQ.toLowerCase();
+        candidates = snapshotItems.filter(function(r) {
+          return (r.objet || "").toLowerCase().includes(cq) ||
+                 (r.bodyText || "").toLowerCase().includes(cq);
+        });
+      }
+      // Cap de securite avant evaluation (filtrage onlyUnsent/onlyWouldSend apres)
+      candidates = candidates.slice(0, Math.min(limit * 20, 500));
+
+      // 5. Charger les ids deja envoyes (lecture seule, pas d'ecriture)
+      const sentIds = await db.getBCSentIds(client.id);
+
+      // 6. Preparer les criteres du client
+      const criteres = (client.criteres || []).filter(function(c) {
+        return (c.radar_type || "bc") === "bc";
+      });
+
+      // 7. Informations token (sans reveler la valeur)
+      const hasCfgToken      = _isValidToken(process.env.TELEGRAM_BOT_TOKEN);
+      const hasClientTgToken = _isValidToken(client.tg_token);
+      const hasTgChatId      = !!(client.tg_chat_id);
+
+      // 8. Evaluer chaque candidat
+      const results = [];
+      for (const item of candidates) {
+        const enCours     = isEnCours(item);
+        const alreadySent = sentIds.has(item.id);
+        const matched     = criteres.length > 0 ? itemMatchesCriteres(item, criteres) : false;
+        const matchedCriteres = matched ? getMatchedCriteres(item, criteres) : [];
+        const matchedCritere  = matchedCriteres.length > 0 ? matchedCriteres[0].valeur : null;
+
+        // Quality gate (seulement si match)
+        let qualityGate = null;
+        if (matched) {
+          const _qg = _runQualityGate({
+            critere_valeur: matchedCritere || "",
+            objet:          item.objet || "",
+            bodyText:       item.bodyText || "",
+            matched_terms:  matchedCriteres.map(function(c) { return c.valeur; }),
+            radar_type:     "bc",
+            is_cancelled:   false,
+          });
+          qualityGate = { decision: _qg.decision, reason: _qg.reason || null };
+        }
+
+        // Message HTML (pour calculer la longueur)
+        const critereVal = matchedCritere
+          || (criteres.length > 0 ? criteres[0].valeur : null)
+          || "---";
+        const fakeCriteres = [{ valeur: critereVal, type: "titre", ai_inclusions: [], ai_exclusions: [] }];
+        const msgHtml = buildHtmlMessage(item, fakeCriteres, "bc", null);
+        const msgLen  = msgHtml.length;
+
+        // would_send_telegram : true si tous les prerequis sont reunis
+        const wouldSendTelegram = enCours && matched && !alreadySent
+          && (qualityGate ? qualityGate.decision !== "block" : true)
+          && hasTgChatId
+          && (hasCfgToken || hasClientTgToken);
+
+        const diag = {
+          bc_id:               item.id || item.bc_id || null,
+          titre:               (item.objet || "").slice(0, 80),
+          date_limite:         item.date_limite || null,
+          is_en_cours:         enCours,
+          already_sent:        alreadySent,
+          matched:             matched,
+          matched_critere:     matchedCritere,
+          quality_gate:        qualityGate,
+          has_tg_chat_id:      hasTgChatId,
+          has_token_cfg:       hasCfgToken,
+          has_client_tg_token: hasClientTgToken,
+          msg_len:             msgLen,
+          would_send_telegram: wouldSendTelegram,
+          send_attempted:      false,
+          tg_ok:               null,
+          delivery_result:     null,
+        };
+
+        // Mode send=true : envoyer CE seul item (bc_id requis, deja verifie)
+        if (sendMode && bcIdQ && String(item.id || item.bc_id || "") === String(bcIdQ)) {
+          log("[DEBUG-SNAPSHOT] send=true client=" + client.nom + " item=" + item.id);
+          const tgOk = await sendTelegram(client, msgHtml);
+          diag.send_attempted  = true;
+          diag.tg_ok           = tgOk;
+          diag.delivery_result = tgOk ? "delivered" : "failed";
+          log("[DEBUG-SNAPSHOT] send=true tg=" + tgOk + " item=" + item.id);
+        } else {
+          log("[DEBUG-SNAPSHOT] client=" + client.nom + " item=" + (item.id || "?") +
+              " send=false would_tg=" + wouldSendTelegram +
+              " en_cours=" + enCours + " matched=" + matched + " sent=" + alreadySent);
+        }
+
+        results.push(diag);
+      }
+
+      const candidatesEvaluatedTotal = results.length;
+      // Post-filtres optionnels (apres evaluation complete)
+      let filteredResults = results;
+      if (onlyUnsent)    filteredResults = filteredResults.filter(function(r) { return !r.already_sent; });
+      if (onlyWouldSend) filteredResults = filteredResults.filter(function(r) { return r.would_send_telegram; });
+      filteredResults = filteredResults.slice(0, limit);
+
+      // Fichiers ayant au moins un item matche (avant post-filtres)
+      const snapshotsWithMatchesSet = new Set(
+        results
+          .filter(function(r) { return r.matched; })
+          .map(function(r) { return fileForItem.get(String(r.bc_id)) || snapshotFileUsed; })
+          .filter(Boolean)
+      );
+
+      return jsonResp(res, 200, {
+        ok:                         true,
+        client_id:                  clientId,
+        client_nom:                 client.nom,
+        send_mode:                  sendMode,
+        snapshot_file:              snapshotFileUsed,
+        snapshot_files_checked:     filesChecked,
+        snapshots_with_matches:     Array.from(snapshotsWithMatchesSet),
+        bc_found:                   bcIdQ ? candidates.length > 0 : null,
+        bc_found_in_snapshot:       (bcIdQ && candidates.length > 0) ? snapshotFileUsed : null,
+        snapshot_total:             snapshotItems.length,
+        candidates_evaluated:       filteredResults.length,
+        candidates_evaluated_total: candidatesEvaluatedTotal,
+        criteres_count:             criteres.length,
+        has_tg_chat_id:             hasTgChatId,
+        has_token_cfg:              hasCfgToken,
+        results:                    filteredResults,
+      });
+    } catch (e) {
+      log("[DEBUG-SNAPSHOT] ERREUR: " + e.message);
+      return jsonResp(res, 500, { error: e.message });
+    }
+  }
+
+  // ── GET /api/debug-fetch-bc-page  (diagnostic fetch HTTP page BC — sans matching ni notif) ──
+  if (req.method === "GET" && path_ === "/api/debug-fetch-bc-page") {
+    if (!checkSecret(req)) return jsonResp(res, 401, { error: "Unauthorized" });
+    const _diagPage = Math.max(1, parseInt(String(parsed.query.page || "1"), 10) || 1);
+    log("[HTTP] /api/debug-fetch-bc-page page=" + _diagPage);
+    try {
+      const diag = await debugFetchBcPage(_diagPage);
+      log("[HTTP] debug-fetch-bc-page: " + diag.reason + " (status=" + diag.status + " elapsed=" + diag.elapsed_ms + "ms)");
+      return jsonResp(res, 200, diag);
+    } catch (e) {
+      log("[HTTP] debug-fetch-bc-page erreur: " + e.message);
+      return jsonResp(res, 500, { error: e.message });
+    }
+  }
+
   // 404 API
   return jsonResp(res, 404, { error: "Route inconnue", routes: [
-    "GET  / → portail client",
-    "GET  /web/index.html → portail client",
-    "GET  /web/admin.html → admin",
+    "GET  / \u2192 portail client",
+    "GET  /web/index.html \u2192 portail client",
+    "GET  /web/admin.html \u2192 admin",
+    "GET  /web/shadow-review.html \u2192 shadow admin dashboard (GD-029)",
+    "GET  /web/onboarding-review.html \u2192 revue crit\u00e8res onboarding (admin)",
     "GET  /web/pricing.html",
     "GET  /health",
     "GET  /api/status?secret=xxx",
     "POST /api/scan-now?secret=xxx",
     "GET  /api/test-notify?secret=xxx[&client_id=yyy]",
+    "GET  /api/replay-notify/list?secret=xxx",
+    "GET  /api/replay-notify?secret=xxx&client_id=yyy&bc_id=<id|latest>[&critere=nettoyage]",
+    "GET  /api/debug-snapshot-notify?secret=xxx&client_id=yyy[&bc_id=zzz][&critere=nettoyage][&send=false][&limit=10][&search_all_snapshots=false][&only_unsent=false][&only_would_send=false]",
+    "GET  /api/debug-fetch-bc-page?secret=xxx[&page=1]",
+    "POST /api/onboarding/enrich-criteria?secret=xxx",
+    "GET  /api/admin/shadow-review/latest?secret=xxx",
+    "POST /api/admin/shadow-review/decide?secret=xxx",
+    "POST /api/admin/onboarding/criteria/persist?secret=xxx",
   ]});
 });
 
@@ -2320,26 +4951,73 @@ _httpServer.listen(HTTP_PORT, "0.0.0.0", () => {
 // ============================================================
 // PLANIFICATION CRON
 // ============================================================
-cron.schedule("0 */2 * * *", () => {
-  log("Cron BC declenche");
-  runGlobalScanBC().catch(e => log("Cron BC erreur: " + e.message));
-});
+if (!SERVER_ONLY) {
+  // ── Garde anti-double déclenchement : clé YYYY-MM-DDTHH (UTC) ──────────
+  let lastScheduledBcHourKey = "";
 
-// Cron MP reserve pour activation future (FEATURES.enableMP = true)
-// cron.schedule("30 1,3,5,7,9,11,13,15,17,19,21,23 * * *", () => {
-//   runGlobalScanMP().catch(e => log("Cron MP erreur: " + e.message));
-// });
+  function _makeHourKey() {
+    const now = new Date();
+    return now.getUTCFullYear() + "-"
+      + String(now.getUTCMonth() + 1).padStart(2, "0") + "-"
+      + String(now.getUTCDate()).padStart(2, "0") + "T"
+      + String(now.getUTCHours()).padStart(2, "0");
+  }
 
-log("Crons BC (0 */2) et MP (30 heures impaires) programmes.");
+  function _triggerHourlyBC(source) {
+    const key = _makeHourKey();
+    if (lastScheduledBcHourKey === key) {
+      log("[SCHED] hourly BC already triggered for hour=" + key + " source=" + source);
+      return;
+    }
+    if (_scanningBC) {
+      log("[SCHED] skipped because scan already running hour=" + key + " source=" + source);
+      return;
+    }
+    lastScheduledBcHourKey = key;
+    log("[SCHED] hourly BC trigger hour=" + key + " source=" + source);
+    runGlobalScanBC(source).catch(e => log("Cron BC erreur [" + source + "]: " + e.message));
+  }
+
+  // ── Scheduler principal node-cron (0 * * * * UTC) ──────────────────────
+  cron.schedule("0 * * * *", () => {
+    _triggerHourlyBC("cron");
+  });
+
+  // ── Scheduler de secours setInterval (tick 60s, détection UTC minute===0) ─
+  setInterval(() => {
+    const now = new Date();
+    log("[SCHED] heartbeat utc=" + now.toISOString().slice(0, 16));
+    if (now.getUTCMinutes() === 0) {
+      _triggerHourlyBC("cron-interval");
+    }
+  }, 60000);
+
+  // Cron MP reserve pour activation future (FEATURES.enableMP = true)
+  // cron.schedule("30 1,3,5,7,9,11,13,15,17,19,21,23 * * *", () => {
+  //   runGlobalScanMP().catch(e => log("Cron MP erreur: " + e.message));
+  // });
+
+  log("Cron BC horaire programmé; Cron MP désactivé.");
+}
 
 // ============================================================
 // DEMARRAGE
 // ============================================================
-(async () => {
-  log("Bot demarre. Chargement cache Supabase...");
-  await loadCacheFromSupabase();
-  log("Cache charge. Premier scan BC dans 10s, MP dans 65s...");
-  setTimeout(() => runGlobalScanBC().catch(e => log("Init BC: " + e.message)), 10000);
-  // MP desactive en v1
-  // setTimeout(() => runGlobalScanMP().catch(e => log("Init MP: " + e.message)), 65000);
-})();
+if (SERVER_ONLY) {
+  log("[ServerOnly] RADAR_BC_SERVER_ONLY=1 — scan initial et cron désactivés.");
+  log("[ServerOnly] Serveur HTTP actif sur 0.0.0.0:" + HTTP_PORT + " — prêt pour tests locaux.");
+} else {
+  (async () => {
+    log("[CFG] supabase=" + (CFG.sbUrl ? "set" : "empty")
+      + " tg_token=" + (_isValidToken(process.env.TELEGRAM_BOT_TOKEN) ? "set" : "empty")
+      + " tg_token_source=" + (_isValidToken(process.env.TELEGRAM_BOT_TOKEN) ? "env" : "absent")
+      + " anthropic=" + (CFG.anthropicKey ? "set" : "empty")
+      + " resend=" + (CFG.resendKey ? "set" : "empty"));
+    log("Bot demarre. Chargement cache Supabase...");
+    await loadCacheFromSupabase();
+    log("Cache charge. Premier scan BC dans " + (STARTUP_BC_SCAN_DELAY_MS / 1000) + "s, MP dans 65s...");
+    setTimeout(() => runGlobalScanBC("startup").catch(e => log("Init BC: " + e.message)), STARTUP_BC_SCAN_DELAY_MS);
+    // MP desactive en v1
+    // setTimeout(() => runGlobalScanMP().catch(e => log("Init MP: " + e.message)), 65000);
+  })();
+}
