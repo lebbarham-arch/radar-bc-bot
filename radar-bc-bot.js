@@ -323,6 +323,27 @@ async function sbReq(path, opts) {
   return d;
 }
 
+// ── sbFetchAllPages : pagination Supabase/PostgREST par lots (défaut 1000) ──
+// PostgREST plafonne à 1000 lignes par réponse par défaut.
+// On itère avec offset jusqu'à recevoir un lot incomplet.
+async function sbFetchAllPages(basePath, pageSize) {
+  pageSize = pageSize || 1000;
+  const all = [];
+  let offset = 0;
+  let pages = 0;
+  while (true) {
+    const sep = basePath.includes("?") ? "&" : "?";
+    const path = basePath + sep + "limit=" + pageSize + "&offset=" + offset;
+    const chunk = await sbReq(path);
+    pages++;
+    if (!chunk || !chunk.length) break;
+    for (let i = 0; i < chunk.length; i++) all.push(chunk[i]);
+    if (chunk.length < pageSize) break;
+    offset += pageSize;
+  }
+  return { rows: all, pages: pages };
+}
+
 const db = {
   // Tous les clients actifs avec leurs criteres
   getClients: () => sbReq("clients?actif=eq.true&select=*,criteres(*)"),
@@ -330,14 +351,15 @@ const db = {
   // ---- BC (Bons de Commande) ----
   getBCVusIds: async () => {
     try {
-      const rows = await sbReq("bcs_vus?select=bc_id&limit=20000");
-      return new Set((rows || []).map(r => r.bc_id));
+      const { rows, pages } = await sbFetchAllPages("bcs_vus?select=bc_id", 1000);
+      log("[KNOWN_DIAG] bcs_vus_load total_loaded=" + rows.length + " pages_loaded=" + pages);
+      return new Set(rows.map(r => r.bc_id));
     } catch (e) { log("  bcs_vus indisponible: " + e.message); return new Set(); }
   },
   getBCVusBCData: async () => {
     try {
-      const rows = await sbReq("bcs_vus?select=bc_data&limit=20000");
-      return (rows || []).map(r => r.bc_data).filter(Boolean);
+      const { rows } = await sbFetchAllPages("bcs_vus?select=bc_data", 1000);
+      return rows.map(r => r.bc_data).filter(Boolean);
     } catch (e) { log("  bcs_vus bc_data: " + e.message); return []; }
   },
   markBCVus: async bcs => {
