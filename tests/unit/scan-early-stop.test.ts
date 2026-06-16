@@ -387,5 +387,170 @@ describe("DC — BC_DETAIL_CONCURRENT résolution BATCH", () => {
     expect(resolveBatch("6.9")).toBe(6);
   });
 });
+// ─── LD — loadDetails accumulation résultat + progress logs ──────────────────
+//
+// Régression couverte : `const result = []` manquant → ReferenceError result.length.
+// La mirror reproduit exactement la structure du code prod corrigé.
+
+interface DetailItem {
+  id: string;
+  objet?: string;
+}
+
+interface LoadDetailsResult {
+  items: DetailItem[];
+  logs:  string[];
+}
+
+function loadDetailsMirror(
+  inputItems: DetailItem[],
+  batch: number,
+  progressEvery: number,
+  scrapeItem: (item: DetailItem) => DetailItem,
+  failedIds: Set<string>,
+  logs: string[],
+): DetailItem[] {
+  if (!inputItems.length) return [];
+
+  // ← Bug original : cette ligne manquait → ReferenceError: result is not defined
+  const result: DetailItem[] = [];
+  const _fiches_start = Date.now();
+  let _fiches_failed = 0;
+
+  for (let i = 0; i < inputItems.length; i += batch) {
+    const batchItems = inputItems.slice(i, i + batch);
+    const prevLen = result.length;
+
+    const detailed = batchItems.map((item) => {
+      if (failedIds.has(item.id)) {
+        _fiches_failed++;
+        return item;
+      }
+      return scrapeItem(item);
+    });
+
+    result.push(...detailed);
+
+    const prevMilestone = Math.floor(prevLen / progressEvery);
+    const currMilestone = Math.floor(result.length / progressEvery);
+    if (currMilestone > prevMilestone) {
+      const elapsed = Date.now() - _fiches_start;
+      logs.push("[FICHES] loaded=" + result.length + "/" + inputItems.length
+        + " failed=" + _fiches_failed + " elapsed=" + elapsed + "ms");
+    }
+  }
+
+  return result;
+}
+
+function makeDetailItem(id: string): DetailItem {
+  return { id, objet: "BC " + id };
+}
+
+function makeDetailItems(n: number, offset = 0): DetailItem[] {
+  return Array.from({ length: n }, (_, i) => makeDetailItem(String(i + 1 + offset)));
+}
+
+describe("LD — loadDetails accumulation + progress", () => {
+
+  test("LD-1: items vide → retourne [] sans erreur", () => {
+    const logs: string[] = [];
+    const res = loadDetailsMirror([], 3, 25, x => x, new Set(), logs);
+    expect(res).toHaveLength(0);
+    expect(logs).toHaveLength(0);
+  });
+
+  test("LD-2: 1 item, BATCH=3 → retourne 1 item enrichi", () => {
+    const items = [makeDetailItem("bc1")];
+    const logs: string[] = [];
+    const scrape = (item: DetailItem): DetailItem => ({ ...item, objet: "enrichi-" + item.id });
+    const res = loadDetailsMirror(items, 3, 25, scrape, new Set(), logs);
+    expect(res).toHaveLength(1);
+    expect(res[0]!.objet).toBe("enrichi-bc1");
+  });
+
+  test("LD-3: 9 items, BATCH=3 → exactement 9 résultats (3 batches x 3)", () => {
+    const items = makeDetailItems(9);
+    const logs: string[] = [];
+    const res = loadDetailsMirror(items, 3, 25, x => x, new Set(), logs);
+    expect(res).toHaveLength(9);
+  });
+
+  test("LD-4: 10 items, BATCH=3 → exactement 10 résultats (dernier batch = 1)", () => {
+    const items = makeDetailItems(10);
+    const logs: string[] = [];
+    const res = loadDetailsMirror(items, 3, 25, x => x, new Set(), logs);
+    expect(res).toHaveLength(10);
+  });
+
+  test("LD-5: ordre préservé — items sortent dans le même ordre que l'entrée", () => {
+    const items = makeDetailItems(7);
+    const logs: string[] = [];
+    const res = loadDetailsMirror(items, 3, 25, x => x, new Set(), logs);
+    expect(res.map(r => r.id)).toEqual(items.map(i => i.id));
+  });
+
+  test("LD-6: item en échec → retourne l'item brut (fallback), pas undefined", () => {
+    const items = [makeDetailItem("good"), makeDetailItem("fail"), makeDetailItem("good2")];
+    const logs: string[] = [];
+    const failedIds = new Set(["fail"]);
+    const scrape = (item: DetailItem): DetailItem => ({ ...item, objet: "enrichi" });
+    const res = loadDetailsMirror(items, 3, 25, scrape, failedIds, logs);
+    expect(res).toHaveLength(3);
+    const failItem = res.find(r => r.id === "fail");
+    expect(failItem).toBeDefined();
+    expect(failItem!.objet).toBe("BC fail");
+  });
+
+  test("LD-7: 25 items, PROGRESS_EVERY=25, BATCH=5 → 1 log [FICHES] a loaded=25", () => {
+    const items = makeDetailItems(25);
+    const logs: string[] = [];
+    loadDetailsMirror(items, 5, 25, x => x, new Set(), logs);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain("[FICHES] loaded=25/25");
+  });
+
+  test("LD-8: 50 items, PROGRESS_EVERY=25, BATCH=5 → 2 logs [FICHES] (jalons 25 et 50)", () => {
+    const items = makeDetailItems(50);
+    const logs: string[] = [];
+    loadDetailsMirror(items, 5, 25, x => x, new Set(), logs);
+    expect(logs).toHaveLength(2);
+    expect(logs[0]).toContain("loaded=25/50");
+    expect(logs[1]).toContain("loaded=50/50");
+  });
+
+  test("LD-9: 10 items, PROGRESS_EVERY=25 → 0 logs (seuil jamais atteint)", () => {
+    const items = makeDetailItems(10);
+    const logs: string[] = [];
+    loadDetailsMirror(items, 3, 25, x => x, new Set(), logs);
+    expect(logs).toHaveLength(0);
+  });
+
+  test("LD-10: log [FICHES] contient failed= avec le bon compteur", () => {
+    const items = makeDetailItems(25);
+    const failedIds = new Set(["3", "7", "12"]);
+    const logs: string[] = [];
+    loadDetailsMirror(items, 5, 25, x => x, failedIds, logs);
+    expect(logs[0]).toContain("failed=3");
+  });
+
+  test("LD-11: log [FICHES] contient elapsed= (entier >= 0)", () => {
+    const items = makeDetailItems(25);
+    const logs: string[] = [];
+    loadDetailsMirror(items, 5, 25, x => x, new Set(), logs);
+    const match = logs[0]!.match(/elapsed=(\d+)ms/);
+    expect(match).not.toBeNull();
+    expect(parseInt(match![1]!, 10)).toBeGreaterThanOrEqual(0);
+  });
+
+  test("LD-12: BATCH=1 → même résultat final que BATCH=5", () => {
+    const items = makeDetailItems(25);
+    const logs1: string[] = [];
+    const logs5: string[] = [];
+    const res1 = loadDetailsMirror(items, 1, 9999, x => x, new Set(), logs1);
+    const res5 = loadDetailsMirror(items, 5, 9999, x => x, new Set(), logs5);
+    expect(res1.map(r => r.id)).toEqual(res5.map(r => r.id));
+  });
+});
 
 export {}

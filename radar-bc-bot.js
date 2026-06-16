@@ -2473,6 +2473,7 @@ async function loadDetails(browser, items, label, isMP, opts) {
   const _fiches_start = Date.now();
   let _fiches_failed = 0;
   const PROGRESS_EVERY = items.length >= 100 ? 50 : 25;
+  const result = [];
   for (let i = 0; i < items.length; i += BATCH) {
     const batch = items.slice(i, i + BATCH);
     const pages = await Promise.all(batch.map(() => newPage(browser)));
