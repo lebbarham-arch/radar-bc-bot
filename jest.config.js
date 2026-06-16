@@ -15,6 +15,7 @@ module.exports = {
   },
   moduleNameMapper: {
     '^@core/(.*)$': '<rootDir>/core/$1',
+    '^@tests/(.*)$': '<rootDir>/tests/$1',
   },
   collectCoverageFrom: [
     'core/**/*.ts',

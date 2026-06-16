@@ -181,4 +181,5 @@ const FR_STOP_WORDS = new Set([
 export function tokenize(text: string): string[] {
   return normalizeText(text)
     .split(/\s+/)
-    .filter(t => t.length >= 2 && !FR_
+    .filter(t => t.length >= 2 && !FR_STOP_WORDS.has(t));
+}

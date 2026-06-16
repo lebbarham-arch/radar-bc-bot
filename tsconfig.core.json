@@ -27,7 +27,8 @@
     /* Paths */
     "baseUrl": ".",
     "paths": {
-      "@core/*": ["core/*"]
+      "@core/*": ["core/*"],
+      "@tests/*": ["tests/*"]
     }
   },
   "include": ["core/**/*.ts", "tests/unit/**/*.ts"],

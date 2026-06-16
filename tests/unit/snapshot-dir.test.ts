@@ -172,9 +172,8 @@ describe("SD — Résolution SNAPSHOT_DIR / INPUT_SNAPSHOT_DIR", () => {
   });
 
   test("SD-3: env chaîne vide → traité comme absent → défaut __dirname/data", () => {
-    // chaîne vide est falsy en JS
-    const envValue = "" || undefined;
-    const dirs = resolveSnapshotDir(envValue, "/app");
+    // chaîne vide est falsy en JS — passer directement avec cast pour éviter TS2873
+    const dirs = resolveSnapshotDir("" as string | undefined, "/app");
     expect(dirs.scan).toBe(path.join("/app", "data", "scan-snapshots"));
     expect(dirs.input).toBe(path.join("/app", "data", "input-snapshots"));
   });
@@ -411,15 +410,16 @@ describe("SL — Route GET /api/snapshot/latest", () => {
   test("SL-10: header X-Snapshot-Path contient le chemin absolu", () => {
     fs.writeFileSync(path.join(scanDir, "latest-bc-scan.jsonl"), '{"id":"bc1"}\n', "utf8");
     const res = snapshotLatestRoute("scan", SECRET, SECRET, scanDir, inputDir);
-    expect(res.headers["X-Snapshot-Path"]).toContain("latest-bc-scan.jsonl");
-    expect(path.isAbsolute(res.headers["X-Snapshot-Path"])).toBe(true);
+    const snapPath = res.headers["X-Snapshot-Path"]!;
+    expect(snapPath).toContain("latest-bc-scan.jsonl");
+    expect(path.isAbsolute(snapPath)).toBe(true);
   });
 
   test("SL-11: header X-Snapshot-Size est un entier positif", () => {
     const content = '{"id":"bc1"}\n';
     fs.writeFileSync(path.join(scanDir, "latest-bc-scan.jsonl"), content, "utf8");
     const res = snapshotLatestRoute("scan", SECRET, SECRET, scanDir, inputDir);
-    const size = parseInt(res.headers["X-Snapshot-Size"], 10);
+    const size = parseInt(res.headers["X-Snapshot-Size"]!, 10);
     expect(size).toBeGreaterThan(0);
     expect(size).toBe(Buffer.byteLength(content, "utf8"));
   });
