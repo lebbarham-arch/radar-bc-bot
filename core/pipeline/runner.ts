@@ -77,7 +77,7 @@ export function runPipeline(input: PipelineInput): PipelineOutcome {
   const classifSummary = formatClassificationSummary(classification);
 
   const explanationParts: string[] = [
-    `[PIPELINE] BC "${parsed.objet || parsed.id}" → ${scoreComponents.final_decision.toUpperCase()} (${scoreComponents.final_score}/100)`,
+    `[PIPELINE] BC "${parsed.objet || parsed.id}" → ${scoreComponents.decision.toUpperCase()} (${scoreComponents.final_score}/100)`,
     `[PARSE]    ${parsed.articles.length} articles extraits${parseResult.warnings.length > 0 ? ` — ⚠ ${parseResult.warnings.join(', ')}` : ''}`,
     `[CLASSIFY] ${classifSummary}`,
     `[SCORE]    ${scoreComponents.explanation}`,
@@ -100,7 +100,7 @@ export function runPipeline(input: PipelineInput): PipelineOutcome {
       score_components: scoreComponents,
     },
 
-    final_decision: scoreComponents.final_decision,
+    final_decision: scoreComponents.decision,
     final_score:    scoreComponents.final_score,
     explanation:    explanationParts.join('\n'),
     duration_ms:    Date.now() - t0,

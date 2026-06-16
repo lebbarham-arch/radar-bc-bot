@@ -167,8 +167,8 @@ describe("SD — Résolution SNAPSHOT_DIR / INPUT_SNAPSHOT_DIR", () => {
 
   test("SD-2: avec env=/tmp/radar-bc-snapshots → utilise env comme base", () => {
     const dirs = resolveSnapshotDir("/tmp/radar-bc-snapshots", "/app");
-    expect(dirs.scan).toBe("/tmp/radar-bc-snapshots/scan-snapshots");
-    expect(dirs.input).toBe("/tmp/radar-bc-snapshots/input-snapshots");
+    expect(dirs.scan).toBe(path.join("/tmp/radar-bc-snapshots", "scan-snapshots"));
+    expect(dirs.input).toBe(path.join("/tmp/radar-bc-snapshots", "input-snapshots"));
   });
 
   test("SD-3: env chaîne vide → traité comme absent → défaut __dirname/data", () => {

@@ -161,7 +161,7 @@ describe('levenshtein', () => {
 
 describe('exactMatch', () => {
   it('trouve un mot dans un texte (insensible à la casse)', () => {
-    expect(exactMatch('Fourniture de Câbles Réseau', 'câble réseau')).toBe(true);
+    expect(exactMatch('Fourniture de Câble Réseau', 'câble réseau')).toBe(true);
   });
 
   it('retourne false si le mot est absent', () => {

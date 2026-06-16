@@ -516,6 +516,30 @@ export function scoreBC(
   // 1. Détection d'intention du BC
   const bcIntent = detectBCIntent(bc);
 
+  // Guard : BC sans aucun contenu → score nul
+  // Évite le bonus "unknown → 8" accordé par scoreBusinessIntentComponent
+  // sur des BC vides qui n'ont pas de contenu à évaluer.
+  if (!bc.objet.trim() && !bc.bodyText.trim() && bc.articles.length === 0) {
+    return {
+      title_score: 0, content_score: 0, article_score: 0,
+      business_intent_score: 0, technical_score: 0, organization_score: 0,
+      contextual_exclusion_penalty: 0,
+      final_score: 0,
+      decision: 'ignore',
+      matched_critere_ids: [],
+      explanation: 'BC vide — aucun contenu à scorer',
+      details: {
+        bc_intent:         'unknown',
+        article_density:   0,
+        matched_articles:  0,
+        total_articles:    0,
+        matched_terms:     [],
+        matched_specs:     [],
+        exclusion_reasons: [],
+      },
+    };
+  }
+
   // 2. Scoring de chaque composant
   const titleR    = scoreTitleComponent(bc, criteres);
   const contentR  = scoreContentComponent(bc, criteres);
