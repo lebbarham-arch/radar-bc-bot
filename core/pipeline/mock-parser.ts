@@ -28,7 +28,7 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   designation:    ['désignation', 'designation', 'libellé', 'libelle', 'article', 'description', 'nature'],
   specifications: ['spécifications', 'specifications', 'caractéristiques', 'caracteristiques', 'specs', 'détails', 'details'],
   quantite:       ['quantité', 'quantite', 'qté', 'qte', 'qt', 'nb', 'nombre'],
-  unite:          ['unité', 'unite', 'u', 'um', 'pu'],
+  unite:          ['unité', 'unite', 'um', 'pu'],
 };
 
 /** Normalise un en-tête de colonne pour la détection */
@@ -77,7 +77,7 @@ function extractArticlesFromTable(table: string[][]): RawArticle[] {
 
   // Détecter si la première ligne est un en-tête
   const colMap = detectColumns(firstRow);
-  const hasHeader = colMap.size >= 1;
+  const hasHeader = colMap.size >= 2; // ≥ 2 : un seul alias accidentel (ex: 'unités'.includes('unite')) ne doit pas créer de fausse en-tête
 
   const dataRows = hasHeader ? table.slice(1) : table;
   const articles: RawArticle[] = [];
