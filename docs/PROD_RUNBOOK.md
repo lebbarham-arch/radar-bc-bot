@@ -92,6 +92,47 @@ fly logs --app radar-bc-bot | grep -E "SCAN BC|bcs_vus|known_count|FICHES|Telegr
 
 ---
 
+### 2.6 Vérification anti-double-scan (machine CDG)
+
+> ⚠️ Après **chaque** `fly deploy` ou restart, vérifier impérativement l'état
+> de la machine CDG. Si elle est `started`, deux instances scannent simultanément :
+> doubles notifications Telegram, état BDD potentiellement incohérent.
+
+**Vérification rapide (bash) :**
+
+```bash
+fly machine list --app radar-bc-bot
+```
+
+Résultat attendu :
+
+```
+ID               REGION  STATE    IMAGE
+d8d054dc2e6648   fra     started  deployment-...   ← OK
+48e7364b99d778   cdg     stopped  ...              ← OK
+```
+
+**Si CDG est `started` → stopper immédiatement :**
+
+```bash
+fly machine stop 48e7364b99d778 --app radar-bc-bot
+fly machine list --app radar-bc-bot   # vérifier → cdg stopped
+```
+
+**Vérification automatisée (Windows PowerShell) :**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\ensure-fly-single-machine.ps1
+```
+
+Le script :
+- liste les machines et affiche leur état
+- alerte si FRA n'est pas `started`
+- détecte si CDG est `started` et propose de l'arrêter après confirmation
+- affiche l'état final
+
+---
+
 ## 3. Surveillance d'un scan BC
 
 ### 3.1 Séquence normale
@@ -145,6 +186,8 @@ fly machine list --app radar-bc-bot
 # 2. Stopper CDG si elle a redémarré (TOUJOURS vérifier)
 fly machine stop 48e7364b99d778 --app radar-bc-bot
 fly machine list --app radar-bc-bot   # → cdg doit être stopped
+# Ou utiliser le script PowerShell (Windows) :
+#   powershell -ExecutionPolicy Bypass -File scripts\ensure-fly-single-machine.ps1
 
 # 3. Health check
 curl -s https://radar-bc-bot.fly.dev/health

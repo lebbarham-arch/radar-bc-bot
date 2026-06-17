@@ -80,6 +80,11 @@
      fly machine stop 48e7364b99d778 --app radar-bc-bot
    Une machine CDG active = double scan + double notification.
 
+✅ Sur Windows, utiliser scripts\ensure-fly-single-machine.ps1 après chaque deploy
+   powershell -ExecutionPolicy Bypass -File scripts\ensure-fly-single-machine.ps1
+   Le script liste les machines, détecte CDG started, et propose l'arrêt avec confirmation.
+   Voir : docs\PROD_RUNBOOK.md §2.6
+
 ✅ Vérifier /health après chaque deploy
      curl -s https://radar-bc-bot.fly.dev/health
    Résultat attendu : {"status":"ok", ...}
