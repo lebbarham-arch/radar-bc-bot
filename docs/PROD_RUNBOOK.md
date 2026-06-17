@@ -13,7 +13,7 @@
 | App Fly | `radar-bc-bot` |
 | Région principale | `fra` (Frankfurt) |
 | Machine active | `d8d054dc2e6648` — état attendu : **started** |
-| Machine CDG | `48e7364b99d778` — état attendu : **stopped** ⛔ |
+| Machine CDG | `48e7364b99d778` — **détruite définitivement le 2026-06-17** ✓ |
 | Fichier prod | `radar-bc-bot.js` (legacy Node.js monolithique) |
 | Image de référence | `deployment-01KV9DHG84FXV91HXGP326K8R3` |
 | Dernier scan validé | 17/06/2026 00:00 UTC |
@@ -30,19 +30,18 @@
 fly machine list --app radar-bc-bot
 ```
 
-Résultat attendu :
+Résultat attendu (une seule machine depuis le 2026-06-17) :
 
 ```
 ID               REGION  STATE    IMAGE
-d8d054dc2e6648   fra     started  deployment-01KV9DHG84FXV91HXGP326K8R3
-48e7364b99d778   cdg     stopped  ...
+d8d054dc2e6648   fra     started  deployment-...   ← seule machine active
 ```
 
-⚠️ Si `48e7364b99d778` est `started` → stopper immédiatement :
+⚠️ Si une **deuxième machine** apparaît après un deploy → stopper immédiatement :
 
 ```bash
-fly machine stop 48e7364b99d778 --app radar-bc-bot
-fly machine list --app radar-bc-bot   # vérifier
+fly machine stop <id-machine-inconnue> --app radar-bc-bot
+fly machine list --app radar-bc-bot   # vérifier → une seule machine fra started
 ```
 
 ### 2.2 Health check
@@ -92,11 +91,10 @@ fly logs --app radar-bc-bot | grep -E "SCAN BC|bcs_vus|known_count|FICHES|Telegr
 
 ---
 
-### 2.6 Vérification anti-double-scan (machine CDG)
+### 2.6 Vérification anti-double-scan (une seule machine depuis 2026-06-17)
 
-> ⚠️ Après **chaque** `fly deploy` ou restart, vérifier impérativement l'état
-> de la machine CDG. Si elle est `started`, deux instances scannent simultanément :
-> doubles notifications Telegram, état BDD potentiellement incohérent.
+> La machine CDG (`48e7364b99d778`) a été **détruite définitivement le 2026-06-17**.
+> Il ne doit rester qu'**une seule machine** Fly : FRA `d8d054dc2e6648`.
 
 **Vérification rapide (bash) :**
 
@@ -108,15 +106,15 @@ Résultat attendu :
 
 ```
 ID               REGION  STATE    IMAGE
-d8d054dc2e6648   fra     started  deployment-...   ← OK
-48e7364b99d778   cdg     stopped  ...              ← OK
+d8d054dc2e6648   fra     started  deployment-...   ← seule machine active
 ```
 
-**Si CDG est `started` → stopper immédiatement :**
+**Si une deuxième machine apparaît après un deploy → stopper immédiatement :**
 
 ```bash
-fly machine stop 48e7364b99d778 --app radar-bc-bot
-fly machine list --app radar-bc-bot   # vérifier → cdg stopped
+fly machine stop <id-machine-inconnue> --app radar-bc-bot
+fly machine list --app radar-bc-bot   # vérifier → une seule machine
+# Puis ouvrir un ticket pour décider de sa destruction définitive
 ```
 
 **Vérification automatisée (Windows PowerShell) :**
@@ -128,7 +126,8 @@ powershell -ExecutionPolicy Bypass -File scripts\ensure-fly-single-machine.ps1
 Le script :
 - liste les machines et affiche leur état
 - alerte si FRA n'est pas `started`
-- détecte si CDG est `started` et propose de l'arrêter après confirmation
+- affiche OK si CDG n'est pas trouvée (état normal depuis 2026-06-17)
+- détecte si CDG ou toute autre machine est `started` et propose l'arrêt avec confirmation
 - affiche l'état final
 
 ---
@@ -183,9 +182,10 @@ Exécuter dans cet ordre **immédiatement après chaque `fly deploy`** :
 # 1. Vérifier l'état des machines
 fly machine list --app radar-bc-bot
 
-# 2. Stopper CDG si elle a redémarré (TOUJOURS vérifier)
-fly machine stop 48e7364b99d778 --app radar-bc-bot
-fly machine list --app radar-bc-bot   # → cdg doit être stopped
+# 2. Vérifier qu'aucune deuxième machine n'a été recréée (CDG détruite le 2026-06-17)
+fly machine list --app radar-bc-bot   # → une seule machine fra started
+# Si une machine inconnue apparaît :
+#   fly machine stop <id> --app radar-bc-bot
 # Ou utiliser le script PowerShell (Windows) :
 #   powershell -ExecutionPolicy Bypass -File scripts\ensure-fly-single-machine.ps1
 
@@ -230,8 +230,8 @@ Image de référence stable : `deployment-01KV9DHG84FXV91HXGP326K8R3`
 # Vérifier les machines
 fly machine list --app radar-bc-bot
 
-# Stopper CDG si started
-fly machine stop 48e7364b99d778 --app radar-bc-bot
+# Vérifier qu'aucune deuxième machine n'est apparue après le rollback
+# fly machine list --app radar-bc-bot
 
 # Health check
 curl -s https://radar-bc-bot.fly.dev/health
@@ -344,7 +344,8 @@ Pour des snapshots survivant aux restarts, créer un volume Fly et définir `RAD
 | Tests Jest | `394/394` verts |
 | `node --check radar-bc-bot.js` | OK |
 | Machine FRA `d8d054dc2e6648` | started |
-| Machine CDG `48e7364b99d778` | stopped |
+| Machine CDG `48e7364b99d778` | **détruite définitivement le 2026-06-17** |
+| Dernier `[SCAN_SUMMARY]` | `source=startup duration=423s portal_total=1291 known_count=11359 new=2 loaded=2 failed=0 vus_added=2 no_delivery_retry=0 skipped_for_next=0 status=ok` |
 
 ---
 

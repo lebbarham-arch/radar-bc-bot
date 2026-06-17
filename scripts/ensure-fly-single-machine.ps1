@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$AppName = "radar-bc-bot",
     [string]$FraId = "d8d054dc2e6648",
     [string]$CdgId = "48e7364b99d778"
@@ -16,7 +16,7 @@ function Assert-CommandExists {
 
     if (-not (Get-Command $CommandName -ErrorAction SilentlyContinue)) {
         Write-Host "ERROR: command '$CommandName' not found." -ForegroundColor Red
-        Write-Host "Install Fly CLI or open a terminal where flyctl is available." -ForegroundColor Red
+        Write-Host "Install Fly CLI or open a terminal where fly is available." -ForegroundColor Red
         exit 1
     }
 }
@@ -29,7 +29,7 @@ function Get-MachineState {
 
     foreach ($line in $Lines) {
         if ($line -match [regex]::Escape($MachineId)) {
-            if ($line -match '\b(started|stopped|suspended|destroyed|created)\b') {
+            if ($line -match '\b(started|stopped|stopping|suspended|destroyed|created)\b') {
                 return $Matches[1]
             }
         }
@@ -69,21 +69,25 @@ Write-Host "[3/4] Checking FRA production machine ($FraId)..." -ForegroundColor 
 if ($fraState -eq "started") {
     Write-Host "FRA: started - OK" -ForegroundColor Green
 } elseif ($fraState -eq "unknown") {
-    Write-Host "WARNING: FRA machine not found." -ForegroundColor Magenta
-    Write-Host "Expected ID: $FraId"
+    Write-Host "ERROR: FRA machine not found." -ForegroundColor Red
+    Write-Host "Expected ID: $FraId" -ForegroundColor Red
+    exit 1
 } else {
     Write-Host "ERROR: FRA state is '$fraState' but expected 'started'." -ForegroundColor Red
     Write-Host "To start it:"
     Write-Host "fly machine start $FraId --app $AppName" -ForegroundColor White
+    exit 1
 }
 Write-Host ""
 
 Write-Host "[4/4] Checking CDG secondary machine ($CdgId)..." -ForegroundColor Yellow
 
-if ($cdgState -eq "stopped") {
-    Write-Host "CDG: stopped - OK, no double scan." -ForegroundColor Green
-} elseif ($cdgState -eq "unknown") {
-    Write-Host "WARNING: CDG machine not found. If it was deleted, this is OK." -ForegroundColor Magenta
+if ($cdgState -eq "unknown") {
+    Write-Host "CDG: not found - OK, destroyed / no secondary machine." -ForegroundColor Green
+} elseif ($cdgState -eq "stopped") {
+    Write-Host "CDG: stopped - WARNING, secondary machine exists again but is not running." -ForegroundColor Magenta
+    Write-Host "Recommended action after validation:"
+    Write-Host "fly machine destroy $CdgId --app $AppName" -ForegroundColor White
 } elseif ($cdgState -eq "started") {
     Write-Host "PROBLEM: CDG is STARTED. This can cause double scans and duplicate notifications." -ForegroundColor Red
     Write-Host ""
@@ -108,9 +112,8 @@ if ($cdgState -eq "stopped") {
         exit 2
     }
 } else {
-    Write-Host "CDG state is '$cdgState'. Expected 'stopped'." -ForegroundColor Magenta
+    Write-Host "CDG state is '$cdgState'. Expected 'unknown' because CDG was destroyed." -ForegroundColor Magenta
 }
 
 Write-Host ""
 Write-Host "Guard completed." -ForegroundColor Cyan
-

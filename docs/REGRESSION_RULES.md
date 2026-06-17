@@ -75,15 +75,25 @@
 ✅ Après chaque deploy, vérifier les machines immédiatement
      fly machine list --app radar-bc-bot
 
-✅ La machine CDG (48e7364b99d778) doit rester stopped
-   Si started après un deploy → stopper sans délai :
+✅ La machine CDG (48e7364b99d778) a été détruite définitivement le 2026-06-17
+   État attendu : not found (aucune machine CDG dans fly machine list).
+   Si CDG réapparaît started après un deploy → stopper sans délai :
      fly machine stop 48e7364b99d778 --app radar-bc-bot
    Une machine CDG active = double scan + double notification.
 
 ✅ Sur Windows, utiliser scripts\ensure-fly-single-machine.ps1 après chaque deploy
    powershell -ExecutionPolicy Bypass -File scripts\ensure-fly-single-machine.ps1
    Le script liste les machines, détecte CDG started, et propose l'arrêt avec confirmation.
+   CDG not found = état normal depuis 2026-06-17 (machine détruite).
    Voir : docs\PROD_RUNBOOK.md §2.6
+
+❌ Ne jamais recréer une deuxième machine Fly sans décision explicite
+   La machine CDG 48e7364b99d778 a été détruite définitivement le 2026-06-17.
+   Une seule machine doit exister : FRA d8d054dc2e6648.
+   Si une machine hors FRA apparaît après un deploy :
+     1. fly machine stop <id> --app radar-bc-bot  ← stopper immédiatement
+     2. Ouvrir un ticket avant de décider destroy ou keep
+   Une deuxième machine = double scan BC = doubles notifications Telegram.
 
 ✅ Vérifier /health après chaque deploy
      curl -s https://radar-bc-bot.fly.dev/health
