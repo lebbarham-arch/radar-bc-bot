@@ -3758,6 +3758,17 @@ async function runGlobalScanBC(source) {
   _scanningBC = true;
   _currentScanSource = _scanSource;  // propagé dans les logs de retry scraping
   const _scanRunId = _makeScanRunId();  // corrélation lignes de ce scan
+  const _scanStartMs = Date.now();       // durée totale du scan
+  // ── Compteurs [SCAN_SUMMARY] — -1 = étape non atteinte ───────────────────
+  let _sum_portal_total      = -1;
+  let _sum_known_count       = -1;
+  let _sum_new               = -1;
+  let _sum_loaded            = -1;
+  let _sum_failed            = -1;
+  let _sum_vus_added         = -1;
+  let _sum_no_delivery_retry = -1;
+  let _sum_skipped_for_next  = -1;
+  let _scanStatus            = "error"; // pessimiste par défaut
   const now = new Date().toLocaleString("fr-MA", { timeZone: "Africa/Casablanca" });
   log("\n" + "=".repeat(60));
   log("SCAN BC - " + now + " [source=" + _scanSource + " runId=" + _scanRunId + "]");
@@ -3804,6 +3815,7 @@ async function runGlobalScanBC(source) {
         _lastBcScanOk     = true;
         _lastBcScanReason = "0 BC reel portail";
         _lastBcScanAt     = new Date().toISOString();
+        _scanStatus = "ok"; // 0 BC portail = fin normale sans erreur
       }
       return;
     }
@@ -3811,6 +3823,9 @@ async function runGlobalScanBC(source) {
     _lastBcScanReason = allBCs.length + " BC recuperes";
     _lastBcScanAt     = new Date().toISOString();
     const newBCs  = allBCs.filter(bc => !vusIds.has(bc.id));
+    _sum_portal_total = allBCs.length;
+    _sum_known_count  = vusIds.size;
+    _sum_new          = newBCs.length;
     log(newBCs.length + " nouveaux BC | " + (allBCs.length - newBCs.length) + " deja connus");
     // ── KNOWN_DIAG : diagnostic "BC connus" — storage + échantillons ─────────
     {
@@ -3832,10 +3847,13 @@ async function runGlobalScanBC(source) {
     })();
     const bcToLoad  = _maxNewBCDetails === 0 ? newBCs : newBCs.slice(0, _maxNewBCDetails);
     const bcSkipped = _maxNewBCDetails === 0 ? [] : newBCs.slice(_maxNewBCDetails);
+    _sum_skipped_for_next = bcSkipped.length;
     if (bcSkipped.length > 0) {
       log("[FICHES] cap applied total_new=" + newBCs.length + " limit=" + _maxNewBCDetails + " skipped_for_next_scan=" + bcSkipped.length);
     }
     const newDetailed = await loadDetails(browser, bcToLoad, "BC nouveaux", false);
+    _sum_loaded = newDetailed.length;
+    _sum_failed = bcToLoad.length - newDetailed.length;
     writeInputSnapshot(newDetailed); // opt-in RADAR_BC_WRITE_INPUT_SNAPSHOT=1
     log("\nMatching clients BC...");
     const _noDeliveryIds = new Set();  // BC matchés mais non livrés — conservés hors bcs_vus
@@ -3869,15 +3887,31 @@ async function runGlobalScanBC(source) {
         + " no_delivery_retry=" + _retryItems.length
         + " loaded_this_scan=" + newDetailed.length
         + " skipped_for_next=" + bcSkipped.length);
+      _sum_vus_added         = _vusItems.length;
+      _sum_no_delivery_retry = _retryItems.length;
     }
     writeScanSnapshot(snapshotRows, "bc"); // toujours après markBCVus
     if (SHADOW_ENABLED) writeShadowReport();
+    _scanStatus = "ok"; // scan complet sans exception
   } catch (e) {
     log("Erreur BC: " + e.message);
     if (e.stack) log(e.stack.split("\n").slice(0,3).join("\n"));
   } finally {
     if (browser) await browser.close().catch(() => {});
     _scanningBC = false;
+    const _scanDurS = Math.round((Date.now() - _scanStartMs) / 1000);
+    log("[SCAN_SUMMARY] runId=" + _scanRunId
+      + " source=" + _scanSource
+      + " duration=" + _scanDurS + "s"
+      + " portal_total=" + _sum_portal_total
+      + " known_count=" + _sum_known_count
+      + " new=" + _sum_new
+      + " loaded=" + _sum_loaded
+      + " failed=" + _sum_failed
+      + " vus_added=" + _sum_vus_added
+      + " no_delivery_retry=" + _sum_no_delivery_retry
+      + " skipped_for_next=" + _sum_skipped_for_next
+      + " status=" + _scanStatus);
     log(_lastBcScanOk === false
       ? "Scan BC termine avec erreur technique (" + _lastBcScanReason + ")"
       : "Scan BC termine.");
