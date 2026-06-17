@@ -199,7 +199,63 @@ fly logs --app radar-bc-bot -n 50
 
 ---
 
-## 6. Règles interdites en prod
+## 6. Snapshots et replay/debug
+
+### 6.1 Nature des snapshots
+
+Deux types de fichiers sont écrits après chaque scan :
+
+| Type | Répertoire | Contenu | Flag requis |
+|---|---|---|---|
+| Scan (décisions) | `SNAPSHOT_DIR/scan-snapshots/` | 1 ligne JSONL par décision de matching (NOTIFY / SKIP / EXPIRED…) | Toujours actif |
+| Entrée (BCs bruts) | `INPUT_SNAPSHOT_DIR/input-snapshots/` | 1 ligne JSONL par BC détaillé avant matching | `RADAR_BC_WRITE_INPUT_SNAPSHOT=1` |
+
+Chaque type produit un fichier horodaté **et** un alias `latest-*.jsonl` écrasé à chaque scan.
+
+### 6.2 Volatilité sur Fly.io
+
+> ⚠️ `/app/data/` n'est **pas** une persistance garantie sur Fly.io.
+
+Sans volume Fly monté (`RADAR_BC_SNAPSHOT_DIR` non défini), les snapshots sont écrits dans la couche writable du container Docker. Ils sont **perdus** à chaque :
+
+- restart machine (`fly machine restart`)
+- redeploy (`fly deploy`)
+- remplacement de machine par Fly
+
+**Impact sur la prod :** aucun. Le matching, les notifications Telegram et le scheduler ne dépendent pas des snapshots. Les routes de diagnostic retournent une réponse 404 JSON propre si aucun snapshot n'est présent.
+
+### 6.3 Routes de diagnostic — comportement après restart
+
+| Route | Comportement si snapshot absent |
+|---|---|
+| `GET /api/snapshot/latest` | `404` JSON avec hint — normal |
+| `GET /api/replay-notify/list` | Liste vide, `latest_exists: false` — normal |
+| `GET /api/replay-notify` | `404` JSON `"Aucun snapshot disponible"` — normal |
+| `GET /api/debug-snapshot-notify` | `404` JSON `"Snapshot vide ou absent"` — normal |
+
+Un 404 sur ces routes **ne signifie pas** que la prod est en erreur — il signifie simplement qu'aucun snapshot n'a été écrit depuis le dernier restart.
+
+### 6.4 Télécharger le snapshot courant (avant restart)
+
+```bash
+# Snapshot des décisions (scan)
+curl -s "https://radar-bc-bot.fly.dev/api/snapshot/latest?secret=<ADMIN_SECRET>&type=scan" \
+  -o latest-bc-scan.jsonl
+
+# Snapshot d'entrée (BCs bruts — requis RADAR_BC_WRITE_INPUT_SNAPSHOT=1)
+curl -s "https://radar-bc-bot.fly.dev/api/snapshot/latest?secret=<ADMIN_SECRET>&type=input" \
+  -o latest-bc-input.jsonl
+```
+
+A exécuter **avant** tout `fly machine restart` ou `fly deploy` si un diagnostic replay est nécessaire.
+
+### 6.5 Persistance réelle (ticket P1-1)
+
+Pour des snapshots survivant aux restarts, créer un volume Fly et définir `RADAR_BC_SNAPSHOT_DIR` vers ce volume. Ce changement est un ticket séparé (voir `docs/ROADMAP_TECHNIQUE.md §P1-1`) — **ne pas activer sans volume monté**.
+
+---
+
+## 7. Règles interdites en prod
 
 ```
 ❌ Ne jamais modifier fly secrets pendant qu'un scan est en cours
@@ -230,7 +286,7 @@ fly logs --app radar-bc-bot -n 50
 
 ---
 
-## 7. Dernier état stable connu
+## 8. Dernier état stable connu
 
 | Champ | Valeur |
 |---|---|
