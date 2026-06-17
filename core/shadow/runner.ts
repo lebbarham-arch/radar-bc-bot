@@ -22,7 +22,6 @@
 
 import { scoreBC }                        from '@core/scoring/engine';
 import { getActiveCriteres, getEffectiveThreshold } from '@core/schemas/client.schema';
-import { DEFAULT_WEIGHTS }               from '@core/feedback/types';
 import {
   OPPORTUNITY_DETERMINISTIC_MAX,
   RERANK_DELTA_MIN,
@@ -146,7 +145,7 @@ export class ShadowRunner {
 
     try {
       const activeCriteres  = getActiveCriteres(params.client, 'bc');
-      const scoreComponents = scoreBC(params.bc, params.client, activeCriteres, DEFAULT_WEIGHTS);
+      const scoreComponents = scoreBC(params.bc, params.client, activeCriteres);
       const threshold       = getEffectiveThreshold(params.client);
       const detScore        = scoreComponents.final_score;
 
@@ -321,7 +320,7 @@ export class ShadowRunner {
     }
 
     // Recompute du score pour obtenir la décomposition → prompt plus riche
-    const scoreComponents = scoreBC(params.bc, params.client, activeCriteres, DEFAULT_WEIGHTS);
+    const scoreComponents = scoreBC(params.bc, params.client, activeCriteres);
     const scoreBreakdown: Record<string, number> = {
       title:          scoreComponents.title_score,
       content:        scoreComponents.content_score,
