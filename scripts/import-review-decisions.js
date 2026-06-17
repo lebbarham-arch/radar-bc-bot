@@ -1,8 +1,21 @@
 #!/usr/bin/env node
 // scripts/import-review-decisions.js
-// Usage: node scripts/import-review-decisions.js <review-csv-file> [--dry-run]
+// Usage: node scripts/import-review-decisions.js <review-csv-file> [options]
+//
+// Options :
+//   --dry-run                       Affiche sans écrire le JSON
+//   --cycle-id <valeur>             Identifiant du cycle de review (surcharge l'extraction auto)
+//   --review-source operator|client|system
+//                                   Source de la décision (défaut : operator)
+//
 // Lit un CSV de review candidates (exporté par analyze-shadow-report.js --export-review-csv)
 // et importe les décisions humaines (keep/reject/ignore/vide) dans un JSON de synthèse.
+//
+// Champs ajoutés dans chaque record :
+//   cycle_id      : extrait du nom du CSV (pattern YYYY-MM-DDTHH-MM-SS) ou --cycle-id
+//   review_source : operator (calibration interne) | client (feedback réel) | system
+//   reviewed_at   : timestamp ISO de l'import
+//
 // Sortie : data/review-decisions/review-decisions-YYYY-MM-DDTHH-mm-ss.json
 //          (fallback : même dossier que le CSV d'entrée si data/review-decisions/ inaccessible)
 
@@ -46,16 +59,44 @@ function parseCsvLine(line) {
 }
 
 // ─────────────────────────────────────────────
+// Extraction cycle_id depuis le nom de fichier
+// ─────────────────────────────────────────────
+// Cherche le pattern YYYY-MM-DDTHH-MM-SS dans le basename du fichier CSV.
+// Ex : review-candidates-2026-06-17T22-15-41.csv → "2026-06-17T22-15-41"
+// Ex : auto-candidates-admin-2026-06-18T09-00-00.csv → "2026-06-18T09-00-00"
+// Retourne null si le pattern est absent.
+function extractCycleId(filePath) {
+  var basename = path.basename(filePath);
+  var m = basename.match(/(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
+// ─────────────────────────────────────────────
 // Args
 // ─────────────────────────────────────────────
-var args    = process.argv.slice(2);
-var csvPath = null;
-var dryRun  = false;
+var args         = process.argv.slice(2);
+var csvPath      = null;
+var dryRun       = false;
+var cycleIdArg   = undefined;  // undefined = extraction auto ; null = absent du nom de fichier
+var reviewSource = 'operator'; // operator | client | system
 
-args.forEach(function(a) {
-  if (a === '--dry-run') { dryRun = true; }
-  else if (!csvPath && !a.startsWith('--')) { csvPath = a; }
-});
+for (var _i = 0; _i < args.length; _i++) {
+  var _a = args[_i];
+  if (_a === '--dry-run') {
+    dryRun = true;
+  } else if (_a === '--cycle-id' && args[_i + 1] && !args[_i + 1].startsWith('--')) {
+    cycleIdArg = args[++_i];
+  } else if (_a === '--review-source' && args[_i + 1] && !args[_i + 1].startsWith('--')) {
+    var _src = args[++_i].toLowerCase();
+    if (_src === 'operator' || _src === 'client' || _src === 'system') {
+      reviewSource = _src;
+    } else {
+      console.warn('WARN: --review-source invalide "' + _src + '" → "operator" utilisé');
+    }
+  } else if (!csvPath && !_a.startsWith('--')) {
+    csvPath = _a;
+  }
+}
 
 if (!csvPath) {
   console.error('Usage: node scripts/import-review-decisions.js <review-csv-file> [--dry-run]');
@@ -101,6 +142,10 @@ if (missing.length) {
 // ─────────────────────────────────────────────
 // Traitement lignes
 // ─────────────────────────────────────────────
+// Résoudre les métadonnées de cycle avant la boucle
+var _reviewedAt  = new Date().toISOString();
+var _cycleId     = (cycleIdArg !== undefined) ? cycleIdArg : extractCycleId(csvPath);
+
 var VALID_DECISIONS = ['keep', 'reject', 'ignore', ''];
 var records  = [];
 var counters = { total: 0, keep: 0, reject: 0, ignore: 0, vide: 0, invalid: 0 };
@@ -130,6 +175,9 @@ rows.slice(1).forEach(function(row) {
     weak_single_signal: row[COL.weak_single_signal] === 'true',
     clean_text_excerpt: row[COL.clean_text_excerpt]  || '',
     decision:           decision,
+    cycle_id:           _cycleId,       // null si non détectable depuis le nom du fichier
+    review_source:      reviewSource,   // operator | client | system
+    reviewed_at:        _reviewedAt,    // timestamp ISO de l'import
   };
   records.push(rec);
 
@@ -158,8 +206,11 @@ function topSignals(map, n) {
 }
 
 console.log('\n=== Import Review Decisions ===');
-console.log('Fichier  :', csvPath);
-console.log('Total    :', counters.total);
+console.log('Fichier       :', csvPath);
+console.log('cycle_id      :', _cycleId      || '(non détecté)');
+console.log('review_source :', reviewSource);
+console.log('reviewed_at   :', _reviewedAt);
+console.log('Total         :', counters.total);
 console.log('keep     :', counters.keep);
 console.log('reject   :', counters.reject);
 console.log('ignore   :', counters.ignore);

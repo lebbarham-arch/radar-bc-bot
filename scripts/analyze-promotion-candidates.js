@@ -98,6 +98,8 @@ function aggregateBySignal(records) {
           keep:     0,
           reject:   0,
           ignore:   0,
+          cycles:   new Set(),   // cycle_id distincts (preuves indépendantes)
+          sources:  new Set(),   // review_source distincts (operator / client / system)
           rejectExcerpts: [],
           ignoreExcerpts: [],
           keepExcerpts:   [],
@@ -105,6 +107,10 @@ function aggregateBySignal(records) {
       }
       var entry = map[n];
       entry[r.decision]++;
+      // cycle_id : null pour anciens records → ne pas incrémenter le compteur cycles
+      if (r.cycle_id)  entry.cycles.add(r.cycle_id);
+      // review_source : anciens records sans champ → traités comme operator
+      entry.sources.add(r.review_source || 'operator');
       var ex = (r.clean_text_excerpt || '').slice(0, 100);
       if (r.decision === 'reject' && entry.rejectExcerpts.length < 3) entry.rejectExcerpts.push(ex);
       if (r.decision === 'ignore' && entry.ignoreExcerpts.length < 2) entry.ignoreExcerpts.push(ex);
@@ -113,6 +119,16 @@ function aggregateBySignal(records) {
   });
 
   return Object.values(map);
+}
+
+// ── Promotion ready ───────────────────────────────────────────────────────────
+//
+// Un signal ne peut être promu que s'il a été observé sur au moins 2 cycles
+// de review distincts (preuves indépendantes).
+// Un cycle = un batch de review candidates issu d'un scan shadow distinct.
+// Les anciens records sans cycle_id contribuent aux stats mais pas au compteur cycles.
+function isPromotionReady(sig) {
+  return !!(sig.cycles && sig.cycles.size >= 2);
 }
 
 // ── Classification ────────────────────────────────────────────────────────────
@@ -154,14 +170,22 @@ function pad(s, n, left) {
 function hr(c, n) { return (c || '─').repeat(n || 60); }
 
 function printSig(sig) {
-  var total = sig.keep + sig.reject + sig.ignore;
+  var total      = sig.keep + sig.reject + sig.ignore;
+  var cyclesSz   = sig.cycles ? sig.cycles.size : 0;
+  var cyclesStr  = '  cycles=' + cyclesSz;
+  var sourcesArr = sig.sources ? Array.from(sig.sources).sort() : [];
+  var sourcesStr = sourcesArr.length ? '  sources=' + sourcesArr.join('/') : '';
+  var readyStr   = isPromotionReady(sig) ? '' : '  [bloqué: cycles insuffisants]';
   console.log(
     '  ' + pad(sig.signal, 30, true) +
     '  keep=' + sig.keep +
     '  rej=' + sig.reject +
     '  ign=' + sig.ignore +
     '  total=' + total +
-    '  (' + pct(sig.keep, total).trim() + ' keep)'
+    '  (' + pct(sig.keep, total).trim() + ' keep)' +
+    cyclesStr +
+    sourcesStr +
+    readyStr
   );
 }
 
@@ -327,11 +351,18 @@ console.log(hr('─', 63));
 console.log('  7. Recommandations prudentes');
 console.log(hr('─', 63));
 
-var fiables = groups.tres_fiable.map(function(s) { return s.signal; });
+var fiables = groups.tres_fiable;
 if (fiables.length) {
   console.log('');
   console.log('  [Shadow - OK] Renforcement score +10 déjà appliqué (GD-023) pour :');
-  fiables.forEach(function(s) { console.log('    • ' + s); });
+  fiables.forEach(function(s) {
+    var ready  = isPromotionReady(s);
+    var cycles = s.cycles ? s.cycles.size : 0;
+    var suffix = ready
+      ? '  ✓ promotion_ready (cycles=' + cycles + ')'
+      : '  ⚠ bloqué : cycles insuffisants (' + cycles + '/2 requis)';
+    console.log('    • ' + s.signal + suffix);
+  });
   console.log('  → Ces signaux peuvent être promus en auto_candidate si score >= 15');
   console.log('    (ex : deux trusted inclusions matchant simultanément).');
   console.log('  → Ne pas activer clean en production sans validation de plusieurs cycles.');
