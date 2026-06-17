@@ -27,6 +27,10 @@
 
 ✅ Toujours utiliser GIT_INDEX_FILE=/tmp/git-index-radar sur NTFS
    Évite les faux positifs de modification dus aux fins de ligne Windows.
+
+✅ Sur Windows, utiliser scripts\diagnose-git.ps1 pour détecter D + ?? et MM
+   powershell -ExecutionPolicy Bypass -File scripts\diagnose-git.ps1
+   Le script propose git restore --staged <fichier> sans jamais l'exécuter.
 ```
 
 ---
