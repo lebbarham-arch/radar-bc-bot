@@ -5,12 +5,13 @@
  *
  * Usage:
  *   node scripts/analyze-review-decisions.js
- *   node scripts/analyze-review-decisions.js --json      # output JSON brut
- *   node scripts/analyze-review-decisions.js --shadow    # inclut croisement shadow export
+ *   node scripts/analyze-review-decisions.js --json          # output JSON brut
+ *   node scripts/analyze-review-decisions.js --shadow        # inclut croisement shadow export
+ *   node scripts/analyze-review-decisions.js --save-summary  # écrit data/review-decisions/summary-*.json
  *
- * Lit:  data/review-decisions/review-decisions-*.json
- *       data/shadow/legacy-vs-clean-admin-*.json  (optionnel avec --shadow)
- * Ne modifie aucun fichier.
+ * Lit:   data/review-decisions/review-decisions-*.json
+ *        data/shadow/legacy-vs-clean-admin-*.json  (optionnel avec --shadow)
+ * Écrit: data/review-decisions/summary-{ts}.json  (avec --save-summary)
  */
 
 'use strict';
@@ -21,8 +22,9 @@ const path = require('path');
 const ROOT     = path.resolve(__dirname, '..');
 const DEC_DIR  = path.join(ROOT, 'data', 'review-decisions');
 const SHAD_DIR = path.join(ROOT, 'data', 'shadow');
-const JSON_OUT = process.argv.includes('--json');
-const WITH_SHADOW = process.argv.includes('--shadow');
+const JSON_OUT     = process.argv.includes('--json');
+const WITH_SHADOW  = process.argv.includes('--shadow');
+const SAVE_SUMMARY = process.argv.includes('--save-summary');
 
 // ─── 1. Lecture et déduplication des décisions ──────────────────────────────
 
@@ -103,6 +105,49 @@ function aggregate(rows) {
     }));
 
   return { global: dec, byClient, signalReport, byScore };
+}
+
+// ─── 2b. Verdict générique par signal ────────────────────────────────────────
+// Calcule un verdict lisible depuis les données agrégées.
+// Aucune règle spécifique à un signal — uniquement des ratios et seuils.
+// Retourne une valeur compatible avec loadSignalRiskTable() dans analyze-shadow-report.js.
+function classifyVerdict(v) {
+  if (!v.total) return 'Insuffisant';
+  const kr = v.keep   / v.total;
+  const rr = v.reject / v.total;
+  if (kr >= 0.8 && v.total >= 2) return 'Très fiable';
+  if (kr >= 0.6 && v.total >= 2) return 'Fiable';
+  if (rr >= 0.8 && v.total >= 2) return 'Risqué';
+  if (v.total === 1)              return 'Insuffisant';
+  return 'Ambigu';
+}
+
+// ─── 5. Sauvegarde du summary review-decisions ───────────────────────────────
+// Produit data/review-decisions/summary-{ts}.json.
+// Ce fichier est lu par loadSignalRiskTable() dans analyze-shadow-report.js
+// pour enrichir les exports shadow avec le tier de risque réel des signaux.
+function saveSummary(rows, signalReport) {
+  const ts    = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const fname = `summary-${ts}.json`;
+  const fpath = path.join(DEC_DIR, fname);
+  const summary = {
+    generated_at:    new Date().toISOString(),
+    total_decisions: rows.length,
+    by_signal:       signalReport.map(s => ({
+      signal:      s.signal,
+      verdict:     classifyVerdict({ total: s.total, keep: s.keep, reject: s.reject }),
+      keep:        s.keep,
+      reject:      s.reject,
+      ignore:      s.ignore,
+      total:       s.total,
+      keep_rate:   s.keep_rate,
+      reject_rate: s.reject_rate,
+    })),
+  };
+  fs.writeFileSync(fpath, JSON.stringify(summary, null, 2), 'utf8');
+  console.log(`[--save-summary] Summary écrit : ${fname}`);
+  console.log(`  ${summary.by_signal.length} signal(s) — total_decisions=${rows.length}`);
+  return summary;
 }
 
 // ─── 3. Croisement shadow export (optionnel) ────────────────────────────────
@@ -194,4 +239,8 @@ if (JSON_OUT) {
   console.log(JSON.stringify({ rows: rows.length, ...agg, shadow_summary: shadow && shadow.summary }, null, 2));
 } else {
   printReport(agg, rows, shadow);
+}
+
+if (SAVE_SUMMARY) {
+  saveSummary(rows, agg.signalReport);
 }

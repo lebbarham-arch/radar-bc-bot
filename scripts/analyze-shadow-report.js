@@ -827,7 +827,7 @@ if (exportAutoCands) {
     var AUTO_COLS = ["report_date","client","bc_id","score","signal_origin",
                      "matched_signals","strength_reason","signal_risk_tier",
                      "signal_risk_detail","warning","auto_candidate_reason",
-                     "clean_text_excerpt"];
+                     "clean_text_excerpt","decision"];
     var autoLines = [BOM2 + AUTO_COLS.join(SEP2)];
     allAutoExp.forEach(function(e) {
       var sigs = (e.matched_signals || [])
@@ -850,6 +850,7 @@ if (exportAutoCands) {
         csvCell(e.warning || ""),
         csvCell(e.auto_candidate_reason || ""),
         csvCell((e.clean_text_excerpt || "").replace(/[\r\n]+/g, " ").trim()),
+        csvCell(""),   // decision : vide pour saisie humaine (même convention que review-candidates)
       ];
       autoLines.push(row.join(SEP2));
     });
