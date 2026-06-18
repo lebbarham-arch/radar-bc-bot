@@ -296,6 +296,22 @@ function buildReviewReasonLearningReport(entries, opts) {
     };
   }
 
+  // ── Déduplication (client + bc_id) — dernier cycle gagne ───────────────────
+  var _seen = {};
+  var _deduped = [];
+  var duplicatesIgnored = 0;
+  for (var _i = entries.length - 1; _i >= 0; _i--) {
+    var _e = entries[_i];
+    var _bcKey = clientKey(_e) + '||' + String(_e.bc_id || _e.id || '');
+    if (!_seen[_bcKey]) {
+      _seen[_bcKey] = true;
+      _deduped.unshift(_e);
+    } else {
+      duplicatesIgnored++;
+    }
+  }
+  entries = _deduped;
+
   // ── Groupement ──────────────────────────────────────────────────────────────
   var groups = {}; // key → entries[]
 
@@ -359,11 +375,12 @@ function buildReviewReasonLearningReport(entries, opts) {
     generated_at: genAt,
     source_files: sourceFiles,
     totals: {
-      entries:         entries.length,
-      with_decision:   totalWithDecision,
-      pending_review:  totalPending,
-      groups:          Object.keys(groups).length,
-      suggested_hints: allSuggestions.length,
+      entries:                  entries.length,
+      with_decision:            totalWithDecision,
+      pending_review:           totalPending,
+      groups:                   Object.keys(groups).length,
+      suggested_hints:          allSuggestions.length,
+      duplicate_decisions_ignored: duplicatesIgnored,
     },
     clients:         Object.values(clientsMap),
     suggested_hints: allSuggestions,
