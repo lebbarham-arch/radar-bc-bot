@@ -21,6 +21,8 @@ var path = require("path");
 var reviewExplainer = require("./review-explainer");
 // GD-035 : Contextual review insights rule-based (shadow/local)
 var contextualInsights = require("./contextual-review-insights");
+// GD-036 : Raisons humaines normalisées pour les décisions review (shadow/local)
+var reviewReasons = require("./review-reasons");
 
 // ── Seuils (identiques au bot) ───────────────────────────────────────────────
 var CLEAN_WEAK_THRESHOLD   = 5;
@@ -389,6 +391,16 @@ function analyzeClient(c) {
       ctx_context_generated_at:       ctx.context_generated_at,
     });
   });
+  // GD-036 : Enrichir les candidats review avec les raisons humaines normalisées
+  revCands = revCands.map(function(e) {
+    var tpl = reviewReasons.buildReviewReasonTemplate(e);
+    return Object.assign({}, e, {
+      human_review_reason:        tpl.review_reason,
+      human_review_reason_label:  tpl.review_reason_label,
+      human_review_comment:       tpl.review_comment,
+      allowed_review_reasons:     tpl.allowed_review_reasons,
+    });
+  });
   var exclHits     = cleanOnly.filter(function(e) { return e.exclusion_hit; });
   var primaryBased = cleanOnly.filter(function(e) { return e.signal_origin === "primary"; });
   var inclOnly     = cleanOnly.filter(function(e) { return e.signal_origin === "inclusion"; });
@@ -457,6 +469,8 @@ function buildReviewCsv(candidates) {
               "ctx_profile_alignment","ctx_context_ambiguity","ctx_context_confidence",
               "ctx_positive_context_terms","ctx_negative_context_terms",
               "ctx_learnable_context_hint","ctx_should_create_hint",
+              "human_review_reason","human_review_reason_label",
+              "human_review_comment","allowed_review_reason_codes",
               "decision"];
   var lines = [BOM + COLS.join(SEP)];
   candidates.forEach(function(e) {
@@ -482,6 +496,12 @@ function buildReviewCsv(candidates) {
       csvCell(Array.isArray(e.ctx_negative_context_terms) ? e.ctx_negative_context_terms.join(", ") : ""),
       csvCell((e.ctx_learnable_context_hint || "").replace(/[\r\n]+/g, " ").trim()),
       csvCell(e.ctx_should_create_context_hint ? "oui" : ""),
+      csvCell(e.human_review_reason || ""),
+      csvCell(e.human_review_reason_label || ""),
+      csvCell((e.human_review_comment || "").replace(/[\r\n]+/g, " ").trim()),
+      csvCell(Array.isArray(e.allowed_review_reasons)
+        ? e.allowed_review_reasons.map(function(r) { return r.code; }).join("|")
+        : ""),
       csvCell(""),   // decision : vide pour saisie humaine
     ];
     lines.push(row.join(SEP));
@@ -855,7 +875,7 @@ if (exportReviewCsv) {
     var csvContent = buildReviewCsv(allCsvCands);
     require("fs").writeFileSync(csvFpath, csvContent, "utf8");
     console.log("\n[--export-review-csv] " + allCsvCands.length + " candidat(s) → " + csvFname);
-    console.log("  Colonnes : client;bc_id;score;signal_origin;matched_signals;strength_reason;weak_single_signal;clean_text_excerpt;ai_explanation;ai_confidence;ai_suggested_decision;ctx_profile_alignment;ctx_context_ambiguity;ctx_context_confidence;ctx_positive_context_terms;ctx_negative_context_terms;ctx_learnable_context_hint;ctx_should_create_hint;decision");
+    console.log("  Colonnes : client;bc_id;score;signal_origin;matched_signals;strength_reason;weak_single_signal;clean_text_excerpt;ai_explanation;ai_confidence;ai_suggested_decision;ctx_profile_alignment;ctx_context_ambiguity;ctx_context_confidence;ctx_positive_context_terms;ctx_negative_context_terms;ctx_learnable_context_hint;ctx_should_create_hint;human_review_reason;human_review_reason_label;human_review_comment;allowed_review_reason_codes;decision");
     console.log("  Chemin   : " + csvFpath);
   }
 }
