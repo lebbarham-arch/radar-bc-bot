@@ -19,6 +19,8 @@ var path = require("path");
 
 // GD-034 : Explication assistive rule-based pour les candidats review (shadow/local)
 var reviewExplainer = require("./review-explainer");
+// GD-035 : Contextual review insights rule-based (shadow/local)
+var contextualInsights = require("./contextual-review-insights");
 
 // ── Seuils (identiques au bot) ───────────────────────────────────────────────
 var CLEAN_WEAK_THRESHOLD   = 5;
@@ -362,6 +364,31 @@ function analyzeClient(c) {
       ai_review_generated_at: expl.ai_review_generated_at,
     });
   });
+  // GD-035 : Enrichir les candidats review avec les insights contextuels
+  var ctxTs = new Date().toISOString();
+  revCands = revCands.map(function(e) {
+    var clientProfile = {
+      client_name:      c.client_name || "",
+      business_profile: c.business_profile || c.profile_label || "",
+    };
+    var ctx = contextualInsights.analyzeReviewContext(e, clientProfile, "", {
+      generatedAt: ctxTs,
+    });
+    return Object.assign({}, e, {
+      ctx_profile_alignment:          ctx.profile_alignment,
+      ctx_context_ambiguity:          ctx.context_ambiguity,
+      ctx_context_confidence:         ctx.context_confidence,
+      ctx_decision_interpretation:    ctx.decision_interpretation,
+      ctx_positive_context_terms:     ctx.positive_context_terms,
+      ctx_negative_context_terms:     ctx.negative_context_terms,
+      ctx_learnable_context_hint:     ctx.learnable_context_hint,
+      ctx_should_create_context_hint: ctx.should_create_context_hint,
+      ctx_why_it_matched:             ctx.why_it_matched,
+      ctx_why_it_may_be_wrong:        ctx.why_it_may_be_wrong,
+      ctx_context_model:              ctx.context_model,
+      ctx_context_generated_at:       ctx.context_generated_at,
+    });
+  });
   var exclHits     = cleanOnly.filter(function(e) { return e.exclusion_hit; });
   var primaryBased = cleanOnly.filter(function(e) { return e.signal_origin === "primary"; });
   var inclOnly     = cleanOnly.filter(function(e) { return e.signal_origin === "inclusion"; });
@@ -426,7 +453,11 @@ function buildReviewCsv(candidates) {
   var SEP = ";";
   var COLS = ["client","bc_id","score","signal_origin","matched_signals",
               "strength_reason","weak_single_signal","clean_text_excerpt",
-              "ai_explanation","ai_confidence","ai_suggested_decision","decision"];
+              "ai_explanation","ai_confidence","ai_suggested_decision",
+              "ctx_profile_alignment","ctx_context_ambiguity","ctx_context_confidence",
+              "ctx_positive_context_terms","ctx_negative_context_terms",
+              "ctx_learnable_context_hint","ctx_should_create_hint",
+              "decision"];
   var lines = [BOM + COLS.join(SEP)];
   candidates.forEach(function(e) {
     var sigs = Array.isArray(e.matched_signals)
@@ -444,6 +475,13 @@ function buildReviewCsv(candidates) {
       csvCell((e.ai_review_explanation || "").replace(/[\r\n]+/g, " ").trim()),
       csvCell(e.ai_confidence || ""),
       csvCell(e.ai_suggested_decision || "review"),
+      csvCell(e.ctx_profile_alignment || ""),
+      csvCell(e.ctx_context_ambiguity || ""),
+      csvCell(e.ctx_context_confidence || ""),
+      csvCell(Array.isArray(e.ctx_positive_context_terms) ? e.ctx_positive_context_terms.join(", ") : ""),
+      csvCell(Array.isArray(e.ctx_negative_context_terms) ? e.ctx_negative_context_terms.join(", ") : ""),
+      csvCell((e.ctx_learnable_context_hint || "").replace(/[\r\n]+/g, " ").trim()),
+      csvCell(e.ctx_should_create_context_hint ? "oui" : ""),
       csvCell(""),   // decision : vide pour saisie humaine
     ];
     lines.push(row.join(SEP));
@@ -529,6 +567,21 @@ clients.forEach(function(rawClient) {
         console.log("      [AI] " + expl140s);
         if (e.ai_risk_reasons && e.ai_risk_reasons.length > 0) {
           console.log("      [AI] risques: " + e.ai_risk_reasons.slice(0, 2).join(" | "));
+        }
+      }
+      if (e.ctx_profile_alignment) {
+        console.log("      [CTX] alignment=" + e.ctx_profile_alignment +
+                    "  ambiguity=" + (e.ctx_context_ambiguity || "?") +
+                    "  confidence=" + (e.ctx_context_confidence || "?"));
+        if (e.ctx_why_it_may_be_wrong) {
+          var ctxWhy = e.ctx_why_it_may_be_wrong.slice(0, 120);
+          console.log("      [CTX] " + (e.ctx_why_it_may_be_wrong.length > 120 ? ctxWhy + "…" : ctxWhy));
+        }
+        if (e.ctx_positive_context_terms && e.ctx_positive_context_terms.length > 0) {
+          console.log("      [CTX] +terms: " + e.ctx_positive_context_terms.slice(0, 3).join(", "));
+        }
+        if (e.ctx_negative_context_terms && e.ctx_negative_context_terms.length > 0) {
+          console.log("      [CTX] -terms: " + e.ctx_negative_context_terms.slice(0, 3).join(", "));
         }
       }
     });
@@ -802,7 +855,7 @@ if (exportReviewCsv) {
     var csvContent = buildReviewCsv(allCsvCands);
     require("fs").writeFileSync(csvFpath, csvContent, "utf8");
     console.log("\n[--export-review-csv] " + allCsvCands.length + " candidat(s) → " + csvFname);
-    console.log("  Colonnes : client;bc_id;score;signal_origin;matched_signals;strength_reason;weak_single_signal;clean_text_excerpt;ai_explanation;ai_confidence;ai_suggested_decision;decision");
+    console.log("  Colonnes : client;bc_id;score;signal_origin;matched_signals;strength_reason;weak_single_signal;clean_text_excerpt;ai_explanation;ai_confidence;ai_suggested_decision;ctx_profile_alignment;ctx_context_ambiguity;ctx_context_confidence;ctx_positive_context_terms;ctx_negative_context_terms;ctx_learnable_context_hint;ctx_should_create_hint;decision");
     console.log("  Chemin   : " + csvFpath);
   }
 }
