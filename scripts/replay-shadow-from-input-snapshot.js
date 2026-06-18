@@ -59,6 +59,32 @@ var CLEAN_TRUSTED_INCLUSION_SCORE = new Set([
   'desinfection', 'savon', 'eau minerale',
 ]);
 
+// ── Client learning hints (shadow advisory — GD-033) ─────────────────────────
+// Chargé une seule fois au démarrage. Si absent ou invalide → shadow inchangé.
+// Aucune modification legacy, aucune activation prod.
+var CLIENT_LEARNING_HINTS = null;
+(function() {
+  var hintsPath = path.join(ROOT, 'data', 'client-learning', 'client-learning-hints.json');
+  try {
+    if (fs.existsSync(hintsPath)) {
+      CLIENT_LEARNING_HINTS = JSON.parse(fs.readFileSync(hintsPath, 'utf8'));
+      console.log('[Hints] Chargés : ' + hintsPath +
+        ' (' + (CLIENT_LEARNING_HINTS.clients || []).length + ' client(s))');
+    }
+  } catch (_) { /* hints absents ou invalides → shadow inchangé */ }
+})();
+
+function getClientSignalHints(clientName, signals) {
+  if (!CLIENT_LEARNING_HINTS) return [];
+  var clientEntry = (CLIENT_LEARNING_HINTS.clients || []).find(function(c) {
+    return c.client === clientName;
+  });
+  if (!clientEntry) return [];
+  return (clientEntry.signals || []).filter(function(h) {
+    return signals.indexOf(h.signal) !== -1;
+  });
+}
+
 // ── Résoudre le chemin du snapshot ────────────────────────────────────────────
 var snapArg = process.argv.slice(2).find(function(a) {
   return !a.startsWith("--") && (a.includes(".jsonl") || a.includes("bc-input"));
@@ -581,6 +607,25 @@ function _computeShadowComparison(client, items, criteres, radarType) {
         var isStrong2         = cleanResult2.score >= CLEAN_STRONG_THRESHOLD;
         var exclusionHit2     = cleanResult2.blocked;
         var isAutoCandidate2  = isStrong2 && !isWeakSingle2 && !exclusionHit2;
+        // ── Hints client learning (advisory, shadow only — GD-033) ──────────────
+        var hintScoreAdj   = 0;
+        var hintBlockAuto  = false;
+        var hintApplied    = [];
+        if (CLIENT_LEARNING_HINTS && clientName) {
+          var sigHints2 = getClientSignalHints(clientName, cleanSigs2);
+          sigHints2.forEach(function(h) {
+            hintScoreAdj   += (h.score_adjustment || 0);
+            if (h.block_auto_notify) hintBlockAuto = true;
+            hintApplied.push(h.signal + ':' + h.recommended_effect);
+          });
+          if (hintScoreAdj !== 0) {
+            var adjustedScore2 = cleanResult2.score + hintScoreAdj;
+            isStrong2      = adjustedScore2 >= CLEAN_STRONG_THRESHOLD;
+            isWeakSingle2  = cleanSigs2.length === 1 && adjustedScore2 < CLEAN_STRONG_THRESHOLD;
+            isAutoCandidate2 = isStrong2 && !isWeakSingle2 && !exclusionHit2;
+          }
+          if (hintBlockAuto) isAutoCandidate2 = false;
+        }
         var strengthReason2;
         if (exclusionHit2) {
           strengthReason2 = "exclu (ai_exclusions)";
@@ -613,6 +658,9 @@ function _computeShadowComparison(client, items, criteres, radarType) {
           weak_single_signal:    isWeakSingle2 || undefined,
           auto_notify_candidate: isAutoCandidate2 || undefined,
           review_candidate:      (!isAutoCandidate2 && cleanResult2.score >= CLEAN_WEAK_THRESHOLD) || undefined,
+          hint_score_adj:        hintScoreAdj  || undefined,
+          hint_block_auto:       hintBlockAuto || undefined,
+          hint_applied:          hintApplied.length ? hintApplied.join(',') : undefined,
         });
       } else {
         cleanOnlyList.push({ bc_id: item.id || "" });

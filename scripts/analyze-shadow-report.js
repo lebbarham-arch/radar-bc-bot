@@ -281,6 +281,8 @@ function enrichEntry(e) {
               "score=" + (e.clean_score || 0)
   );
   var isAutoCandidate = isStrong && !isWeak && !exclHit;
+  // GD-033 : respect hint_block_auto (client learning hints) — prioritaire sur recalcul score
+  if (e.hint_block_auto) isAutoCandidate = false;
   // Si déjà enrichi par nouveau bot, garder les champs mais recalculer candidature avec exclusion_hit
   if (e.strength) {
     return Object.assign({}, e, {
