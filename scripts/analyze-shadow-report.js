@@ -17,6 +17,9 @@
 var fs   = require("fs");
 var path = require("path");
 
+// GD-034 : Explication assistive rule-based pour les candidats review (shadow/local)
+var reviewExplainer = require("./review-explainer");
+
 // ── Seuils (identiques au bot) ───────────────────────────────────────────────
 var CLEAN_WEAK_THRESHOLD   = 5;
 var CLEAN_STRONG_THRESHOLD = 15;
@@ -341,6 +344,24 @@ function analyzeClient(c) {
   var wsig         = cleanOnly.filter(function(e) { return e.weak_single_signal; });
   var autoCands    = cleanOnly.filter(function(e) { return e.auto_notify_candidate; });
   var revCands     = cleanOnly.filter(function(e) { return e.review_candidate && !e.auto_notify_candidate; });
+
+  // GD-034 : Enrichir les candidats review avec l'explication assistive
+  var explainTs = new Date().toISOString();
+  revCands = revCands.map(function(e) {
+    var expl = reviewExplainer.explainReviewCandidate(e, {
+      generatedAt:     explainTs,
+      signalRiskTable: SIGNAL_RISK_TABLE || {},
+    });
+    return Object.assign({}, e, {
+      ai_review_explanation:  expl.ai_review_explanation,
+      ai_relevance_reasons:   expl.ai_relevance_reasons,
+      ai_risk_reasons:        expl.ai_risk_reasons,
+      ai_suggested_decision:  expl.ai_suggested_decision,
+      ai_confidence:          expl.ai_confidence,
+      ai_review_model:        expl.ai_review_model,
+      ai_review_generated_at: expl.ai_review_generated_at,
+    });
+  });
   var exclHits     = cleanOnly.filter(function(e) { return e.exclusion_hit; });
   var primaryBased = cleanOnly.filter(function(e) { return e.signal_origin === "primary"; });
   var inclOnly     = cleanOnly.filter(function(e) { return e.signal_origin === "inclusion"; });
@@ -404,7 +425,8 @@ function buildReviewCsv(candidates) {
   var BOM = "\uFEFF";  // UTF-8 BOM pour Excel français
   var SEP = ";";
   var COLS = ["client","bc_id","score","signal_origin","matched_signals",
-              "strength_reason","weak_single_signal","clean_text_excerpt","decision"];
+              "strength_reason","weak_single_signal","clean_text_excerpt",
+              "ai_explanation","ai_confidence","ai_suggested_decision","decision"];
   var lines = [BOM + COLS.join(SEP)];
   candidates.forEach(function(e) {
     var sigs = Array.isArray(e.matched_signals)
@@ -419,6 +441,9 @@ function buildReviewCsv(candidates) {
       csvCell(e.strength_reason || ""),
       csvCell(e.weak_single_signal ? "oui" : ""),
       csvCell((e.clean_text_excerpt || "").replace(/[\r\n]+/g, " ").trim()),
+      csvCell((e.ai_review_explanation || "").replace(/[\r\n]+/g, " ").trim()),
+      csvCell(e.ai_confidence || ""),
+      csvCell(e.ai_suggested_decision || "review"),
       csvCell(""),   // decision : vide pour saisie humaine
     ];
     lines.push(row.join(SEP));
@@ -497,6 +522,15 @@ clients.forEach(function(rawClient) {
                   (e.weak_single_signal ? "  [weak_single]" : "") +
                   (e.exclusion_hit ? "  [EXCLU]" : "") +
                   (e.strength_reason ? "  raison=" + e.strength_reason : ""));
+      if (e.ai_review_explanation) {
+        console.log("      [AI] conf=" + (e.ai_confidence || "?") + "  decision=" + (e.ai_suggested_decision || "review"));
+        var expl140 = e.ai_review_explanation.slice(0, 140);
+        var expl140s = e.ai_review_explanation.length > 140 ? expl140 + "\u2026" : expl140;
+        console.log("      [AI] " + expl140s);
+        if (e.ai_risk_reasons && e.ai_risk_reasons.length > 0) {
+          console.log("      [AI] risques: " + e.ai_risk_reasons.slice(0, 2).join(" | "));
+        }
+      }
     });
   }
 
@@ -713,18 +747,15 @@ clients.forEach(function(rawClient) {
 
 // ── Export --export-review ──────────────────────────────────────────────────
 if (exportReview) {
+  // GD-034 fix : utiliser analyzeClient().review_cands (enrichis avec ai_*)
+  // au lieu de rawClient.review_candidates_detail / clean_only + enrichEntry seul
   var allRevCands = [];
   clients.forEach(function(rawClient) {
-    // Essayer review_candidates_detail (nouveau format) en priorité
-    var detail = rawClient.review_candidates_detail || [];
-    if (detail.length) {
-      allRevCands = allRevCands.concat(detail);
-    } else {
-      // Fallback : filtrer clean_only sur review_candidate=true (anciens rapports)
-      (rawClient.clean_only || []).map(enrichEntry).forEach(function(e) {
-        if (e.review_candidate && !e.auto_notify_candidate) allRevCands.push(e);
-      });
-    }
+    var a = analyzeClient(rawClient);
+    a.review_cands.forEach(function(e) {
+      if (!e.client) e = Object.assign({}, e, { client: rawClient.client_name || "" });
+      allRevCands.push(e);
+    });
   });
 
   if (!allRevCands.length) {
@@ -749,16 +780,16 @@ if (exportReview) {
 
 // ── Export --export-review-csv ─────────────────────────────────────────────
 if (exportReviewCsv) {
+  // GD-034 fix : utiliser analyzeClient() pour obtenir les revCands enrichis avec ai_*
+  // (La section précédente utilisait rawClient.clean_only + enrichEntry seul → champs ai_* absents)
   var allCsvCands = [];
   clients.forEach(function(rawClient) {
-    var detail = rawClient.review_candidates_detail || [];
-    if (detail.length) {
-      allCsvCands = allCsvCands.concat(detail);
-    } else {
-      (rawClient.clean_only || []).map(enrichEntry).forEach(function(e) {
-        if (e.review_candidate && !e.auto_notify_candidate) allCsvCands.push(e);
-      });
-    }
+    var a = analyzeClient(rawClient);
+    a.review_cands.forEach(function(e) {
+      // Ajouter le nom du client si absent (analyzeClient ne le propage pas)
+      if (!e.client) e = Object.assign({}, e, { client: rawClient.client_name || "" });
+      allCsvCands.push(e);
+    });
   });
 
   if (!allCsvCands.length) {
@@ -771,7 +802,7 @@ if (exportReviewCsv) {
     var csvContent = buildReviewCsv(allCsvCands);
     require("fs").writeFileSync(csvFpath, csvContent, "utf8");
     console.log("\n[--export-review-csv] " + allCsvCands.length + " candidat(s) → " + csvFname);
-    console.log("  Colonnes : client;bc_id;score;signal_origin;matched_signals;strength_reason;weak_single_signal;clean_text_excerpt;decision");
+    console.log("  Colonnes : client;bc_id;score;signal_origin;matched_signals;strength_reason;weak_single_signal;clean_text_excerpt;ai_explanation;ai_confidence;ai_suggested_decision;decision");
     console.log("  Chemin   : " + csvFpath);
   }
 }
