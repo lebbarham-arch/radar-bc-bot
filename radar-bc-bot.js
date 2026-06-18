@@ -3115,7 +3115,8 @@ function writeScanSnapshot(rows, radarType) {
  *                  decision, score, status, reason, body_excerpt, _keyword.
  */
 function writeInputSnapshot(items) {
-  if (!WRITE_INPUT_SNAPSHOT || !items || !items.length) return;
+  // SNAPSHOT_ONLY force l'écriture même sans RADAR_BC_WRITE_INPUT_SNAPSHOT=1
+  if ((!WRITE_INPUT_SNAPSHOT && !SNAPSHOT_ONLY) || !items || !items.length) return;
   try {
     fs.mkdirSync(INPUT_SNAPSHOT_DIR, { recursive: true });
     const ts     = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -3855,6 +3856,15 @@ async function runGlobalScanBC(source) {
     _sum_loaded = newDetailed.length;
     _sum_failed = bcToLoad.length - newDetailed.length;
     writeInputSnapshot(newDetailed); // opt-in RADAR_BC_WRITE_INPUT_SNAPSHOT=1
+    if (SNAPSHOT_ONLY) {
+      log("[SnapshotOnly] markBCVus skipped — RADAR_BC_SNAPSHOT_ONLY=1");
+      log("[SnapshotOnly] matchClient skipped — RADAR_BC_SNAPSHOT_ONLY=1");
+      log("[SnapshotOnly] notifications disabled — aucune notification envoyée");
+      log("[SnapshotOnly] snapshot ecrit. Fermeture navigateur et exit propre.");
+      await browser.close().catch(() => {});
+      _scanningBC = false;
+      process.exit(0);
+    }
     log("\nMatching clients BC...");
     const _noDeliveryIds = new Set();  // BC matchés mais non livrés — conservés hors bcs_vus
     const snapshotRows = []; // collecteur de snapshot — observation pure
@@ -4176,7 +4186,9 @@ const urlMod  = require("url");
 const HTTP_PORT    = parseInt(process.env.PORT || "3000", 10);
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
 // Mode server-only : désactive cron + scan initial (tests locaux)
-const SERVER_ONLY  = process.env.RADAR_BC_SERVER_ONLY === "1";
+const SERVER_ONLY    = process.env.RADAR_BC_SERVER_ONLY   === "1";
+// Mode snapshot-only : scrape → writeInputSnapshot → process.exit(0), sans HTTP/cron/matching/bcs_vus
+const SNAPSHOT_ONLY  = process.env.RADAR_BC_SNAPSHOT_ONLY === "1";
 // Délai avant le premier scan BC au démarrage (configurable, défaut 15 min)
 // Augmenté à 900s pour laisser le portail se stabiliser après deploy
 const _rawStartupDelay = parseInt(process.env.STARTUP_BC_SCAN_DELAY_MS || "", 10);
@@ -5093,14 +5105,17 @@ const _httpServer = http.createServer(async (req, res) => {
   ]});
 });
 
-_httpServer.listen(HTTP_PORT, "0.0.0.0", () => {
-  log("Serveur HTTP démarré sur 0.0.0.0:" + HTTP_PORT);
-});
+// SNAPSHOT_ONLY : pas de serveur HTTP (one-shot snapshot + exit)
+if (!SNAPSHOT_ONLY) {
+  _httpServer.listen(HTTP_PORT, "0.0.0.0", () => {
+    log("Serveur HTTP démarré sur 0.0.0.0:" + HTTP_PORT);
+  });
+}
 
 // ============================================================
 // PLANIFICATION CRON
 // ============================================================
-if (!SERVER_ONLY) {
+if (!SERVER_ONLY && !SNAPSHOT_ONLY) {
   // ── Garde anti-double déclenchement : clé YYYY-MM-DDTHH (UTC) ──────────
   let lastScheduledBcHourKey = "";
 
@@ -5155,6 +5170,16 @@ if (!SERVER_ONLY) {
 if (SERVER_ONLY) {
   log("[ServerOnly] RADAR_BC_SERVER_ONLY=1 — scan initial et cron désactivés.");
   log("[ServerOnly] Serveur HTTP actif sur 0.0.0.0:" + HTTP_PORT + " — prêt pour tests locaux.");
+} else if (SNAPSHOT_ONLY) {
+  log("[SnapshotOnly] RADAR_BC_SNAPSHOT_ONLY=1 activé.");
+  log("[SnapshotOnly] serveur HTTP non démarré.");
+  log("[SnapshotOnly] cron non démarré.");
+  log("[SnapshotOnly] notifications disabled — aucune notification ne sera envoyée.");
+  (async () => {
+    log("[SnapshotOnly] Chargement cache Supabase (lecture seule : getClients, getBCVusIds)...");
+    await loadCacheFromSupabase();
+    await runGlobalScanBC("snapshot-only");
+  })().catch(e => { log("[SnapshotOnly] Erreur fatale: " + e.message); process.exit(1); });
 } else {
   (async () => {
     log("[CFG] supabase=" + (CFG.sbUrl ? "set" : "empty")
