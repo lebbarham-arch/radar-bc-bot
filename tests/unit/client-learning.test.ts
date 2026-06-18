@@ -65,15 +65,15 @@ function computeReadiness(sig: { cycles: Set<string>; verdict: string; reject: n
 
 // ─── Mirror : aggregate ───────────────────────────────────────────────────────
 
-function aggregate(records: ReviewRecord[]): Map<string, SigEntry[]> {
+function aggregate(records: ReviewRecord[], rawRecords?: ReviewRecord[]): Map<string, SigEntry[]> {
   const byClient = new Map<string, Map<string, {
     signal: string; keep: number; reject: number; ignore: number;
     total: number; cycles: Set<string>; sources: Set<string>;
   }>>();
 
+  // Phase 1 : stats keep/reject/ignore/total depuis les records dédupliqués
   for (const r of records) {
     const client = (r.client || '(inconnu)').trim();
-    const src    = r.review_source || 'operator';
 
     if (!byClient.has(client)) byClient.set(client, new Map());
     const sigMap = byClient.get(client)!;
@@ -93,6 +93,24 @@ function aggregate(records: ReviewRecord[]): Map<string, SigEntry[]> {
         eRec[r.decision] = ((eRec[r.decision] as number | undefined) ?? 0) + 1;
       }
       e.total++;
+    }
+  }
+
+  // Phase 2 : cycles et sources depuis tous les records bruts (avant dedup)
+  for (const r of (rawRecords ?? records)) {
+    const client = (r.client || '(inconnu)').trim();
+    const src    = r.review_source || 'operator';
+
+    if (!byClient.has(client)) continue;
+    const sigMap = byClient.get(client)!;
+
+    if (!Array.isArray(r.matched_signals) || r.matched_signals.length === 0) continue;
+
+    for (const s of r.matched_signals) {
+      const sig = (s || '').trim();
+      if (!sig || !sigMap.has(sig)) continue;
+
+      const e = sigMap.get(sig)!;
       if (r.cycle_id)  e.cycles.add(r.cycle_id);
       e.sources.add(src);
     }
@@ -328,6 +346,68 @@ describe('client-learning — warning sources mixtes', () => {
     const report = aggregate(records);
     const sig = report.get('X')![0]!;
     expect(sig.warn_mixed_sources).toBe(false);
+  });
+
+});
+
+// ─── Tests P4 : historique multi-cycles (rawRecords séparés) ─────────────────
+
+describe('client-learning P4 — cycles depuis rawRecords', () => {
+
+  // SS-CL-P4-1 : même bc_id sur 2 cycles → dedup=1 record, cycles_count=2
+  test('SS-CL-P4-1 — même bc_id sur 2 cycles → decision dédupliquée=1, cycles_count=2', () => {
+    const raw: ReviewRecord[] = [
+      { client: 'X', bc_id: '1', decision: 'keep',   matched_signals: ['sig'], cycle_id: 'C1' },
+      { client: 'X', bc_id: '1', decision: 'reject',  matched_signals: ['sig'], cycle_id: 'C2' },
+    ];
+    // Simulation last-wins : seul le dernier record par bc_id
+    const deduped: ReviewRecord[] = [raw[1]!];
+    const report = aggregate(deduped, raw);
+    const sig = report.get('X')![0]!;
+    expect(sig.keep).toBe(0);       // deduped : uniquement le reject
+    expect(sig.reject).toBe(1);     // deduped : uniquement le reject
+    expect(sig.total).toBe(1);
+    expect(sig.cycles.size).toBe(2);  // raw : C1 + C2
+  });
+
+  // SS-CL-P4-2 : 2 bc_ids distincts sur 2 cycles → cycles_count=2
+  test('SS-CL-P4-2 — 2 bc_ids distincts sur 2 cycles → cycles_count=2', () => {
+    const raw: ReviewRecord[] = [
+      { client: 'X', bc_id: '1', decision: 'keep', matched_signals: ['sig'], cycle_id: 'C1' },
+      { client: 'X', bc_id: '2', decision: 'keep', matched_signals: ['sig'], cycle_id: 'C2' },
+    ];
+    const report = aggregate(raw, raw);
+    const sig = report.get('X')![0]!;
+    expect(sig.total).toBe(2);
+    expect(sig.cycles.size).toBe(2);
+  });
+
+  // SS-CL-P4-3 : legacy sans cycle_id dans raw → compté dans stats, pas dans cycles
+  test('SS-CL-P4-3 — legacy sans cycle_id dans raw → stats ok, cycles.size inchangé', () => {
+    const raw: ReviewRecord[] = [
+      { client: 'X', bc_id: '1', decision: 'keep', matched_signals: ['sig'] },  // pas de cycle_id
+      { client: 'X', bc_id: '2', decision: 'keep', matched_signals: ['sig'], cycle_id: 'C1' },
+    ];
+    const report = aggregate(raw, raw);
+    const sig = report.get('X')![0]!;
+    expect(sig.total).toBe(2);
+    expect(sig.cycles.size).toBe(1);  // seulement C1, pas le legacy
+  });
+
+  // SS-CL-P4-4 : sources calculées depuis rawRecords → mix operator+client détecté
+  test('SS-CL-P4-4 — sources depuis rawRecords → warn_mixed_sources=true même si dedup=1', () => {
+    const raw: ReviewRecord[] = [
+      { client: 'X', bc_id: '1', decision: 'keep', matched_signals: ['sig'], cycle_id: 'C1', review_source: 'operator' },
+      { client: 'X', bc_id: '1', decision: 'keep', matched_signals: ['sig'], cycle_id: 'C2', review_source: 'client'   },
+    ];
+    // Simulation last-wins : seul le dernier record (client source)
+    const deduped: ReviewRecord[] = [raw[1]!];
+    const report = aggregate(deduped, raw);
+    const sig = report.get('X')![0]!;
+    expect(sig.cycles.size).toBe(2);               // C1 + C2 depuis raw
+    expect(sig.sources.has('operator')).toBe(true); // depuis raw
+    expect(sig.sources.has('client')).toBe(true);   // depuis raw
+    expect(sig.warn_mixed_sources).toBe(true);
   });
 
 });

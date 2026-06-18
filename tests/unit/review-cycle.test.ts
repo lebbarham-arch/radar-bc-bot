@@ -264,6 +264,7 @@ describe('review-cycle — isPromotionReady (bloqué si cycles insuffisants)', (
     expect(isPromotionReady(buildSig(1))).toBe(false);
     expect(isPromotionReady(buildSig(2))).toBe(true);
     expect(isPromotionReady(buildSig(3))).toBe(true);
+
   });
 
 });

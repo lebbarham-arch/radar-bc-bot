@@ -48,8 +48,9 @@ function loadAndDedup() {
     process.exit(1);
   }
 
-  var rawTotal = 0;
-  var map      = {};   // client::bc_id → record (last-wins)
+  var rawTotal   = 0;
+  var rawRecords = [];
+  var map        = {};   // client::bc_id → record (last-wins)
 
   files.forEach(function(fname) {
     var fpath = path.join(DECISIONS_DIR, fname);
@@ -58,6 +59,7 @@ function loadAndDedup() {
       var records = data.records || [];
       rawTotal += records.length;
       records.forEach(function(r) {
+        rawRecords.push(r);
         var key = String(r.client || '') + '::' + String(r.bc_id || '');
         map[key] = r;
       });
@@ -67,9 +69,10 @@ function loadAndDedup() {
   });
 
   return {
-    files:    files,
-    rawTotal: rawTotal,
-    records:  Object.values(map),
+    files:      files,
+    rawTotal:   rawTotal,
+    records:    Object.values(map),
+    rawRecords: rawRecords,
   };
 }
 
@@ -111,13 +114,13 @@ function computeReadiness(sigEntry) {
 
 // ─── 4. Agrégation par client → signal ───────────────────────────────────────
 
-function aggregate(records) {
+function aggregate(records, rawRecords) {
   // Structure : { [client]: { [signal]: { keep, reject, ignore, total, cycles Set, sources Set } } }
   var byClient = {};
 
+  // Phase 1 : stats keep/reject/ignore/total depuis les records dédupliqués
   records.forEach(function(r) {
     var client = String(r.client || '(inconnu)').trim();
-    var src    = (r.review_source || 'operator');   // compat anciens records
 
     if (!byClient[client]) byClient[client] = {};
 
@@ -144,8 +147,25 @@ function aggregate(records) {
       var dec = r.decision || '';
       if (dec === 'keep' || dec === 'reject' || dec === 'ignore') e[dec]++;
       e.total++;
+    });
+  });
 
-      if (r.cycle_id)  e.cycles.add(r.cycle_id);   // null/undefined = anciens records → pas de cycle
+  // Phase 2 : cycles et sources depuis tous les records bruts (avant dedup)
+  (rawRecords || records).forEach(function(r) {
+    var client = String(r.client || '(inconnu)').trim();
+    var src    = (r.review_source || 'operator');
+
+    if (!byClient[client]) return;  // client sans record dédupliqué → skip
+
+    var signals = r.matched_signals;
+    if (!Array.isArray(signals) || signals.length === 0) return;
+
+    signals.forEach(function(s) {
+      var sig = String(s || '').trim();
+      if (!sig || !byClient[client][sig]) return;
+
+      var e = byClient[client][sig];
+      if (r.cycle_id)  e.cycles.add(r.cycle_id);   // null/undefined → pas de cycle
       e.sources.add(src);
     });
   });
@@ -254,7 +274,7 @@ function printReport(loaded, clientReports) {
 // ─── main ─────────────────────────────────────────────────────────────────────
 
 var loaded        = loadAndDedup();
-var clientReports = aggregate(loaded.records);
+var clientReports = aggregate(loaded.records, loaded.rawRecords);
 
 if (JSON_OUT) {
   console.log(JSON.stringify({ files: loaded.files.length, records: loaded.records.length, clients: clientReports }, null, 2));

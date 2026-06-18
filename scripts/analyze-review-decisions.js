@@ -46,14 +46,15 @@ function loadDecisions() {
 
   // last-wins par client::bc_id (tri par imported_at)
   all.sort((a, b) => a.imported_at < b.imported_at ? -1 : 1);
+  const rawRecords = all.slice();
   const map = new Map();
   for (const r of all) map.set(r.client + '::' + r.bc_id, r);
-  return Array.from(map.values());
+  return { records: Array.from(map.values()), rawRecords };
 }
 
 // ─── 2. Agrégation ──────────────────────────────────────────────────────────
 
-function aggregate(rows) {
+function aggregate(rows, rawRecords) {
   const dec = { keep: 0, reject: 0, ignore: 0 };
   const byClient  = {};
   const bySignal  = {};
@@ -73,14 +74,19 @@ function aggregate(rows) {
       if (!bySignal[s]) bySignal[s] = { keep: 0, reject: 0, ignore: 0, total: 0, cycles: new Set() };
       bySignal[s][d]++;
       bySignal[s].total++;
-      // cycle_id : null pour les anciens records → ne pas compter dans les cycles distincts
-      if (r.cycle_id) bySignal[s].cycles.add(r.cycle_id);
     }
 
     // par score
     const sc = String(r.score || 0);
     if (!byScore[sc]) byScore[sc] = { keep: 0, reject: 0, ignore: 0 };
     byScore[sc][d]++;
+  }
+
+  // Cycles depuis les records bruts (avant dedup) pour un décompte correct multi-cycles
+  for (const r of (rawRecords || rows)) {
+    for (const s of (r.matched_signals || [])) {
+      if (bySignal[s] && r.cycle_id) bySignal[s].cycles.add(r.cycle_id);
+    }
   }
 
   // Classification des signaux
@@ -235,8 +241,9 @@ function printReport(agg, rows, shadow) {
 
 // \u2500\u2500\u2500 main \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
-const rows   = loadDecisions();
-const agg    = aggregate(rows);
+const loaded = loadDecisions();
+const rows   = loaded.records;
+const agg    = aggregate(rows, loaded.rawRecords);
 const shadow = WITH_SHADOW ? loadLatestShadow() : null;
 
 if (JSON_OUT) {

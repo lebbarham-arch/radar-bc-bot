@@ -56,8 +56,9 @@ function loadAndDedup() {
     process.exit(1);
   }
 
-  var rawTotal = 0;
-  var map      = {};   // key → record (last-wins)
+  var rawTotal   = 0;
+  var rawAll     = [];
+  var map        = {};   // key → record (last-wins)
 
   files.forEach(function(fname) {
     var fpath = path.join(DECISIONS_DIR, fname);
@@ -66,6 +67,7 @@ function loadAndDedup() {
       rawTotal += records.length;
       records.forEach(function(r) {
         r._source_file = fname;
+        rawAll.push(r);
         map[dedupeKey(r)] = r;
       });
     } catch (e) {
@@ -74,17 +76,19 @@ function loadAndDedup() {
   });
 
   return {
-    files:    files,
-    rawTotal: rawTotal,
-    records:  Object.values(map),
+    files:      files,
+    rawTotal:   rawTotal,
+    records:    Object.values(map),
+    rawRecords: rawAll,
   };
 }
 
 // ── Agrégation par signal ─────────────────────────────────────────────────────
 
-function aggregateBySignal(records) {
+function aggregateBySignal(records, rawRecords) {
   var map = {};
 
+  // Phase 1 : stats keep/reject/ignore et excerpts depuis records dédupliqués
   records.forEach(function(r) {
     var normSeen = {};
     (r.matched_signals || []).forEach(function(s) {
@@ -107,14 +111,26 @@ function aggregateBySignal(records) {
       }
       var entry = map[n];
       entry[r.decision]++;
-      // cycle_id : null pour anciens records → ne pas incrémenter le compteur cycles
-      if (r.cycle_id)  entry.cycles.add(r.cycle_id);
-      // review_source : anciens records sans champ → traités comme operator
-      entry.sources.add(r.review_source || 'operator');
       var ex = (r.clean_text_excerpt || '').slice(0, 100);
       if (r.decision === 'reject' && entry.rejectExcerpts.length < 3) entry.rejectExcerpts.push(ex);
       if (r.decision === 'ignore' && entry.ignoreExcerpts.length < 2) entry.ignoreExcerpts.push(ex);
       if (r.decision === 'keep'   && entry.keepExcerpts.length   < 1) entry.keepExcerpts.push(ex);
+    });
+  });
+
+  // Phase 2 : cycles et sources depuis tous les records bruts (avant dedup)
+  (rawRecords || records).forEach(function(r) {
+    var normSeen = {};
+    (r.matched_signals || []).forEach(function(s) {
+      var n = normSignal(s);
+      if (normSeen[n] || !map[n]) return;
+      normSeen[n] = true;
+
+      var entry = map[n];
+      // cycle_id : null pour anciens records → ne pas incrémenter le compteur cycles
+      if (r.cycle_id)  entry.cycles.add(r.cycle_id);
+      // review_source : anciens records sans champ → traités comme operator
+      entry.sources.add(r.review_source || 'operator');
     });
   });
 
@@ -198,7 +214,7 @@ function printExcerpts(label, arr) {
 // ── Rapport principal ─────────────────────────────────────────────────────────
 
 var loaded  = loadAndDedup();
-var signals = aggregateBySignal(loaded.records);
+var signals = aggregateBySignal(loaded.records, loaded.rawRecords);
 
 var totalKeep   = loaded.records.filter(function(r) { return r.decision === 'keep';   }).length;
 var totalReject = loaded.records.filter(function(r) { return r.decision === 'reject'; }).length;
