@@ -1,0 +1,85 @@
+{
+  "generated_at": "2026-01-01T00:00:00.000Z",
+  "source_review_file": "review-candidates-test-fixture.json",
+  "instructions": {
+    "allowed_decisions": [
+      "keep",
+      "reject",
+      "ignore"
+    ],
+    "allowed_reasons": [
+      "hors_activite",
+      "mauvais_contexte",
+      "bon_signal_mauvais_contexte",
+      "organisme_non_pertinent",
+      "zone_non_pertinente",
+      "doublon_deja_vu",
+      "information_insuffisante",
+      "faux_positif_evident",
+      "autre"
+    ],
+    "note": "Fixture de test — 3 décisions synthétiques"
+  },
+  "items": [
+    {
+      "client": "Client Test Alpha",
+      "bc_id": "BC-F001",
+      "score": 8,
+      "matched_signals": "nettoyage, hygiène",
+      "clean_text_excerpt": "Marché de nettoyage des locaux médicaux",
+      "ai_explanation": "Signal nettoyage dans contexte médical — ambigu",
+      "ctx_profile_alignment": "low",
+      "ctx_context_ambiguity": "high",
+      "ctx_negative_context_terms": [
+        "médical",
+        "hospitalier"
+      ],
+      "ctx_positive_context_terms": [
+        "nettoyage"
+      ],
+      "ctx_learnable_context_hint": "ctx_medical",
+      "human_review_decision": "reject",
+      "human_review_reason": "mauvais_contexte",
+      "human_review_comment": "Nettoyage médical hors activité principale"
+    },
+    {
+      "client": "Client Test Alpha",
+      "bc_id": "BC-F002",
+      "score": 6,
+      "matched_signals": "désinfection",
+      "clean_text_excerpt": "Nettoyage et désinfection de surfaces industrielles",
+      "ai_explanation": "Bon signal mais contexte industriel incompatible",
+      "ctx_profile_alignment": "low",
+      "ctx_context_ambiguity": "medium",
+      "ctx_negative_context_terms": [
+        "industriel"
+      ],
+      "ctx_positive_context_terms": [
+        "désinfection"
+      ],
+      "ctx_learnable_context_hint": "",
+      "human_review_decision": "reject",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "Signal correct mais secteur industriel non pertinent"
+    },
+    {
+      "client": "Client Test Alpha",
+      "bc_id": "BC-F003",
+      "score": 12,
+      "matched_signals": "entretien, propreté",
+      "clean_text_excerpt": "Entretien courant des bâtiments communaux",
+      "ai_explanation": "Entretien généraliste — potentiellement pertinent",
+      "ctx_profile_alignment": "medium",
+      "ctx_context_ambiguity": "low",
+      "ctx_negative_context_terms": [],
+      "ctx_positive_context_terms": [
+        "entretien",
+        "propreté"
+      ],
+      "ctx_learnable_context_hint": "",
+      "human_review_decision": "keep",
+      "human_review_reason": "autre",
+      "human_review_comment": "À surveiller pour les prochains cycles"
+    }
+  ]
+}
