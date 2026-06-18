@@ -1,0 +1,144 @@
+{
+  "model": "rule-based-review-reason-hint-candidates-v1",
+  "generated_at": "2026-01-01T00:00:00.000Z",
+  "source_report": "test-fixture",
+  "_note": "Fixture de test uniquement — NE PAS utiliser en production",
+  "totals": {
+    "input_suggestions": 4,
+    "candidates": 3,
+    "skipped": 1,
+    "by_type": {
+      "context_demote_to_review": 1,
+      "client_signal_demote_to_review": 2
+    }
+  },
+  "candidates": [
+    {
+      "candidate_id": "rrhc_fixture_type_a",
+      "client_key": "Client Test Nettoyage",
+      "signal_key": "nettoyage",
+      "context_key": "ctx_medical",
+      "reason_key": "mauvais_contexte",
+      "hint_type": "context_demote_to_review",
+      "proposed_effect": {
+        "action": "block_auto_and_send_to_review",
+        "scope": "client_signal_context",
+        "applies_to": {
+          "client_key": "Client Test Nettoyage",
+          "signal_key": "nettoyage",
+          "context_key": "ctx_medical"
+        }
+      },
+      "safety": "shadow_only",
+      "status": "human_approved_for_shadow",
+      "confidence": "high",
+      "human_validation_required": true,
+      "evidence": {
+        "total_decisions": 5,
+        "dominant_decision": "reject",
+        "dominant_reason": "mauvais_contexte",
+        "reject_rate": 0.8,
+        "keep_rate": 0.2,
+        "ignore_rate": 0
+      },
+      "rationale": "Signal nettoyage hors contexte médical — fixture test",
+      "suggested_action": "Bloquer auto pour ce contexte",
+      "created_from": "test-fixture"
+    },
+    {
+      "candidate_id": "rrhc_fixture_type_b",
+      "client_key": "Client Test Hygiène",
+      "signal_key": "hygiène",
+      "context_key": "",
+      "reason_key": "hors_activite",
+      "hint_type": "client_signal_demote_to_review",
+      "proposed_effect": {
+        "action": "send_to_review",
+        "scope": "client_signal",
+        "applies_to": {
+          "client_key": "Client Test Hygiène",
+          "signal_key": "hygiène"
+        }
+      },
+      "safety": "shadow_only",
+      "status": "human_approved_for_shadow",
+      "confidence": "medium",
+      "human_validation_required": true,
+      "evidence": {
+        "total_decisions": 3,
+        "dominant_decision": "reject",
+        "dominant_reason": "hors_activite",
+        "reject_rate": 0.67,
+        "keep_rate": 0.33,
+        "ignore_rate": 0
+      },
+      "rationale": "Signal hygiène hors activité — fixture test",
+      "suggested_action": "Envoyer en review",
+      "created_from": "test-fixture"
+    },
+    {
+      "candidate_id": "rrhc_fixture_pending",
+      "client_key": "Client Test Pending",
+      "signal_key": "désinfection",
+      "context_key": "",
+      "reason_key": "autre",
+      "hint_type": "context_demote_to_review",
+      "proposed_effect": {
+        "action": "block_auto_and_send_to_review",
+        "scope": "client_signal_context",
+        "applies_to": {
+          "client_key": "Client Test Pending",
+          "signal_key": "désinfection",
+          "context_key": ""
+        }
+      },
+      "safety": "shadow_only",
+      "status": "candidate_pending_human_validation",
+      "confidence": "medium",
+      "human_validation_required": true,
+      "evidence": {
+        "total_decisions": 3,
+        "dominant_decision": "reject",
+        "dominant_reason": "autre",
+        "reject_rate": 0.67,
+        "keep_rate": 0.33,
+        "ignore_rate": 0
+      },
+      "rationale": "Pending — ne doit pas être appliqué",
+      "suggested_action": "",
+      "created_from": "test-fixture"
+    },
+    {
+      "candidate_id": "rrhc_fixture_real_client",
+      "client_key": "TEST PROD - Nettoyage Hygiène",
+      "signal_key": "hygiène",
+      "context_key": "",
+      "reason_key": "mauvais_contexte",
+      "hint_type": "client_signal_demote_to_review",
+      "proposed_effect": {
+        "action": "send_to_review",
+        "scope": "client_signal",
+        "applies_to": {
+          "client_key": "TEST PROD - Nettoyage Hygiène",
+          "signal_key": "hygiène"
+        }
+      },
+      "safety": "shadow_only",
+      "status": "human_approved_for_shadow",
+      "confidence": "medium",
+      "human_validation_required": true,
+      "evidence": {
+        "total_decisions": 3,
+        "dominant_decision": "reject",
+        "dominant_reason": "mauvais_contexte",
+        "reject_rate": 0.67,
+        "keep_rate": 0.33,
+        "ignore_rate": 0
+      },
+      "rationale": "Signal hygiène — client réel shadow — fixture test uniquement",
+      "suggested_action": "Envoyer en review",
+      "created_from": "test-fixture"
+    }
+  ],
+  "skipped": []
+}

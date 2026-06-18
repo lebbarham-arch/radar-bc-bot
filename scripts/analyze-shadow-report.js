@@ -23,6 +23,8 @@ var reviewExplainer = require("./review-explainer");
 var contextualInsights = require("./contextual-review-insights");
 // GD-036 : Raisons humaines normalisées pour les décisions review (shadow/local)
 var reviewReasons = require("./review-reasons");
+// GD-039 : Application des hints candidates P8 (shadow-only, human_approved uniquement)
+var applyHintsShadow = require("./apply-review-reason-hints-shadow");
 
 // ── Seuils (identiques au bot) ───────────────────────────────────────────────
 var CLEAN_WEAK_THRESHOLD   = 5;
@@ -34,8 +36,9 @@ var clientFilter = null;
 var reportPath   = null;
 var useLastFile  = false;
 
-var exportReview      = false;
-var exportReviewCsv   = false;
+var exportReview          = false;
+var exportReviewCsv       = false;
+var reviewReasonHintsPath = null;   // GD-039 : chemin vers fichier hint candidates P8
 var exportAutoCands   = false; // GD-025 : export admin auto_candidates
 var exportComparison  = false; // GD-026 : export legacy vs clean comparison
 
@@ -46,7 +49,22 @@ for (var i = 0; i < args.length; i++) {
   if (args[i] === "--export-auto-candidates") { exportAutoCands = true; continue; }
   if (args[i] === "--export-comparison")       { exportComparison = true; continue; } // GD-026
   if (args[i] === "--client" && args[i + 1]) { clientFilter = args[++i]; continue; }
+  if (args[i] === "--review-reason-hints" && args[i + 1]) { reviewReasonHintsPath = args[++i]; continue; } // GD-039
   if (!reportPath && !args[i].startsWith("--")) reportPath = args[i];
+}
+
+// GD-039 : Chargement optionnel des hint candidates approuvés P8
+// Par défaut (sans --review-reason-hints) : 0 effet, comportement identique
+var APPROVED_RRH = { approved_hints: [], skipped: [], totals: { input: 0, approved: 0, skipped: 0 } };
+if (reviewReasonHintsPath) {
+  APPROVED_RRH = applyHintsShadow.loadApprovedReviewReasonHints(reviewReasonHintsPath);
+  console.log("[RRH] " + APPROVED_RRH.totals.approved + " approved review-reason hint(s) chargé(s) depuis : " + reviewReasonHintsPath);
+  if (APPROVED_RRH.totals.skipped > 0) {
+    console.log("[RRH] " + APPROVED_RRH.totals.skipped + " hint(s) ignoré(s) (pending/rejected/sécurité)");
+  }
+  if (APPROVED_RRH.totals.approved === 0) {
+    console.log("[RRH] 0 approved review-reason hints loaded");
+  }
 }
 
 // Résoudre le chemin depuis la racine du projet (parent de scripts/)
@@ -401,6 +419,14 @@ function analyzeClient(c) {
       allowed_review_reasons:     tpl.allowed_review_reasons,
     });
   });
+  // GD-039 : Appliquer les hints candidates approuvés (shadow-only)
+  // Aucun effet si APPROVED_RRH.approved_hints est vide (par défaut)
+  // Ne modifie jamais le score brut, les poids, les seuils, auto_notify prod
+  if (APPROVED_RRH.approved_hints.length > 0) {
+    revCands = revCands.map(function(e) {
+      return applyHintsShadow.applyReviewReasonHintsToShadowEntry(e, APPROVED_RRH.approved_hints, {});
+    });
+  }
   var exclHits     = cleanOnly.filter(function(e) { return e.exclusion_hit; });
   var primaryBased = cleanOnly.filter(function(e) { return e.signal_origin === "primary"; });
   var inclOnly     = cleanOnly.filter(function(e) { return e.signal_origin === "inclusion"; });
@@ -471,6 +497,7 @@ function buildReviewCsv(candidates) {
               "ctx_learnable_context_hint","ctx_should_create_hint",
               "human_review_reason","human_review_reason_label",
               "human_review_comment","allowed_review_reason_codes",
+              "rrh_applied","rrh_action","rrh_ids","rrh_explanation",
               "decision"];
   var lines = [BOM + COLS.join(SEP)];
   candidates.forEach(function(e) {
@@ -502,6 +529,10 @@ function buildReviewCsv(candidates) {
       csvCell(Array.isArray(e.allowed_review_reasons)
         ? e.allowed_review_reasons.map(function(r) { return r.code; }).join("|")
         : ""),
+      csvCell(e.review_reason_hint_applied ? "oui" : ""),
+      csvCell(e.review_reason_hint_action || ""),
+      csvCell(Array.isArray(e.review_reason_hint_ids) ? e.review_reason_hint_ids.join("|") : (e.review_reason_hint_ids || "")),
+      csvCell((e.review_reason_hint_explanation || "").replace(/[\r\n]+/g, " ").trim()),
       csvCell(""),   // decision : vide pour saisie humaine
     ];
     lines.push(row.join(SEP));
