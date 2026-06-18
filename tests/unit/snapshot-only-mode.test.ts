@@ -109,15 +109,15 @@ describe("SO-C — Early-exit avant matchClient et markBCVus", () => {
   test("SO-9: process.exit(0) est présent dans le bloc SNAPSHOT_ONLY de runGlobalScanBC", () => {
     const fnStart    = idx("async function runGlobalScanBC");
     const blockStart = BOT_SRC.indexOf("if (SNAPSHOT_ONLY) {", fnStart);
-    // Chercher process.exit(0) dans les 500 chars suivant l'ouverture du bloc
-    const blockSlice = BOT_SRC.slice(blockStart, blockStart + 500);
+    // Fenêtre 900 chars : le nouveau bloc inclut loadDetails + logs + writeInputSnapshot
+    const blockSlice = BOT_SRC.slice(blockStart, blockStart + 900);
     expect(blockSlice).toContain("process.exit(0)");
   });
 
   test("SO-10: le browser est explicitement fermé avant process.exit(0)", () => {
     const fnStart    = idx("async function runGlobalScanBC");
     const blockStart = BOT_SRC.indexOf("if (SNAPSHOT_ONLY) {", fnStart);
-    const blockSlice = BOT_SRC.slice(blockStart, blockStart + 500);
+    const blockSlice = BOT_SRC.slice(blockStart, blockStart + 900);
     expect(blockSlice).toContain("browser.close()");
     const closePos = blockSlice.indexOf("browser.close()");
     const exitPos  = blockSlice.indexOf("process.exit(0)");
@@ -215,6 +215,62 @@ describe("SO-G — Mirror writeInputSnapshot guard", () => {
 
   test("SO-23: WRITE=true SNAPSHOT=true items=[...] → ne skip pas (double activation)", () => {
     expect(shouldSkipMirror(true, true, [{ id: "bc1" }])).toBe(false);
+  });
+});
+
+// ─── SO-H — Snapshot portail complet (allBCs, pas newBCs) ────────────────────
+//
+// Couvre le fix : en mode SNAPSHOT_ONLY, loadDetails est appelé avec allBCs
+// (tous les BC portail), pas seulement les nouveaux (newBCs).
+
+describe("SO-H — Snapshot portail complet via allBCs", () => {
+
+  test("SO-24: log [SnapshotOnly] writing full portal snapshot est présent", () => {
+    expect(has("[SnapshotOnly] writing full portal snapshot")).toBe(true);
+  });
+
+  test("SO-25: le bloc SNAPSHOT_ONLY dans runGlobalScanBC utilise allBCs (pas bcToLoad ni newBCs.slice)", () => {
+    const fnStart    = idx("async function runGlobalScanBC");
+    const blockStart = BOT_SRC.indexOf("if (SNAPSHOT_ONLY) {", fnStart);
+    const blockSlice = BOT_SRC.slice(blockStart, blockStart + 900);
+    // allBCs doit être présent dans le bloc SNAPSHOT_ONLY
+    expect(blockSlice).toContain("allBCs");
+    // bcToLoad et newBCs.slice ne doivent PAS être dans le bloc (ils arrivent après)
+    expect(blockSlice).not.toContain("bcToLoad");
+    expect(blockSlice).not.toContain("newBCs.slice");
+  });
+
+  test("SO-26: l'early-exit SNAPSHOT_ONLY est situé AVANT le calcul de bcToLoad dans runGlobalScanBC", () => {
+    const fnStart     = idx("async function runGlobalScanBC");
+    const blockStart  = BOT_SRC.indexOf("if (SNAPSHOT_ONLY) {", fnStart);
+    const bcToLoadPos = BOT_SRC.indexOf("const bcToLoad", fnStart);
+    expect(blockStart).toBeGreaterThan(fnStart);
+    expect(bcToLoadPos).toBeGreaterThan(fnStart);
+    // L'early-exit doit précéder bcToLoad (= mode normal non touché par SNAPSHOT_ONLY)
+    expect(blockStart).toBeLessThan(bcToLoadPos);
+  });
+
+  test("SO-27: le bloc SNAPSHOT_ONLY appelle loadDetails AVANT writeInputSnapshot", () => {
+    const fnStart     = idx("async function runGlobalScanBC");
+    const blockStart  = BOT_SRC.indexOf("if (SNAPSHOT_ONLY) {", fnStart);
+    const blockSlice  = BOT_SRC.slice(blockStart, blockStart + 900);
+    const loadPos     = blockSlice.indexOf("loadDetails(");
+    const writePos    = blockSlice.indexOf("writeInputSnapshot(");
+    expect(loadPos).toBeGreaterThan(-1);
+    expect(writePos).toBeGreaterThan(-1);
+    // loadDetails doit précéder writeInputSnapshot dans le bloc
+    expect(loadPos).toBeLessThan(writePos);
+  });
+
+
+  test("SO-28: writeInputSnapshot(newDetailed) n'est plus suivi d'un if (SNAPSHOT_ONLY) — mode normal intact", () => {
+    const normalWritePos = BOT_SRC.indexOf("writeInputSnapshot(newDetailed)");
+    expect(normalWritePos).toBeGreaterThan(-1);
+    // Les 150 chars apres writeInputSnapshot(newDetailed) ne contiennent pas if (SNAPSHOT_ONLY)
+    const afterWrite = BOT_SRC.slice(normalWritePos, normalWritePos + 150);
+    expect(afterWrite).not.toContain("if (SNAPSHOT_ONLY)");
+    // Mais contiennent le log Matching clients BC (flow normal inchange)
+    expect(afterWrite).toContain("Matching clients BC");
   });
 });
 

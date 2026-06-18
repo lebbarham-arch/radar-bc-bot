@@ -3840,6 +3840,22 @@ async function runGlobalScanBC(source) {
       log("[KNOWN_DIAG] sample_new_refs="
         + newBCs.slice(0, 5).map(bc => bc.id + "=" + (bc.objet || "").slice(0, 25)).join(" | "));
     }
+    // ── SNAPSHOT_ONLY : charger toutes les fiches portail et quitter ────────────
+    // Placé AVANT le filtre bcToLoad/newBCs pour capturer TOUS les BC portail,
+    // pas seulement les nouveaux. Mode normal : inchangé.
+    if (SNAPSHOT_ONLY) {
+      log("[SnapshotOnly] " + allBCs.length + " BC portail — chargement fiches complet (sans filtre known)...");
+      const _snapshotBCs = await loadDetails(browser, allBCs, "BC tous (snapshot-only)", false);
+      log("[SnapshotOnly] writing full portal snapshot: " + _snapshotBCs.length + " BC");
+      writeInputSnapshot(_snapshotBCs);
+      log("[SnapshotOnly] markBCVus skipped — RADAR_BC_SNAPSHOT_ONLY=1");
+      log("[SnapshotOnly] matchClient skipped — RADAR_BC_SNAPSHOT_ONLY=1");
+      log("[SnapshotOnly] notifications disabled — aucune notification envoyée");
+      log("[SnapshotOnly] snapshot ecrit. Fermeture navigateur et exit propre.");
+      await browser.close().catch(() => {});
+      _scanningBC = false;
+      process.exit(0);
+    }
     // ── MAX_NEW_BC_DETAILS_PER_SCAN : cap chargement fiches (defaut 250, 0=sans limite) ──
     const _maxNewBCDetails = (() => {
       const raw = parseInt(process.env.MAX_NEW_BC_DETAILS_PER_SCAN || "", 10);
@@ -3856,15 +3872,6 @@ async function runGlobalScanBC(source) {
     _sum_loaded = newDetailed.length;
     _sum_failed = bcToLoad.length - newDetailed.length;
     writeInputSnapshot(newDetailed); // opt-in RADAR_BC_WRITE_INPUT_SNAPSHOT=1
-    if (SNAPSHOT_ONLY) {
-      log("[SnapshotOnly] markBCVus skipped — RADAR_BC_SNAPSHOT_ONLY=1");
-      log("[SnapshotOnly] matchClient skipped — RADAR_BC_SNAPSHOT_ONLY=1");
-      log("[SnapshotOnly] notifications disabled — aucune notification envoyée");
-      log("[SnapshotOnly] snapshot ecrit. Fermeture navigateur et exit propre.");
-      await browser.close().catch(() => {});
-      _scanningBC = false;
-      process.exit(0);
-    }
     log("\nMatching clients BC...");
     const _noDeliveryIds = new Set();  // BC matchés mais non livrés — conservés hors bcs_vus
     const snapshotRows = []; // collecteur de snapshot — observation pure
