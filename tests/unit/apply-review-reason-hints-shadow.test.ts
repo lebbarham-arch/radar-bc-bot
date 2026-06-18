@@ -28,6 +28,8 @@ interface ShadowEntry {
   ctx_context_key?:              string | undefined;
   context_key?:                  string | undefined;
   ctx_learnable_context_hint?:   string | undefined;
+  ctx_negative_context_terms?:   string[] | undefined;
+  ctx_positive_context_terms?:   string[] | undefined;
   review_reason_hint_applied?:   boolean;
   review_reason_hint_action?:    string;
   review_reason_hint_ids?:       string[];
@@ -91,13 +93,45 @@ function signalMatches(entry: ShadowEntry, signalKey: string): boolean {
   return extractMatchedSignals(entry).includes(normSignal(signalKey));
 }
 
+// ── Résolution contextuelle miroir (identique à resolveEntryContextKey prod) ──
+const AH_KNOWN_CONTEXT_LABELS = [
+  'medical_admin_context', 'cleaning_disinfection_context', 'food_or_beverage_context',
+  'office_supplies_context', 'it_context', 'event_context', 'construction_or_works_context',
+] as const;
+
+const AH_MEDICAL_NEG_TERMS = [
+  'medico', 'materiel medico', 'medico technique', 'dmsps', 'dmspsf',
+  'santé', 'sante', 'centre hospitalier', 'hopital', 'hôpital', 'chp', 'chr',
+  'hygiène du milieu', 'ministère de la santé', 'delegation de la sante',
+];
+
+const AH_CLEANING_TERMS = [
+  'desinfection', 'désinfection', 'deratisation', 'dératisation',
+  'desinsectisation', 'désinsectisation', 'nettoyage', 'nettoiement',
+];
+
+function resolveEntryContextKeyT(entry: ShadowEntry): string {
+  // A. ctx_context_key explicite
+  const ctk = String(entry.ctx_context_key || entry.context_key || '').trim();
+  if (ctk && ctk !== 'no_context' && ctk !== 'unknown_context') return ctk;
+  // B. ctx_learnable_context_hint contient label connu
+  const hint = String(entry.ctx_learnable_context_hint || '').toLowerCase();
+  for (const lbl of AH_KNOWN_CONTEXT_LABELS) {
+    if (hint.includes(lbl)) return lbl;
+  }
+  // C. ctx_negative_context_terms
+  const neg = (entry.ctx_negative_context_terms || []).map(t => t.toLowerCase());
+  if (AH_MEDICAL_NEG_TERMS.some(term => neg.some(t => t.includes(term)))) return 'medical_admin_context';
+  if (AH_CLEANING_TERMS.some(term => neg.some(t => t.includes(term)))) return 'cleaning_disinfection_context';
+  // C2. ctx_positive_context_terms
+  const pos = (entry.ctx_positive_context_terms || []).map(t => t.toLowerCase());
+  if (AH_CLEANING_TERMS.some(term => pos.some(t => t.includes(term)))) return 'cleaning_disinfection_context';
+  return 'no_context';
+}
+
 function contextMatches(entry: ShadowEntry, contextKey: string): boolean {
   if (!contextKey) return true;
-  const ec = String(entry.ctx_context_key || entry.context_key || '').trim();
-  if (ec && ec === contextKey) return true;
-  const learnable = String(entry.ctx_learnable_context_hint || '').trim();
-  if (learnable && learnable === contextKey) return true;
-  return false;
+  return resolveEntryContextKeyT(entry) === contextKey;
 }
 
 function loadApprovedHints(raw: { candidates?: HintCandidate[] } | HintCandidate[]): LoadResult {
@@ -454,10 +488,24 @@ describe('GD-039 apply-review-reason-hints-shadow', () => {
     expect(r.totals.skipped).toBe(2);
   });
 
-  // ── SS-AH23 : matching sur ctx_learnable_context_hint ────────────────────
-  test('SS-AH23 — context match via ctx_learnable_context_hint', () => {
-    const hints = loadApprovedHints({ candidates: [makeHint()] }).approved_hints;
-    const entry = makeEntry({ ctx_context_key: undefined, context_key: undefined, ctx_learnable_context_hint: 'ctx_medical' });
+  // ── SS-AH23 : matching via ctx_learnable_context_hint (label connu) ─────────
+  // La résolution contextuelle B reconnaît un label connu par substring dans learnable_hint.
+  // Seuls les labels de KNOWN_CONTEXT_LABELS sont reconnus (pas les labels arbitraires).
+  test('SS-AH23 — context match via ctx_learnable_context_hint contenant un label connu', () => {
+    const medHint = makeHint({
+      context_key: 'medical_admin_context',
+      proposed_effect: {
+        action: 'block_auto_and_send_to_review',
+        scope:  'client_signal_context',
+        applies_to: { client_key: 'Client ABC', signal_key: 'nettoyage', context_key: 'medical_admin_context' },
+      },
+    });
+    const hints = loadApprovedHints({ candidates: [medHint] }).approved_hints;
+    const entry = makeEntry({
+      ctx_context_key: undefined,
+      context_key:     undefined,
+      ctx_learnable_context_hint: 'medical_admin_context — score faible',
+    });
     const result = applyHintsToEntry(entry, hints);
     expect(result.review_reason_hint_applied).toBe(true);
   });
@@ -491,6 +539,143 @@ describe('GD-039 apply-review-reason-hints-shadow', () => {
   test('SS-AH26 — loadApprovedHints accepte un tableau brut de candidates', () => {
     const r = loadApprovedHints([makeHint()] as unknown as { candidates?: HintCandidate[] });
     expect(r.totals.approved).toBe(1);
+  });
+
+});
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  RÉSOLUTION CONTEXTUELLE P9 (SS-AH27..35)
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('GD-039 apply-review-reason-hints-shadow — résolution contextuelle (SS-AH27..35)', () => {
+
+  // Hint médical de référence (medical_admin_context)
+  function makeMedicalHint(overrides: Partial<HintCandidate> = {}): HintCandidate {
+    return {
+      candidate_id: 'rrhc_medical_001',
+      client_key:   'TEST PROD - Nettoyage Hygiène',
+      signal_key:   'hygiène',
+      context_key:  'medical_admin_context',
+      proposed_effect: {
+        action:     'block_auto_and_send_to_review',
+        scope:      'client_signal_context',
+        applies_to: {
+          client_key:  'TEST PROD - Nettoyage Hygiène',
+          signal_key:  'hygiène',
+          context_key: 'medical_admin_context',
+        },
+      },
+      safety:                    'shadow_only',
+      status:                    'human_approved_for_shadow',
+      human_validation_required: true,
+      rationale:                 'Rejet répété dans contexte médical',
+      ...overrides,
+    };
+  }
+
+  function makeMedicalEntry(overrides: Partial<ShadowEntry> = {}): ShadowEntry {
+    return {
+      client:          'TEST PROD - Nettoyage Hygiène',
+      bc_id:           'BC-MEDICAL-001',
+      clean_score:     5,
+      matched_signals: ['hygiène'],
+      review_candidate: true,
+      auto_notify_candidate: false,
+      ...overrides,
+    };
+  }
+
+  const medHints = () => loadApprovedHints({ candidates: [makeMedicalHint()] }).approved_hints;
+
+  // SS-AH27 : ctx_context_key explicite = medical_admin_context → appliqué
+  test('SS-AH27 — ctx_context_key explicite = medical_admin_context → hint appliqué', () => {
+    const entry = makeMedicalEntry({ ctx_context_key: 'medical_admin_context' });
+    const result = applyHintsToEntry(entry, medHints());
+    expect(result.review_reason_hint_applied).toBe(true);
+    expect(result.review_reason_hint_action).toBe('block_auto_and_send_to_review');
+  });
+
+  // SS-AH28 : ctx_context_key vide + ctx_learnable contient medical_admin_context → appliqué
+  test('SS-AH28 — ctx_learnable_context_hint contient medical_admin_context → hint appliqué', () => {
+    const entry = makeMedicalEntry({
+      ctx_context_key: '',
+      ctx_learnable_context_hint: 'Contexte détecté : medical_admin_context. Vérifier si ce contexte correspond au profil attendu.',
+    });
+    const result = applyHintsToEntry(entry, medHints());
+    expect(result.review_reason_hint_applied).toBe(true);
+    expect(result.review_reason_hint_action).toBe('block_auto_and_send_to_review');
+  });
+
+  // SS-AH29 : ctx_context_key vide + ctx_negative_context_terms médicaux → appliqué
+  test('SS-AH29 — ctx_negative_context_terms [medico, materiel medico, medico technique] → hint appliqué', () => {
+    const entry = makeMedicalEntry({
+      ctx_context_key:            '',
+      ctx_negative_context_terms: ['medico', 'materiel medico', 'medico technique'],
+    });
+    const result = applyHintsToEntry(entry, medHints());
+    expect(result.review_reason_hint_applied).toBe(true);
+    expect(result.review_reason_hint_ids).toContain('rrhc_medical_001');
+  });
+
+  // SS-AH30 : resolveContextKey → cleaning_disinfection ≠ medical_admin → pas appliqué
+  test('SS-AH30 — contexte résolu = cleaning_disinfection_context ≠ medical_admin_context → pas appliqué', () => {
+    const entry = makeMedicalEntry({
+      ctx_context_key: '',
+      ctx_learnable_context_hint: 'Contexte détecté : cleaning_disinfection_context.',
+    });
+    const result = applyHintsToEntry(entry, medHints());
+    expect(result.review_reason_hint_applied).toBeUndefined();
+  });
+
+  // SS-AH31 : status = candidate_pending_human_validation → pas appliqué
+  test('SS-AH31 — status=candidate_pending_human_validation → hint non appliqué', () => {
+    const entry = makeMedicalEntry({ ctx_negative_context_terms: ['medico', 'dmsps'] });
+    const hints = loadApprovedHints({ candidates: [makeMedicalHint({ status: 'candidate_pending_human_validation' })] }).approved_hints;
+    expect(hints).toHaveLength(0);
+    const result = applyHintsToEntry(entry, hints);
+    expect(result.review_reason_hint_applied).toBeUndefined();
+  });
+
+  // SS-AH32 : safety != shadow_only → pas appliqué
+  test('SS-AH32 — safety != shadow_only → hint non appliqué', () => {
+    const entry = makeMedicalEntry({ ctx_negative_context_terms: ['medico'] });
+    const hints = loadApprovedHints({ candidates: [makeMedicalHint({ safety: 'prod_active' })] }).approved_hints;
+    expect(hints).toHaveLength(0);
+    const result = applyHintsToEntry(entry, hints);
+    expect(result.review_reason_hint_applied).toBeUndefined();
+  });
+
+  // SS-AH33 : human_validation_required = false → pas appliqué
+  test('SS-AH33 — human_validation_required=false → hint non appliqué', () => {
+    const entry = makeMedicalEntry({ ctx_negative_context_terms: ['medico'] });
+    const hints = loadApprovedHints({ candidates: [makeMedicalHint({ human_validation_required: false })] }).approved_hints;
+    expect(hints).toHaveLength(0);
+    const result = applyHintsToEntry(entry, hints);
+    expect(result.review_reason_hint_applied).toBeUndefined();
+  });
+
+  // SS-AH34 : signal hygiène != désinfection → pas appliqué
+
+  // SS-AH34 : signal — signal ne correspond pas au hint
+  test('SS-AH34 — signal entry=desinfection, hint=hygiene → pas appliqué', () => {
+    const entry = makeMedicalEntry({
+      matched_signals: ['desinfection'],
+      ctx_negative_context_terms: ['medico'],
+    });
+    const result = applyHintsToEntry(entry, medHints());
+    expect(result.review_reason_hint_applied).toBeUndefined();
+  });
+
+  // SS-AH35 : score non modifié
+  test('SS-AH35 — score reste inchangé après application du hint', () => {
+    const entry = makeMedicalEntry({
+      clean_score: 5,
+      ctx_negative_context_terms: ['medico', 'dmsps'],
+    });
+    const result = applyHintsToEntry(entry, medHints());
+    expect(result.review_reason_hint_applied).toBe(true);
+    expect(result.clean_score).toBe(5);
   });
 
 });

@@ -118,30 +118,92 @@ function signalMatches(entry, hintSignalKey) {
   return signals.some(function(s) { return s === normHintSig; });
 }
 
+// ── Résolution contextuelle (miroir P7 contextKey) ───────────────────────────
+
+var KNOWN_CONTEXT_LABELS_RRH = [
+  'medical_admin_context',
+  'cleaning_disinfection_context',
+  'food_or_beverage_context',
+  'office_supplies_context',
+  'it_context',
+  'event_context',
+  'construction_or_works_context',
+];
+
+var MEDICAL_NEG_TERMS_RRH = [
+  'medico', 'materiel medico', 'medico technique', 'dmsps', 'dmspsf',
+  'santé', 'sante', 'ministère de la santé', 'delegation de la sante',
+  'délégation de la santé', 'centre hospitalier', 'hopital', 'hôpital',
+  'chp', 'chr', 'hygiène du milieu',
+];
+
+var CLEANING_TERMS_RRH = [
+  'desinfection', 'désinfection', 'deratisation', 'dératisation',
+  'desinsectisation', 'désinsectisation', 'nettoyage', 'nettoiement',
+];
+
+/**
+ * Résout le context_key d'une entry shadow selon l'ordre :
+ *  A. ctx_context_key explicite non-vide / non-no_context
+ *  B. ctx_learnable_context_hint contient un label connu
+ *  C. ctx_negative_context_terms : termes médicaux → medical_admin_context
+ *     ctx_negative/positive_context_terms : termes nettoyage → cleaning_disinfection_context
+ *  D. no_context
+ *
+ * Logique identique à contextKey() dans review-reason-learning-report.js.
+ */
+function resolveEntryContextKey(entry) {
+  // A. ctx_context_key explicite
+  var ctk = String(entry.ctx_context_key || entry.context_key || '').trim();
+  if (ctk && ctk !== 'no_context' && ctk !== 'unknown_context') return ctk;
+
+  // B. ctx_learnable_context_hint contient un label connu (substring)
+  var hint = String(entry.ctx_learnable_context_hint || '').toLowerCase();
+  for (var _li = 0; _li < KNOWN_CONTEXT_LABELS_RRH.length; _li++) {
+    if (hint.indexOf(KNOWN_CONTEXT_LABELS_RRH[_li]) !== -1) return KNOWN_CONTEXT_LABELS_RRH[_li];
+  }
+
+  // C. ctx_negative_context_terms
+  var neg = entry.ctx_negative_context_terms;
+  if (Array.isArray(neg) && neg.length > 0) {
+    var negLow = neg.map(function(t) { return String(t || '').toLowerCase(); });
+    var isMedical = MEDICAL_NEG_TERMS_RRH.some(function(term) {
+      return negLow.some(function(t) { return t.indexOf(term) !== -1; });
+    });
+    if (isMedical) return 'medical_admin_context';
+    var isCleaningNeg = CLEANING_TERMS_RRH.some(function(term) {
+      return negLow.some(function(t) { return t.indexOf(term) !== -1; });
+    });
+    if (isCleaningNeg) return 'cleaning_disinfection_context';
+  }
+
+  // C2. ctx_positive_context_terms
+  var pos = entry.ctx_positive_context_terms;
+  if (Array.isArray(pos) && pos.length > 0) {
+    var posLow = pos.map(function(t) { return String(t || '').toLowerCase(); });
+    var isCleaningPos = CLEANING_TERMS_RRH.some(function(term) {
+      return posLow.some(function(t) { return t.indexOf(term) !== -1; });
+    });
+    if (isCleaningPos) return 'cleaning_disinfection_context';
+  }
+
+  return 'no_context';
+}
+
 // ── Matching contexte ─────────────────────────────────────────────────────────
 /**
  * Vérifie si l'entrée correspond au context_key du hint.
- * Utilise les champs P5b/P7/P8 existants, dans cet ordre :
- *  1. entry.ctx_context_key (si présent)
- *  2. entry.context_key
- *  3. entry.ctx_learnable_context_hint (contient le context_key)
- *
- * Si pas de contexte clair pour un hint contextuel → pas d'application.
- * On ne reconstruit pas une logique contextuelle nouvelle ici.
+ * Utilise resolveEntryContextKey() — même logique que P7 contextKey() :
+ *  A. ctx_context_key explicite
+ *  B. ctx_learnable_context_hint (substring sur labels connus)
+ *  C. ctx_negative/positive_context_terms (termes médicaux ou nettoyage)
+ *  D. no_context (pas de match)
  */
 function contextMatches(entry, hintContextKey) {
-  if (!hintContextKey) return true; // Scope non-contextuel
-  if (hintContextKey === '') return true;
+  if (!hintContextKey || hintContextKey === '') return true; // Scope non-contextuel
 
-  var entryCtxKey = String(entry.ctx_context_key || entry.context_key || '').trim();
-  if (entryCtxKey && entryCtxKey === hintContextKey) return true;
-
-  // Chercher dans ctx_learnable_context_hint
-  var learnable = String(entry.ctx_learnable_context_hint || '').trim();
-  if (learnable && learnable === hintContextKey) return true;
-
-  // Si le hint a un context_key non-vide mais qu'on ne peut pas matcher → skip
-  return false;
+  var resolved = resolveEntryContextKey(entry);
+  return resolved === hintContextKey;
 }
 
 // ── loadApprovedReviewReasonHints ─────────────────────────────────────────────
@@ -442,6 +504,7 @@ function applyReviewReasonHintsToShadowEntry(entry, hints, opts) {
 
 // ── Exports ───────────────────────────────────────────────────────────────────
 module.exports = {
+  resolveEntryContextKey:               resolveEntryContextKey,
   loadApprovedReviewReasonHints:        loadApprovedReviewReasonHints,
   evaluateReviewReasonHintForEntry:      evaluateReviewReasonHintForEntry,
   applyReviewReasonHintsToShadowEntry:   applyReviewReasonHintsToShadowEntry,
