@@ -293,6 +293,19 @@ function buildReviewReasonHintCandidates(p7Report, opts) {
       skipped.push({ reason: 'signal_key invalide (' + norm.signal_key + ')', source: norm.signal_key });
       return;
     }
+    // ── Garde : hints contextuels requièrent un context_key réel ─────────────
+    var CONTEXT_REQUIRED_TYPES = [
+      'context_demote_to_review',
+      'context_keep_review_or_boost_candidate',
+      'ignore_pattern_observed',
+    ];
+    if (CONTEXT_REQUIRED_TYPES.indexOf(norm.hint_type) !== -1) {
+      var ctxVal = String(norm.context_key || '').trim();
+      if (!ctxVal || ctxVal === 'no_context' || ctxVal === 'unknown_context') {
+        skipped.push({ reason: 'context_required_for_context_hint', source: norm.client_key + '/' + norm.signal_key });
+        return;
+      }
+    }
     if (ALLOWED_HINT_TYPES.indexOf(norm.hint_type) === -1) {
       skipped.push({ reason: 'hint_type non reconnu (' + norm.hint_type + ')', source: norm.hint_type });
       return;

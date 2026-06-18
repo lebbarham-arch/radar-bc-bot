@@ -55,6 +55,13 @@ interface Suggestion {
   suggested_action:    string;
   rationale:           string;
   safety:              string;
+  confidence?:         string;
+  total_decisions?:    number;
+  dominant_decision?:  string;
+  dominant_reason?:    string;
+  reject_rate?:        number;
+  keep_rate?:          number;
+  ignore_rate?:        number;
 }
 
 // ── Helpers miroir ────────────────────────────────────────────────────────────
@@ -81,13 +88,39 @@ function signalKeyT(entry: LearningReviewEntry): string {
   return sigs.slice().sort().join('+');
 }
 
+const KNOWN_CONTEXT_LABELS_T = [
+  'medical_admin_context', 'cleaning_disinfection_context', 'food_or_beverage_context',
+  'office_supplies_context', 'it_context', 'event_context', 'construction_or_works_context',
+];
+const MEDICAL_NEGATIVE_TERMS_T = [
+  'medico', 'materiel medico', 'medico technique', 'dmsps', 'santé', 'sante',
+  'ministère de la santé', 'ministere de la sante', 'délégation de la santé',
+  'delegation de la sante', 'hygiène du milieu', 'hygiene du milieu',
+  "unite d'hygiène", "unite d'hygiene", 'centre hospitalier',
+  'hopital', 'hôpital', 'chp ', 'chr ', 'chu ',
+];
 function contextKeyT(entry: LearningReviewEntry): string {
-  const align     = normStrT(entry.ctx_profile_alignment);
-  const ambiguity = normStrT(entry.ctx_context_ambiguity);
-  if (align === 'unclear' && ambiguity === 'high') return 'no_context';
-  if (align === 'unclear') return 'no_context';
-  if (!align && !normStrT(entry.ctx_learnable_context_hint)) return 'no_context';
-  if (align) return 'ctx_' + align + (ambiguity ? '_' + ambiguity : '');
+  // 1. ctx_learnable_context_hint — label générique reconnu
+  const hint = normStrT(entry.ctx_learnable_context_hint || '');
+  if (hint && KNOWN_CONTEXT_LABELS_T.includes(hint)) return hint;
+
+  // 2. ctx_context_key ou context_key — non-vide, non-générique
+  const ctk = normStrT((entry as Record<string, unknown>)['ctx_context_key'] as string || '');
+  if (ctk && ctk !== 'no_context' && ctk !== 'unknown_context') return ctk;
+
+  // 3. ctx_negative_context_terms → medical_admin_context
+  const neg = entry.ctx_negative_context_terms;
+  if (Array.isArray(neg) && neg.length > 0) {
+    const negLow = neg.map(t => normStrT(t));
+    const isMedical = MEDICAL_NEGATIVE_TERMS_T.some(term =>
+      negLow.some(t => t.includes(term))
+    );
+    if (isMedical) return 'medical_admin_context';
+  }
+
+  // 4. hint libre non-vide
+  if (hint) return hint;
+
   return 'no_context';
 }
 
@@ -168,6 +201,13 @@ function suggestHintT(summary: GroupSummary, meta: {client_key:string; signal_ke
     suggested_action:    '',
     rationale:           '',
     safety:              'shadow_only',
+    confidence:          summary.confidence || '',
+    total_decisions:     summary.total_decisions || 0,
+    dominant_decision:   summary.dominant_decision || '',
+    dominant_reason:     summary.dominant_reason || '',
+    reject_rate:         summary.reject_rate !== undefined ? summary.reject_rate : 0,
+    keep_rate:           summary.keep_rate    !== undefined ? summary.keep_rate    : 0,
+    ignore_rate:         summary.ignore_rate  !== undefined ? summary.ignore_rate  : 0,
   };
   if (summary.total_decisions < 3) { base.rationale = 'Pas assez de décisions.'; return base; }
   if (summary.confidence === 'low') { base.rationale = 'Confiance insuffisante.'; return base; }
@@ -531,6 +571,116 @@ describe('review-reason-learning-report — invariants candidatures', () => {
     expect(clients).toHaveLength(0);
     const hints = report.suggested_hints as unknown[];
     expect(hints).toHaveLength(0);
+  });
+
+});
+
+
+describe('review-reason-learning-report — contextKey étendu (CTX-réel)', () => {
+
+  // SS-RL21 : ctx_learnable_context_hint connu → utilisé directement
+  test('SS-RL21 — ctx_learnable_context_hint medical_admin_context → context_key=medical_admin_context', () => {
+    const entry: LearningReviewEntry = {
+      ...BASE_ENTRY,
+      ctx_learnable_context_hint: 'medical_admin_context',
+    };
+    const ctk = contextKeyT(entry);
+    expect(ctk).toBe('medical_admin_context');
+  });
+
+  // SS-RL22 : ctx_learnable_context_hint inconnu mais non-vide → utilisé comme hint libre
+  test('SS-RL22 — ctx_learnable_context_hint inconnu non-vide → valeur libre retournée', () => {
+    const entry: LearningReviewEntry = {
+      ...BASE_ENTRY,
+      ctx_learnable_context_hint: 'my_custom_context',
+    };
+    const ctk = contextKeyT(entry);
+    expect(ctk).toBe('my_custom_context');
+  });
+
+  // SS-RL23 : ctx_negative_context_terms avec "medico" → medical_admin_context
+  test('SS-RL23 — ctx_negative_terms [medico, dmsps] → medical_admin_context', () => {
+    const entry: LearningReviewEntry = {
+      ...BASE_ENTRY,
+      ctx_negative_context_terms: ['medico', 'dmsps'],
+    };
+    const ctk = contextKeyT(entry);
+    expect(ctk).toBe('medical_admin_context');
+  });
+
+  // SS-RL24 : ctx_negative_context_terms avec "materiel medico" → medical_admin_context
+  test('SS-RL24 — ctx_negative_terms [materiel medico, sante] → medical_admin_context', () => {
+    const entry: LearningReviewEntry = {
+      ...BASE_ENTRY,
+      ctx_negative_context_terms: ['materiel medico', 'santé'],
+    };
+    const ctk = contextKeyT(entry);
+    expect(ctk).toBe('medical_admin_context');
+  });
+
+  // SS-RL25 : ctx_negative_context_terms sans terme médical → no_context
+  test('SS-RL25 — ctx_negative_terms non-médicaux → no_context', () => {
+    const entry: LearningReviewEntry = {
+      ...BASE_ENTRY,
+      ctx_negative_context_terms: ['architecture', 'charpente'],
+    };
+    const ctk = contextKeyT(entry);
+    expect(ctk).toBe('no_context');
+  });
+
+  // SS-RL26 : tous champs CTX vides → no_context
+  test('SS-RL26 — tous champs CTX vides → no_context', () => {
+    const entry: LearningReviewEntry = { ...BASE_ENTRY };
+    const ctk = contextKeyT(entry);
+    expect(ctk).toBe('no_context');
+  });
+
+});
+
+describe('review-reason-learning-report — evidence dans suggestion', () => {
+
+  function makeSummaryT(overrides: Partial<GroupSummary> = {}): GroupSummary {
+    return {
+      total: 3, total_decisions: 3, keep_count: 0, reject_count: 3, ignore_count: 0,
+      pending_review_count: 0, dominant_decision: 'reject',
+      dominant_reason: 'bon_signal_mauvais_contexte',
+      reject_rate: 100, keep_rate: 0, ignore_rate: 0,
+      dominance_rate: 100, confidence: 'medium',
+      ...overrides,
+    };
+  }
+
+  const META_T = { client_key: 'Client Test', signal_key: 'hygiène',
+    context_key: 'medical_admin_context', reason_key: 'bon_signal_mauvais_contexte' };
+
+  // SS-RL27 : suggestion contient confidence propagé
+  test('SS-RL27 — suggestion contient confidence du summary', () => {
+    const sugg = suggestHintT(makeSummaryT({ confidence: 'medium' }), META_T);
+    expect(sugg.confidence).toBe('medium');
+  });
+
+  // SS-RL28 : suggestion contient total_decisions
+  test('SS-RL28 — suggestion contient total_decisions', () => {
+    const sugg = suggestHintT(makeSummaryT({ total_decisions: 3 }), META_T);
+    expect(sugg.total_decisions).toBe(3);
+  });
+
+  // SS-RL29 : suggestion contient dominant_decision
+  test('SS-RL29 — suggestion contient dominant_decision=reject', () => {
+    const sugg = suggestHintT(makeSummaryT({ dominant_decision: 'reject' }), META_T);
+    expect(sugg.dominant_decision).toBe('reject');
+  });
+
+  // SS-RL30 : suggestion contient dominant_reason
+  test('SS-RL30 — suggestion contient dominant_reason', () => {
+    const sugg = suggestHintT(makeSummaryT({ dominant_reason: 'bon_signal_mauvais_contexte' }), META_T);
+    expect(sugg.dominant_reason).toBe('bon_signal_mauvais_contexte');
+  });
+
+  // SS-RL31 : suggestion contient reject_rate
+  test('SS-RL31 — suggestion contient reject_rate=100', () => {
+    const sugg = suggestHintT(makeSummaryT({ reject_rate: 100 }), META_T);
+    expect(sugg.reject_rate).toBe(100);
   });
 
 });

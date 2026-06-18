@@ -76,7 +76,7 @@ function loadEntries(files) {
     try {
       var raw  = fs.readFileSync(fpath, 'utf8');
       var data = JSON.parse(raw);
-      var candidates = data.candidates || data.entries || [];
+      var candidates = data.candidates || data.entries || data.records || [];
       if (!Array.isArray(candidates)) {
         console.warn('[WARN] Format inattendu dans ' + path.basename(fpath) + ' — ignoré.');
         return;

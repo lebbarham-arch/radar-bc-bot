@@ -49,24 +49,44 @@ function signalKey(entry) {
   return sigs.slice().sort().join('+');
 }
 
-/** Clé de contexte : premier label CTX détecté ou "no_context". */
+/**
+ * Clé de contexte : extrait un label contextuel générique stable depuis les champs CTX.
+ * Priorité : ctx_learnable_context_hint (connu) > ctx_context_key > neg_terms → medical_admin_context > hint libre > no_context
+ * Jamais de règle client-specific ou signal-specific.
+ */
+var KNOWN_CONTEXT_LABELS = [
+  'medical_admin_context', 'cleaning_disinfection_context', 'food_or_beverage_context',
+  'office_supplies_context', 'it_context', 'event_context', 'construction_or_works_context',
+];
+var MEDICAL_NEGATIVE_TERMS = [
+  'medico', 'materiel medico', 'medico technique', 'dmsps', 'santé', 'sante',
+  'ministère de la santé', 'ministere de la sante', 'délégation de la santé',
+  'delegation de la sante', 'hygiène du milieu', 'hygiene du milieu',
+  "unite d'hygiène", "unite d'hygiene", 'centre hospitalier',
+  'hopital', 'hôpital', 'chp ', 'chr ', 'chu ',
+];
 function contextKey(entry) {
-  // Chercher dans ctx_positive_context_terms ou ctx_negative_context_terms
-  var pos = entry.ctx_positive_context_terms;
+  // 1. ctx_learnable_context_hint — si c'est un label générique reconnu
+  var hint = normStr(entry.ctx_learnable_context_hint || '');
+  if (hint && KNOWN_CONTEXT_LABELS.indexOf(hint) !== -1) return hint;
+
+  // 2. ctx_context_key ou context_key — si non-vide et non générique
+  var ctk = normStr((entry.ctx_context_key || entry.context_key || ''));
+  if (ctk && ctk !== 'no_context' && ctk !== 'unknown_context') return ctk;
+
+  // 3. Dériver depuis ctx_negative_context_terms → medical_admin_context
   var neg = entry.ctx_negative_context_terms;
-  var align = normStr(entry.ctx_profile_alignment);
+  if (Array.isArray(neg) && neg.length > 0) {
+    var negLow = neg.map(function(t) { return normStr(String(t || '')); });
+    var isMedical = MEDICAL_NEGATIVE_TERMS.some(function(term) {
+      return negLow.some(function(t) { return t.indexOf(term) !== -1; });
+    });
+    if (isMedical) return 'medical_admin_context';
+  }
 
-  // Dériver une clé de contexte desde le profil_alignment + ambiguity
-  var ambiguity = normStr(entry.ctx_context_ambiguity);
-  if (align === 'unclear' && ambiguity === 'high') return 'no_context';
-  if (align === 'unclear') return 'no_context';
+  // 4. ctx_learnable_context_hint — valeur libre non nulle (label inconnu mais présent)
+  if (hint) return hint;
 
-  // Essayer d'extraire un label de contexte depuis why_it_matched ou hint
-  var hint = normStr(entry.ctx_learnable_context_hint);
-  if (!hint && !align) return 'no_context';
-
-  // Construire une clé lisible depuis alignment + ambiguity
-  if (align) return 'ctx_' + align + (ambiguity ? '_' + ambiguity : '');
   return 'no_context';
 }
 
@@ -196,6 +216,13 @@ function suggestReviewReasonHint(summary, groupMeta) {
     suggested_action:    '',
     rationale:           '',
     safety:              'shadow_only',
+    confidence:          summary.confidence || '',
+    total_decisions:     summary.total_decisions || 0,
+    dominant_decision:   summary.dominant_decision || '',
+    dominant_reason:     summary.dominant_reason || '',
+    reject_rate:         summary.reject_rate !== undefined ? summary.reject_rate : 0,
+    keep_rate:           summary.keep_rate    !== undefined ? summary.keep_rate    : 0,
+    ignore_rate:         summary.ignore_rate  !== undefined ? summary.ignore_rate  : 0,
   };
 
   if (summary.total_decisions < 3) {

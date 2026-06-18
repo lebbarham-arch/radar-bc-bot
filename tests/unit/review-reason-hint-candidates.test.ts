@@ -522,3 +522,76 @@ describe('GD-038 review-reason-hint-candidates', () => {
   });
 
 });
+
+
+describe('review-reason-hint-candidates — garde no_context (SS-HC25..27)', () => {
+
+  // Helpers locaux pour cette suite
+  const CONTEXT_REQUIRED_TYPES_HC = [
+    'context_demote_to_review',
+    'context_keep_review_or_boost_candidate',
+    'ignore_pattern_observed',
+  ];
+
+  function isContextRequired(hintType: string): boolean {
+    return CONTEXT_REQUIRED_TYPES_HC.includes(hintType);
+  }
+
+  function applyNoContextGuard(hintType: string, contextKey: string): string | null {
+    if (!isContextRequired(hintType)) return null;
+    const val = (contextKey || '').trim();
+    if (!val || val === 'no_context' || val === 'unknown_context') {
+      return 'context_required_for_context_hint';
+    }
+    return null;
+  }
+
+  // SS-HC25 : context_demote_to_review + no_context → skipé
+  test('SS-HC25 — context_demote_to_review + context_key=no_context → skip context_required_for_context_hint', () => {
+    const skipReason = applyNoContextGuard('context_demote_to_review', 'no_context');
+    expect(skipReason).toBe('context_required_for_context_hint');
+  });
+
+  // SS-HC25b : context_demote_to_review + context_key vide → skipé
+  test('SS-HC25b — context_demote_to_review + context_key="" → skip context_required_for_context_hint', () => {
+    const skipReason = applyNoContextGuard('context_demote_to_review', '');
+    expect(skipReason).toBe('context_required_for_context_hint');
+  });
+
+  // SS-HC25c : context_demote_to_review + unknown_context → skipé
+  test('SS-HC25c — context_demote_to_review + context_key=unknown_context → skip context_required_for_context_hint', () => {
+    const skipReason = applyNoContextGuard('context_demote_to_review', 'unknown_context');
+    expect(skipReason).toBe('context_required_for_context_hint');
+  });
+
+  // SS-HC26 : context_demote_to_review + medical_admin_context → non skipé par garde
+  test('SS-HC26 — context_demote_to_review + context_key=medical_admin_context → garde ne skip pas', () => {
+    const skipReason = applyNoContextGuard('context_demote_to_review', 'medical_admin_context');
+    expect(skipReason).toBeNull();
+  });
+
+  // SS-HC27 : client_signal_demote_to_review (type B) + no_context → NON skipé (pas contextuel)
+  test("SS-HC27 — client_signal_demote_to_review + no_context → garde ne s'applique pas (type B)", () => {
+    const skipReason = applyNoContextGuard('client_signal_demote_to_review', 'no_context');
+    expect(skipReason).toBeNull();
+  });
+
+  // SS-HC28 : context_keep_review_or_boost_candidate + no_context → skipé
+  test('SS-HC28 — context_keep_review_or_boost_candidate + no_context → skip context_required_for_context_hint', () => {
+    const skipReason = applyNoContextGuard('context_keep_review_or_boost_candidate', 'no_context');
+    expect(skipReason).toBe('context_required_for_context_hint');
+  });
+
+  // SS-HC29 : ignore_pattern_observed + no_context → skipé
+  test('SS-HC29 — ignore_pattern_observed + no_context → skip context_required_for_context_hint', () => {
+    const skipReason = applyNoContextGuard('ignore_pattern_observed', 'no_context');
+    expect(skipReason).toBe('context_required_for_context_hint');
+  });
+
+  // SS-HC30 : ignore_pattern_observed + cleaning_disinfection_context → non skipé
+  test('SS-HC30 — ignore_pattern_observed + cleaning_disinfection_context → garde ne skip pas', () => {
+    const skipReason = applyNoContextGuard('ignore_pattern_observed', 'cleaning_disinfection_context');
+    expect(skipReason).toBeNull();
+  });
+
+});
