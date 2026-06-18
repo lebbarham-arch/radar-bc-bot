@@ -109,15 +109,21 @@ function main() {
       bc_id:                    String(c.bc_id || ''),
       score:                    c.clean_score != null ? c.clean_score : (c.score != null ? c.score : ''),
       matched_signals:          signals,
+      signal_origin:            String(c.signal_origin || ''),
+      strength_reason:          String(c.strength_reason || ''),
       clean_text_excerpt:       String(c.clean_text_excerpt || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 300),
       ai_explanation:           String(c.ai_review_explanation || c.ai_explanation || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 300),
-      ctx_profile_alignment:    String(c.ctx_profile_alignment || ''),
-      ctx_context_ambiguity:    String(c.ctx_context_ambiguity || ''),
+      // Champs CTX — préservés tels quels depuis la source review-candidates
+      ctx_context_key:            String(c.ctx_context_key || ''),
+      ctx_profile_alignment:      String(c.ctx_profile_alignment || ''),
+      ctx_context_ambiguity:      String(c.ctx_context_ambiguity || ''),
+      ctx_context_confidence:     String(c.ctx_context_confidence || ''),
       ctx_negative_context_terms: Array.isArray(c.ctx_negative_context_terms)
         ? c.ctx_negative_context_terms : [],
       ctx_positive_context_terms: Array.isArray(c.ctx_positive_context_terms)
         ? c.ctx_positive_context_terms : [],
-      ctx_learnable_context_hint: String(c.ctx_learnable_context_hint || ''),
+      ctx_learnable_context_hint:     String(c.ctx_learnable_context_hint || ''),
+      ctx_should_create_hint:         c.ctx_should_create_context_hint === true || c.ctx_should_create_hint === true,
       // Champs à remplir par l'humain :
       human_review_decision: '',
       human_review_reason:   '',

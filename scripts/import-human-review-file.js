@@ -98,13 +98,17 @@ function main() {
       human_review_reason_label: normalizedReasonLabel,
       human_review_comment:      String(item.human_review_comment || '').trim(),
       matched_signals:           signals,
-      ctx_profile_alignment:     String(item.ctx_profile_alignment  || ''),
-      ctx_context_ambiguity:     String(item.ctx_context_ambiguity  || ''),
+      ctx_context_key:            String(item.ctx_context_key || ''),
+      ctx_profile_alignment:      String(item.ctx_profile_alignment  || ''),
+      ctx_context_ambiguity:      String(item.ctx_context_ambiguity  || ''),
+      ctx_context_confidence:     String(item.ctx_context_confidence || ''),
       ctx_positive_context_terms: Array.isArray(item.ctx_positive_context_terms)
         ? item.ctx_positive_context_terms : [],
       ctx_negative_context_terms: Array.isArray(item.ctx_negative_context_terms)
         ? item.ctx_negative_context_terms : [],
-      source_excerpt:            String(item.clean_text_excerpt || '').slice(0, 200),
+      ctx_learnable_context_hint: String(item.ctx_learnable_context_hint || ''),
+      ctx_should_create_hint:     item.ctx_should_create_hint === true,
+      source_excerpt:             String(item.clean_text_excerpt || '').slice(0, 200),
     });
   });
 
@@ -146,12 +150,14 @@ function main() {
       human_review_reason_label: d.human_review_reason_label,
       human_review_comment:      d.human_review_comment,
       matched_signals:           d.matched_signals,
-      ctx_context_key:           String(item.ctx_learnable_context_hint || ''),
+      ctx_context_key:            String(item.ctx_context_key || ''),
       ctx_learnable_context_hint: String(item.ctx_learnable_context_hint || ''),
       ctx_negative_context_terms: d.ctx_negative_context_terms,
       ctx_positive_context_terms: d.ctx_positive_context_terms,
-      ctx_profile_alignment:     d.ctx_profile_alignment,
-      ctx_context_ambiguity:     d.ctx_context_ambiguity,
+      ctx_profile_alignment:      d.ctx_profile_alignment,
+      ctx_context_ambiguity:      d.ctx_context_ambiguity,
+      ctx_context_confidence:     String(item.ctx_context_confidence || ''),
+      ctx_should_create_hint:     item.ctx_should_create_hint === true,
       score:                     item.score != null ? item.score : '',
       signal_origin:             String(item.signal_origin || ''),
       strength_reason:           String(item.strength_reason || ''),

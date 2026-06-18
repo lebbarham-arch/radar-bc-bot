@@ -378,3 +378,267 @@ describe('P10 human-review-cycle', () => {
   });
 
 });
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  CTX PROPAGATION TESTS (SS-HRC23..34)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Interfaces CTX étendues ──────────────────────────────────────────────────
+interface ReviewCandidateWithCTX {
+  client:                    string;
+  bc_id:                     string;
+  score?:                    number | string;
+  matched_signals?:          string | string[];
+  signal_origin?:            string;
+  strength_reason?:          string;
+  clean_text_excerpt?:       string;
+  ctx_context_key?:          string;
+  ctx_profile_alignment?:    string;
+  ctx_context_ambiguity?:    string;
+  ctx_context_confidence?:   string;
+  ctx_negative_context_terms?: string[];
+  ctx_positive_context_terms?: string[];
+  ctx_learnable_context_hint?: string;
+  ctx_should_create_context_hint?: boolean;
+  ctx_should_create_hint?:   boolean;
+}
+
+// ── Miroir de prepareItems avec CTX ─────────────────────────────────────────
+function prepareItemsWithCTX(candidates: ReviewCandidateWithCTX[]) {
+  return candidates.map((c) => {
+    let signals = c.matched_signals;
+    if (Array.isArray(signals)) signals = signals.join(', ');
+    signals = String(signals || '');
+    return {
+      client:                    c.client || '',
+      bc_id:                     c.bc_id || '',
+      score:                     c.score ?? '',
+      matched_signals:           signals,
+      signal_origin:             c.signal_origin || '',
+      strength_reason:           c.strength_reason || '',
+      clean_text_excerpt:        String(c.clean_text_excerpt || '').slice(0, 300),
+      ctx_context_key:           c.ctx_context_key || '',
+      ctx_profile_alignment:     c.ctx_profile_alignment || '',
+      ctx_context_ambiguity:     c.ctx_context_ambiguity || '',
+      ctx_context_confidence:    c.ctx_context_confidence || '',
+      ctx_negative_context_terms: Array.isArray(c.ctx_negative_context_terms)
+        ? c.ctx_negative_context_terms : [],
+      ctx_positive_context_terms: Array.isArray(c.ctx_positive_context_terms)
+        ? c.ctx_positive_context_terms : [],
+      ctx_learnable_context_hint:  c.ctx_learnable_context_hint || '',
+      ctx_should_create_hint:      c.ctx_should_create_context_hint === true || c.ctx_should_create_hint === true,
+      human_review_decision: '',
+      human_review_reason:   '',
+      human_review_comment:  '',
+    };
+  });
+}
+
+// ── Miroir de importItems avec CTX ──────────────────────────────────────────
+interface ReviewItemWithCTX {
+  client: string;
+  bc_id: string;
+  matched_signals?: string | string[];
+  human_review_decision?: string;
+  human_review_reason?: string;
+  human_review_comment?: string;
+  ctx_context_key?: string;
+  ctx_profile_alignment?: string;
+  ctx_context_ambiguity?: string;
+  ctx_context_confidence?: string;
+  ctx_negative_context_terms?: string[];
+  ctx_positive_context_terms?: string[];
+  ctx_learnable_context_hint?: string;
+  ctx_should_create_hint?: boolean;
+  clean_text_excerpt?: string;
+  score?: number | string;
+  signal_origin?: string;
+  strength_reason?: string;
+}
+
+function importItemsWithCTX(items: ReviewItemWithCTX[]) {
+  const decisions: Record<string, unknown>[] = [];
+  const skipped: Record<string, unknown>[]   = [];
+
+  items.forEach((item, idx) => {
+    const d = normalizeDecision(item.human_review_decision || '');
+    if (!d) { skipped.push({ index: idx, bc_id: item.bc_id }); return; }
+
+    const signals = typeof item.matched_signals === 'string'
+      ? item.matched_signals.split(',').map(s => s.trim()).filter(Boolean)
+      : Array.isArray(item.matched_signals) ? item.matched_signals : [];
+
+    decisions.push({
+      client: item.client, bc_id: item.bc_id, decision: d,
+      matched_signals: signals,
+      ctx_context_key:           item.ctx_context_key || '',
+      ctx_profile_alignment:     item.ctx_profile_alignment || '',
+      ctx_context_ambiguity:     item.ctx_context_ambiguity || '',
+      ctx_context_confidence:    item.ctx_context_confidence || '',
+      ctx_negative_context_terms: Array.isArray(item.ctx_negative_context_terms)
+        ? item.ctx_negative_context_terms : [],
+      ctx_positive_context_terms: Array.isArray(item.ctx_positive_context_terms)
+        ? item.ctx_positive_context_terms : [],
+      ctx_learnable_context_hint: item.ctx_learnable_context_hint || '',
+      ctx_should_create_hint:     item.ctx_should_create_hint === true,
+    });
+  });
+
+  const learningRecords = decisions.map((d) => {
+    const item = items.find(it => it.bc_id === d['bc_id'] && it.client === d['client']) || {};
+    return {
+      ...d,
+      ctx_context_key:           (item as ReviewItemWithCTX).ctx_context_key || '',
+      ctx_learnable_context_hint: (item as ReviewItemWithCTX).ctx_learnable_context_hint || '',
+      ctx_negative_context_terms: (item as ReviewItemWithCTX).ctx_negative_context_terms || [],
+    };
+  });
+
+  return { decisions, learningRecords, skipped };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const KNOWN_CONTEXT_LABELS_HRC = [
+  'medical_admin_context', 'cleaning_disinfection_context', 'food_or_beverage_context',
+  'office_supplies_context', 'it_context', 'event_context', 'construction_or_works_context',
+];
+const MEDICAL_NEG_TERMS_HRC = [
+  'medico', 'materiel medico', 'dmsps', 'santé', 'sante', 'centre hospitalier',
+];
+function deriveContextKey(item: ReviewItemWithCTX): string {
+  const hint = (item.ctx_learnable_context_hint || '').trim().toLowerCase();
+  if (hint && KNOWN_CONTEXT_LABELS_HRC.some(l => hint.includes(l))) {
+    return KNOWN_CONTEXT_LABELS_HRC.find(l => hint.includes(l)) || 'no_context';
+  }
+  const ctk = (item.ctx_context_key || '').trim();
+  if (ctk && ctk !== 'no_context' && ctk !== 'unknown_context') return ctk;
+  const neg = item.ctx_negative_context_terms || [];
+  const negLow = neg.map(t => t.toLowerCase());
+  if (MEDICAL_NEG_TERMS_HRC.some(term => negLow.some(t => t.includes(term)))) return 'medical_admin_context';
+  return 'no_context';
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+describe('P10 human-review-cycle — CTX propagation (SS-HRC23..34)', () => {
+
+  const BASE_CANDIDATE_CTX: ReviewCandidateWithCTX = {
+    client: 'TEST PROD - Nettoyage Hygiène',
+    bc_id:  'BC-CTX-001',
+    score:  5,
+    matched_signals: ['hygiène'],
+    signal_origin: 'inclusion',
+    ctx_profile_alignment:     'low',
+    ctx_context_ambiguity:     'low',
+    ctx_context_confidence:    'low',
+    ctx_negative_context_terms: ['medico', 'materiel medico', 'dmsps'],
+    ctx_positive_context_terms: [],
+    ctx_learnable_context_hint: 'Contexte détecté : medical_admin_context. Vérifier si ce contexte correspond au profil.',
+    ctx_should_create_context_hint: false,
+  };
+
+  // SS-HRC23 : prepare préserve ctx_negative_context_terms
+  test('SS-HRC23 — prepare préserve ctx_negative_context_terms', () => {
+    const items = prepareItemsWithCTX([BASE_CANDIDATE_CTX]);
+    expect(items[0]!.ctx_negative_context_terms).toEqual(['medico', 'materiel medico', 'dmsps']);
+  });
+
+  // SS-HRC24 : prepare préserve ctx_learnable_context_hint
+  test('SS-HRC24 — prepare préserve ctx_learnable_context_hint', () => {
+    const items = prepareItemsWithCTX([BASE_CANDIDATE_CTX]);
+    expect(items[0]!.ctx_learnable_context_hint).toContain('medical_admin_context');
+  });
+
+  // SS-HRC25 : prepare préserve ctx_profile_alignment
+  test('SS-HRC25 — prepare préserve ctx_profile_alignment', () => {
+    const items = prepareItemsWithCTX([BASE_CANDIDATE_CTX]);
+    expect(items[0]!.ctx_profile_alignment).toBe('low');
+  });
+
+  // SS-HRC26 : prepare préserve signal_origin et strength_reason
+  test('SS-HRC26 — prepare préserve signal_origin', () => {
+    const items = prepareItemsWithCTX([BASE_CANDIDATE_CTX]);
+    expect(items[0]!.signal_origin).toBe('inclusion');
+  });
+
+  // SS-HRC27 : prepare — human_review_decision reste vide
+  test('SS-HRC27 — prepare : human_review_decision reste vide même si CTX présents', () => {
+    const items = prepareItemsWithCTX([BASE_CANDIDATE_CTX]);
+    expect(items[0]!.human_review_decision).toBe('');
+  });
+
+  // SS-HRC28 : import préserve ctx_negative_context_terms dans decisions
+  test('SS-HRC28 — import préserve ctx_negative_context_terms dans decisions', () => {
+    const item: ReviewItemWithCTX = {
+      client: 'C', bc_id: 'BC1',
+      human_review_decision: 'reject',
+      human_review_reason: 'bon_signal_mauvais_contexte',
+      ctx_negative_context_terms: ['medico', 'dmsps'],
+      ctx_learnable_context_hint: 'medical_admin_context',
+    };
+    const out = importItemsWithCTX([item]);
+    expect(out.decisions[0]!['ctx_negative_context_terms']).toEqual(['medico', 'dmsps']);
+  });
+
+  // SS-HRC29 : import préserve ctx_learnable_context_hint dans learningRecords
+  test('SS-HRC29 — import préserve ctx_learnable_context_hint dans learningRecords', () => {
+    const item: ReviewItemWithCTX = {
+      client: 'C', bc_id: 'BC1',
+      human_review_decision: 'reject',
+      ctx_learnable_context_hint: 'Contexte détecté : medical_admin_context.',
+    };
+    const out = importItemsWithCTX([item]);
+    expect(out.learningRecords[0]!['ctx_learnable_context_hint']).toContain('medical_admin_context');
+  });
+
+  // SS-HRC30 : import — ctx_context_key préservé si présent
+  test('SS-HRC30 — import préserve ctx_context_key explicite', () => {
+    const item: ReviewItemWithCTX = {
+      client: 'C', bc_id: 'BC1',
+      human_review_decision: 'reject',
+      ctx_context_key: 'medical_admin_context',
+    };
+    const out = importItemsWithCTX([item]);
+    expect(out.decisions[0]!['ctx_context_key']).toBe('medical_admin_context');
+  });
+
+  // SS-HRC31 : pipeline minimal — ctx_learnable_context_hint → context_key = medical_admin_context
+  test('SS-HRC31 — pipeline : ctx_learnable_context_hint avec medical_admin_context → deriveContextKey=medical_admin_context', () => {
+    const item: ReviewItemWithCTX = {
+      client: 'C', bc_id: 'BC1',
+      human_review_decision: 'reject',
+      ctx_learnable_context_hint: 'Contexte détecté : medical_admin_context. Vérifier profil.',
+    };
+    const ctk = deriveContextKey(item);
+    expect(ctk).toBe('medical_admin_context');
+  });
+
+  // SS-HRC32 : pipeline minimal — ctx_negative_terms médicaux → medical_admin_context
+  test('SS-HRC32 — pipeline : ctx_negative_terms médicaux → deriveContextKey=medical_admin_context', () => {
+    const item: ReviewItemWithCTX = {
+      client: 'C', bc_id: 'BC1',
+      human_review_decision: 'reject',
+      ctx_negative_context_terms: ['medico', 'dmsps'],
+    };
+    const ctk = deriveContextKey(item);
+    expect(ctk).toBe('medical_admin_context');
+  });
+
+  // SS-HRC33 : pipeline minimal — sans CTX → no_context
+  test('SS-HRC33 — pipeline : sans CTX → deriveContextKey=no_context', () => {
+    const item: ReviewItemWithCTX = { client: 'C', bc_id: 'BC1', human_review_decision: 'reject' };
+    const ctk = deriveContextKey(item);
+    expect(ctk).toBe('no_context');
+  });
+
+  // SS-HRC34 : import — ctx_should_create_hint false si absent
+  test('SS-HRC34 — import : ctx_should_create_hint = false si absent dans source', () => {
+    const item: ReviewItemWithCTX = {
+      client: 'C', bc_id: 'BC1',
+      human_review_decision: 'reject',
+    };
+    const out = importItemsWithCTX([item]);
+    expect(out.decisions[0]!['ctx_should_create_hint']).toBe(false);
+  });
+
+});
