@@ -45,7 +45,8 @@ function opt(name) {
 }
 
 var useLatest    = flag("--latest");
-var clientFilter = opt("--client");
+var clientFilter   = opt("--client");
+var localClientsArg = opt("--local-clients"); // GD-047 mode offline shadow-only
 
 // LEGACY_USE_AI_INCLUSIONS : identique au bot (OFF par défaut)
 var LEGACY_USE_AI_INCLUSIONS = process.env.RADAR_BC_LEGACY_USE_AI_INCLUSIONS === "1";
@@ -852,6 +853,67 @@ function loadInputSnapshot(snapPath) {
 }
 
 // ============================================================
+// GD-047 : Chargement clients locaux (mode offline shadow-only, experimental)
+// ============================================================
+function loadClientsFromLocalFile(filePath) {
+  var abs = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+  if (!fs.existsSync(abs)) {
+    process.stderr.write("[ERREUR] --local-clients : fichier introuvable : " + abs + "\n");
+    process.exit(1);
+  }
+  var rawLocal;
+  try {
+    rawLocal = JSON.parse(fs.readFileSync(abs, "utf8"));
+  } catch (e) {
+    process.stderr.write("[ERREUR] --local-clients : JSON invalide : " + e.message + "\n");
+    process.exit(1);
+  }
+  if (!Array.isArray(rawLocal)) {
+    process.stderr.write("[ERREUR] --local-clients : le fichier doit etre un tableau JSON.\n");
+    process.exit(1);
+  }
+  var PACK_LIMITS_LOCAL = {
+    starter:  { maxCriteres: 5  },
+    pro:      { maxCriteres: 20 },
+    business: { maxCriteres: 50 },
+  };
+  var localClients = rawLocal
+    .filter(function(c) {
+      return (c.criteres || []).some(function(cr) {
+        return (cr.radar_type || "bc") === "bc";
+      });
+    })
+    .map(function(c) {
+      c = mergeLocalProfile(c); // GD-043 profil enrichi + GD-047
+      var pack   = c.pack || "starter";
+      var limits = PACK_LIMITS_LOCAL[pack] || PACK_LIMITS_LOCAL.starter;
+      var allCr  = (c.criteres || []).filter(function(cr) {
+        return (cr.radar_type || "bc") === "bc";
+      });
+      return {
+        id:       c.id,
+        nom:      c.nom || c.id,
+        pack:     pack,
+        criteres: allCr.slice(0, limits.maxCriteres),
+        // Profil enrichi (GD-041) -- shadow reporting uniquement, jamais dans le scoring
+        business_profile:     c.business_profile     || c.profile_label || "",
+        technical_profile:    c.technical_profile    || "",
+        organization_profile: c.organization_profile || "",
+        profile_label:        c.profile_label        || "",
+        secteurs:             Array.isArray(c.secteurs)          ? c.secteurs          : [],
+        types_prestation:     Array.isArray(c.types_prestation)  ? c.types_prestation  : [],
+        organismes_cibles:    Array.isArray(c.organismes_cibles) ? c.organismes_cibles : [],
+        exclusions_metier:    Array.isArray(c.exclusions_metier) ? c.exclusions_metier : [],
+        produits:             Array.isArray(c.produits)          ? c.produits          : [],
+        specifications:       Array.isArray(c.specifications)    ? c.specifications    : [],
+      };
+    });
+  var nbCr = localClients.reduce(function(s, c) { return s + c.criteres.length; }, 0);
+  console.log("[LocalClients] " + localClients.length + " client(s) charge(s) depuis " + abs
+    + " (" + nbCr + " critere(s))");
+  return localClients;
+}
+
 // CHARGEMENT CLIENTS SUPABASE (read-only)
 // ============================================================
 function loadClientsFromSupabase() {
@@ -1035,16 +1097,21 @@ async function main() {
     process.exit(1);
   }
 
-  // 2. Charger les clients depuis Supabase (obligatoire — pas de client_id dans le snapshot)
+  // 2. Charger les clients (local --local-clients GD-047 ou Supabase par defaut)
   var clients;
-  try {
-    clients = await loadClientsFromSupabase();
-  } catch (e) {
-    process.stderr.write("[ERREUR] Chargement Supabase : " + e.message + "\n");
-    process.exit(1);
+  if (localClientsArg) {
+    // GD-047 : mode offline local shadow-only
+    clients = loadClientsFromLocalFile(localClientsArg);
+  } else {
+    try {
+      clients = await loadClientsFromSupabase();
+    } catch (e) {
+      process.stderr.write("[ERREUR] Chargement Supabase : " + e.message + "\n");
+      process.exit(1);
+    }
   }
   if (!clients.length) {
-    process.stderr.write("[ERREUR] Aucun client BC actif dans Supabase.\n");
+    process.stderr.write("[ERREUR] Aucun client BC actif.\n");
     process.exit(1);
   }
 
@@ -1069,7 +1136,7 @@ async function main() {
   }
 
   // 4. Écrire le rapport
-  writeShadowReplayReport(shadowAccum, snapPath, "supabase");
+  writeShadowReplayReport(shadowAccum, snapPath, localClientsArg ? "local" : "supabase");
 }
 
 main().catch(function(e) {

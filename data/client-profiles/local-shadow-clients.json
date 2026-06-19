@@ -1,0 +1,82 @@
+[
+  {
+    "id": "local-nettoyage",
+    "nom": "TEST PROD - Nettoyage Hygiene",
+    "pack": "starter",
+    "criteres": [
+      {
+        "valeur": "nettoyage",
+        "type": "service",
+        "radar_type": "bc",
+        "ai_inclusions": [
+          "hygiene",
+          "desinfection",
+          "deratisation",
+          "desinsectisation",
+          "produits d entretien",
+          "produits de nettoyage"
+        ],
+        "ai_exclusions": [
+          "materiel medical",
+          "produits pharmaceutiques",
+          "reactifs de laboratoire"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "local-informatique",
+    "nom": "TEST PROD - Informatique",
+    "pack": "starter",
+    "criteres": [
+      {
+        "valeur": "informatique",
+        "type": "service",
+        "radar_type": "bc",
+        "ai_inclusions": [
+          "logiciel",
+          "developpement",
+          "maintenance informatique",
+          "cybersecurite",
+          "reseaux",
+          "serveurs",
+          "cloud"
+        ],
+        "ai_exclusions": [
+          "nettoyage",
+          "restauration",
+          "gardiennage",
+          "location vehicules"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "local-fournitures-bureau",
+    "nom": "TEST PROD - Fournitures Bureau",
+    "pack": "starter",
+    "criteres": [
+      {
+        "valeur": "fournitures bureau",
+        "type": "fourniture",
+        "radar_type": "bc",
+        "ai_inclusions": [
+          "papeterie",
+          "mobilier bureau",
+          "cartouches",
+          "toners",
+          "papier",
+          "classeurs",
+          "fournitures scolaires"
+        ],
+        "ai_exclusions": [
+          "logiciels",
+          "cybersecurite",
+          "nettoyage",
+          "restauration",
+          "travaux batiment"
+        ]
+      }
+    ]
+  }
+]
