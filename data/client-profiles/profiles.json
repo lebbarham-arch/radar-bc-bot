@@ -3,12 +3,159 @@
   "TEST PROD - Nettoyage Hygiene": {
     "business_profile": "Nettoyage, hygiene, desinfection, deratisation, desinsectisation pour locaux professionnels et administrations.",
     "technical_profile": "Produits d entretien, produits de nettoyage, desinfectants, insecticides, prestations de desinfection, deratisation, desinsectisation.",
+    "organization_profile": "",
     "profile_label": "Nettoyage Hygiene",
-    "secteurs": ["nettoyage", "hygiene", "desinfection", "deratisation", "desinsectisation"],
-    "types_prestation": ["prestations de nettoyage", "desinfection", "deratisation", "desinsectisation", "fourniture de produits d entretien"],
-    "organismes_cibles": ["communes", "administrations", "etablissements publics", "etablissements scolaires", "hopitaux hors materiel medical"],
-    "exclusions_metier": ["materiel medical", "produits pharmaceutiques", "reactifs de laboratoire", "maintenance informatique", "gardiennage", "location de vehicules"],
-    "produits": ["produits d entretien", "produits de nettoyage", "desinfectants", "insecticides", "produits d hygiene"],
-    "specifications": ["locaux", "batiments administratifs", "desinfection de locaux", "traitement nuisibles"]
+    "secteurs": [
+      "nettoyage",
+      "hygiene",
+      "desinfection",
+      "deratisation",
+      "desinsectisation"
+    ],
+    "types_prestation": [
+      "prestations de nettoyage",
+      "desinfection",
+      "deratisation",
+      "desinsectisation",
+      "fourniture de produits d entretien"
+    ],
+    "organismes_cibles": [
+      "communes",
+      "administrations",
+      "etablissements publics",
+      "etablissements scolaires",
+      "hopitaux hors materiel medical"
+    ],
+    "exclusions_metier": [
+      "materiel medical",
+      "produits pharmaceutiques",
+      "reactifs de laboratoire",
+      "maintenance informatique",
+      "gardiennage",
+      "location de vehicules"
+    ],
+    "produits": [
+      "produits d entretien",
+      "produits de nettoyage",
+      "desinfectants",
+      "insecticides",
+      "produits d hygiene"
+    ],
+    "specifications": [
+      "locaux",
+      "batiments administratifs",
+      "desinfection de locaux",
+      "traitement nuisibles"
+    ]
+  },
+  "TEST PROD - Informatique": {
+    "business_profile": "Developpement logiciel, infogérance, cybersecurite, infrastructure IT, support informatique et numerique pour collectivites et entreprises.",
+    "technical_profile": "Logiciels, applications metier, progiciels, cloud, virtualisation, securite informatique, reseaux, postes de travail, serveurs.",
+    "organization_profile": "DSI collectivites, administrations publiques, PME, ETI.",
+    "profile_label": "Informatique IT",
+    "secteurs": [
+      "informatique",
+      "numerique",
+      "logiciel",
+      "cybersecurite",
+      "infrastructure IT",
+      "cloud"
+    ],
+    "types_prestation": [
+      "developpement logiciel",
+      "infogérance",
+      "maintenance informatique",
+      "cybersecurite",
+      "audit SI",
+      "fourniture materiel informatique",
+      "support technique",
+      "formation informatique"
+    ],
+    "organismes_cibles": [
+      "collectivites territoriales",
+      "administrations publiques",
+      "etablissements publics",
+      "PME",
+      "ETI"
+    ],
+    "exclusions_metier": [
+      "nettoyage",
+      "restauration",
+      "gardiennage",
+      "fournitures bureau papeterie",
+      "travaux batiment",
+      "transport",
+      "location vehicules"
+    ],
+    "produits": [
+      "logiciels",
+      "licences",
+      "serveurs",
+      "postes de travail",
+      "equipements reseaux",
+      "solutions cloud",
+      "outils de securite"
+    ],
+    "specifications": [
+      "systemes information",
+      "infrastructure numerique",
+      "securite des donnees",
+      "RGPD",
+      "interoperabilite"
+    ]
+  },
+  "TEST PROD - Fournitures Bureau": {
+    "business_profile": "Fournitures de bureau, papeterie, mobilier de bureau, consommables imprimantes pour administrations et entreprises.",
+    "technical_profile": "Papier, stylos, classeurs, enveloppes, toners, cartouches, mobilier de bureau ergonomique, fournitures scolaires.",
+    "organization_profile": "Services achats collectivites, ecoles, administrations, PME.",
+    "profile_label": "Fournitures Bureau",
+    "secteurs": [
+      "fournitures bureau",
+      "papeterie",
+      "mobilier bureau",
+      "consommables impression",
+      "fournitures scolaires"
+    ],
+    "types_prestation": [
+      "fourniture de papeterie",
+      "fourniture de mobilier de bureau",
+      "fourniture de consommables impression",
+      "fourniture de fournitures scolaires",
+      "livraison express fournitures"
+    ],
+    "organismes_cibles": [
+      "communes",
+      "ecoles",
+      "colleges",
+      "lycees",
+      "administrations",
+      "etablissements publics",
+      "PME",
+      "TPE"
+    ],
+    "exclusions_metier": [
+      "materiel informatique avance",
+      "logiciels",
+      "nettoyage",
+      "restauration",
+      "gardiennage",
+      "travaux batiment",
+      "location vehicules"
+    ],
+    "produits": [
+      "papier bureau",
+      "stylos et stylets",
+      "classeurs",
+      "toners et cartouches",
+      "enveloppes",
+      "mobilier ergonomique",
+      "tableaux blancs"
+    ],
+    "specifications": [
+      "consommables bureautiques",
+      "fournitures quotidiennes",
+      "commandes groupees",
+      "livraison sites multiples"
+    ]
   }
 }

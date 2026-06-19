@@ -313,4 +313,73 @@ describe("LCP-E -- Invariants de securite + normalisation accent", () => {
   });
 });
 
+// -- LCP-F : Multi-profils (GD-046) -- 3 profils dans profiles.json --
+
+describe("LCP-F -- Multi-profils locaux GD-046 : Informatique + Fournitures Bureau", () => {
+
+  test("LCP-28: le profil TEST PROD - Informatique est present dans profiles.json", () => {
+    const p = JSON.parse(fs.readFileSync(PROFILES_PATH, "utf8")) as LocalProfiles;
+    expect(p).toHaveProperty("TEST PROD - Informatique");
+  });
+
+  test("LCP-29: le profil TEST PROD - Informatique a les 9 champs obligatoires", () => {
+    const p     = JSON.parse(fs.readFileSync(PROFILES_PATH, "utf8")) as LocalProfiles;
+    const entry = p["TEST PROD - Informatique"]!;
+    for (const k of ["business_profile","technical_profile","profile_label",
+                     "secteurs","types_prestation","organismes_cibles",
+                     "exclusions_metier","produits","specifications"]) {
+      expect(entry).toHaveProperty(k);
+    }
+  });
+
+  test("LCP-30: le profil TEST PROD - Fournitures Bureau est present dans profiles.json", () => {
+    const p = JSON.parse(fs.readFileSync(PROFILES_PATH, "utf8")) as LocalProfiles;
+    expect(p).toHaveProperty("TEST PROD - Fournitures Bureau");
+  });
+
+  test("LCP-31: le profil TEST PROD - Fournitures Bureau a les 9 champs obligatoires", () => {
+    const p     = JSON.parse(fs.readFileSync(PROFILES_PATH, "utf8")) as LocalProfiles;
+    const entry = p["TEST PROD - Fournitures Bureau"]!;
+    for (const k of ["business_profile","technical_profile","profile_label",
+                     "secteurs","types_prestation","organismes_cibles",
+                     "exclusions_metier","produits","specifications"]) {
+      expect(entry).toHaveProperty(k);
+    }
+  });
+
+  test("LCP-32: mergeLocalProfile applique le profil Informatique", () => {
+    const raw: LocalProfiles = JSON.parse(
+      fs.readFileSync(PROFILES_PATH, "utf8")
+    ) as LocalProfiles;
+    const c = makeClient({ nom: "TEST PROD - Informatique" });
+    const m = mergeLocalProfile(c, raw);
+    expect(m.secteurs).toContain("informatique");
+    expect(Array.isArray(m.secteurs) && (m.secteurs as unknown[]).length).toBeTruthy();
+    expect(m.exclusions_metier).toContain("nettoyage");
+  });
+
+  test("LCP-33: mergeLocalProfile applique le profil Fournitures Bureau", () => {
+    const raw: LocalProfiles = JSON.parse(
+      fs.readFileSync(PROFILES_PATH, "utf8")
+    ) as LocalProfiles;
+    const c = makeClient({ nom: "TEST PROD - Fournitures Bureau" });
+    const m = mergeLocalProfile(c, raw);
+    expect(m.secteurs).toContain("papeterie");
+    expect(Array.isArray(m.produits) && (m.produits as unknown[]).length).toBeTruthy();
+    expect(m.exclusions_metier).toContain("nettoyage");
+  });
+
+  test("LCP-34: les 3 profils sont charges dans l'index (hors _comment)", () => {
+    const raw: LocalProfiles = JSON.parse(
+      fs.readFileSync(PROFILES_PATH, "utf8")
+    ) as LocalProfiles;
+    const idx = buildIndex(raw);
+    expect(Object.keys(idx).length).toBe(3);
+    expect(idx).toHaveProperty(normalizeProfileKey("TEST PROD - Nettoyage Hygiene"));
+    expect(idx).toHaveProperty(normalizeProfileKey("TEST PROD - Informatique"));
+    expect(idx).toHaveProperty(normalizeProfileKey("TEST PROD - Fournitures Bureau"));
+  });
+});
+
+
 export {};
