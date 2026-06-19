@@ -1,0 +1,14 @@
+{
+  "_comment": "Profils clients locaux shadow-only (GD-043). Ne jamais committer de donnees sensibles. Priorite : valeurs Supabase si non vides, sinon fallback ici.",
+  "TEST PROD - Nettoyage Hygiene": {
+    "business_profile": "Nettoyage, hygiene, desinfection, deratisation, desinsectisation pour locaux professionnels et administrations.",
+    "technical_profile": "Produits d entretien, produits de nettoyage, desinfectants, insecticides, prestations de desinfection, deratisation, desinsectisation.",
+    "profile_label": "Nettoyage Hygiene",
+    "secteurs": ["nettoyage", "hygiene", "desinfection", "deratisation", "desinsectisation"],
+    "types_prestation": ["prestations de nettoyage", "desinfection", "deratisation", "desinsectisation", "fourniture de produits d entretien"],
+    "organismes_cibles": ["communes", "administrations", "etablissements publics", "etablissements scolaires", "hopitaux hors materiel medical"],
+    "exclusions_metier": ["materiel medical", "produits pharmaceutiques", "reactifs de laboratoire", "maintenance informatique", "gardiennage", "location de vehicules"],
+    "produits": ["produits d entretien", "produits de nettoyage", "desinfectants", "insecticides", "produits d hygiene"],
+    "specifications": ["locaux", "batiments administratifs", "desinfection de locaux", "traitement nuisibles"]
+  }
+}

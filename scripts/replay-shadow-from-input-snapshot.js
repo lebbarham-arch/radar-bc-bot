@@ -85,6 +85,61 @@ function getClientSignalHints(clientName, signals) {
   });
 }
 
+
+// ── Profils clients locaux (shadow fallback — GD-043) ─────────────────────
+// Charge depuis data/client-profiles/profiles.json si present.
+// Priorite : valeurs Supabase si non vides, sinon fallback local.
+// Shadow-only -- n'affecte jamais scoring, seuils, hints, legacy, prod.
+
+function normalizeProfileKey(s) {
+  if (typeof s !== 'string') return '';
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+var LOCAL_CLIENT_PROFILES_INDEX = null;
+
+(function() {
+  var profPath = path.join(ROOT, 'data', 'client-profiles', 'profiles.json');
+  try {
+    if (fs.existsSync(profPath)) {
+      var raw = JSON.parse(fs.readFileSync(profPath, 'utf8'));
+      LOCAL_CLIENT_PROFILES_INDEX = {};
+      Object.keys(raw).forEach(function(k) {
+        if (k === '_comment') return;
+        LOCAL_CLIENT_PROFILES_INDEX[normalizeProfileKey(k)] = raw[k];
+      });
+      var nb = Object.keys(LOCAL_CLIENT_PROFILES_INDEX).length;
+      console.log('[LocalProfiles] Charges : ' + profPath + ' (' + nb + ' profil(s))');
+    }
+  } catch (_) { /* absent ou invalide -> shadow inchange */ }
+})();
+
+function mergeLocalProfile(c) {
+  if (!LOCAL_CLIENT_PROFILES_INDEX) return c;
+  var nom = c.nom || c.id || '';
+  var local = LOCAL_CLIENT_PROFILES_INDEX[normalizeProfileKey(nom)] || null;
+  if (!local) return c;
+  function arr(sv, lv) { return Array.isArray(sv) && sv.length ? sv : (Array.isArray(lv) ? lv : []); }
+  function str(sv, lv) { return (typeof sv === 'string' && sv.trim()) ? sv : (typeof lv === 'string' ? lv : ''); }
+  return Object.assign({}, c, {
+    business_profile:     str(c.business_profile,     local.business_profile),
+    technical_profile:    str(c.technical_profile,    local.technical_profile),
+    organization_profile: str(c.organization_profile, local.organization_profile),
+    profile_label:        str(c.profile_label,        local.profile_label),
+    secteurs:             arr(c.secteurs,             local.secteurs),
+    types_prestation:     arr(c.types_prestation,     local.types_prestation),
+    organismes_cibles:    arr(c.organismes_cibles,    local.organismes_cibles),
+    exclusions_metier:    arr(c.exclusions_metier,    local.exclusions_metier),
+    produits:             arr(c.produits,             local.produits),
+    specifications:       arr(c.specifications,       local.specifications),
+  });
+}
+
 // ── Résoudre le chemin du snapshot ────────────────────────────────────────────
 var snapArg = process.argv.slice(2).find(function(a) {
   return !a.startsWith("--") && (a.includes(".jsonl") || a.includes("bc-input"));
@@ -843,6 +898,7 @@ function loadClientsFromSupabase() {
               });
             })
             .map(function(c) {
+              c = mergeLocalProfile(c); // GD-043 shadow fallback
               var pack   = c.pack || "starter";
               var limits = PACK_LIMITS[pack] || PACK_LIMITS.starter;
               var allCr  = (c.criteres || []).filter(function(cr) {
