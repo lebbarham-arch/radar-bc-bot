@@ -295,16 +295,55 @@ if ($ReviewCsv)  { Write-Host "  Review CSV    : data\shadow\$($ReviewCsv.Name)"
 if ($AutoCsv)    { Write-Host "  Auto CSV      : data\shadow\$($AutoCsv.Name)"    -ForegroundColor White }
 if ($CompJson)   { Write-Host "  Legacy/Clean  : data\shadow\$($CompJson.Name)"   -ForegroundColor White }
 
-# Metriques extraites de la sortie analyze
-$AllOut = $AnalyzeOutput -join "`n"
+# Metriques extraites directement du rapport shadow JSON (lecture robuste)
+$LegacyCount = "n/a"
+$CleanCount  = "n/a"
+$LegacyOnly  = "n/a"
+$CleanOnly   = "n/a"
+$FpRate      = "n/a"
+$AutoCands   = "n/a"
+$ReviewCands = "n/a"
 
-$LegacyCount = if ($AllOut -match "total_legacy_matches['""\s:]+(\d+)") { $Matches[1] } else { "?" }
-$CleanCount  = if ($AllOut -match "total_clean_matches['""\s:]+(\d+)")  { $Matches[1] } else { "?" }
-$LegacyOnly  = if ($AllOut -match "total_legacy_only['""\s:]+(\d+)")    { $Matches[1] } else { "?" }
-$CleanOnly   = if ($AllOut -match "total_clean_only['""\s:]+(\d+)")     { $Matches[1] } else { "?" }
-$AutoCands   = if ($AllOut -match "clean_auto_notify.*?:\s*(\d+)")      { $Matches[1] } else { "?" }
-$ReviewCands = if ($AllOut -match "clean_review_candidates.*?:\s*(\d+)") { $Matches[1] } else { "?" }
-$FpRate      = if ($AllOut -match "fp_rate_pct['""\s:]+(\d+)")          { $Matches[1] } else { "?" }
+try {
+    $ReportRaw  = Get-Content -Path $ReportPath -Raw -Encoding UTF8
+    $ReportData = $ReportRaw | ConvertFrom-Json
+    $Sum        = $ReportData.summary
+    if ($null -ne $Sum) {
+        if ($null -ne $Sum.total_legacy_matches) { $LegacyCount = [string]$Sum.total_legacy_matches }
+        if ($null -ne $Sum.total_clean_matches)  { $CleanCount  = [string]$Sum.total_clean_matches  }
+        if ($null -ne $Sum.total_legacy_only)    { $LegacyOnly  = [string]$Sum.total_legacy_only    }
+        if ($null -ne $Sum.total_clean_only)     { $CleanOnly   = [string]$Sum.total_clean_only     }
+    }
+    $Clients = $ReportData.clients
+    if ($null -ne $Clients) {
+        $AutoSum = 0
+        $RevSum  = 0
+        $FpList  = @()
+        foreach ($Cl in $Clients) {
+            # clean_auto_notify_candidates : nombre direct
+            if ($null -ne $Cl.clean_auto_notify_candidates) {
+                $AutoSum += [int]$Cl.clean_auto_notify_candidates
+            }
+            # clean_review_candidates : peut etre un tableau ou un nombre
+            $RevVal = $Cl.clean_review_candidates
+            if ($RevVal -is [System.Array]) {
+                $RevSum += $RevVal.Count
+            } elseif ($null -ne $RevVal) {
+                $RevSum += [int]$RevVal
+            }
+            # fp_rate_pct : moyenne si plusieurs clients
+            if ($null -ne $Cl.fp_rate_pct) { $FpList += [int]$Cl.fp_rate_pct }
+        }
+        $AutoCands   = [string]$AutoSum
+        $ReviewCands = [string]$RevSum
+        if ($FpList.Count -gt 0) {
+            $FpAvg = [math]::Round(($FpList | Measure-Object -Average).Average)
+            $FpRate = [string]$FpAvg
+        }
+    }
+} catch {
+    Write-Warn "Lecture metriques JSON echouee : $_"
+}
 
 Write-Host ""
 Write-Host "  -- Metriques -------------------------------------------" -ForegroundColor DarkCyan

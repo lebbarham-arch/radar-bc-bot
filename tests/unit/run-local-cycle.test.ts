@@ -285,6 +285,48 @@ describe("RLC-G -- Encodage ASCII strict (pas de caracteres non-ASCII)", () => {
   });
 });
 
+// --- RLC-I -- Metriques depuis JSON (ConvertFrom-Json) ---
+
+describe("RLC-I -- Metriques du resume extraites depuis le rapport JSON", () => {
+
+  test("RLC-38: le script utilise ConvertFrom-Json pour lire le rapport shadow", () => {
+    expect(has("ConvertFrom-Json")).toBe(true);
+  });
+
+  test("RLC-39: les cles JSON attendues sont referencees (summary + clients)", () => {
+    expect(has("summary")).toBe(true);
+    expect(has("total_legacy_matches")).toBe(true);
+    expect(has("total_clean_matches")).toBe(true);
+    expect(has("total_legacy_only")).toBe(true);
+    expect(has("total_clean_only")).toBe(true);
+    expect(has("fp_rate_pct")).toBe(true);
+    expect(has("clean_auto_notify_candidates")).toBe(true);
+    expect(has("clean_review_candidates")).toBe(true);
+  });
+
+  test("RLC-40: fallback n/a si cle absente (pas de '?')", () => {
+    // Le script ne doit plus utiliser "?" comme valeur par defaut
+    // Les fallbacks doivent etre "n/a"
+    const metricBlock = PS1_CODE.slice(
+      PS1_CODE.indexOf("Metriques extraites directement"),
+      PS1_CODE.indexOf("git status --short (fin de cycle)")
+    );
+    expect(metricBlock.includes('"n/a"')).toBe(true);
+    // L'ancienne valeur "?" ne doit plus etre utilisee comme fallback
+    expect(metricBlock.includes('else { "?" }')).toBe(false);
+  });
+
+  test("RLC-41: la lecture est dans un bloc try/catch (pas de plantage si JSON invalide)", () => {
+    const tryPos   = PS1_SRC.lastIndexOf("try {");
+    const catchPos = PS1_SRC.lastIndexOf("} catch {");
+    expect(tryPos).toBeGreaterThan(-1);
+    expect(catchPos).toBeGreaterThan(tryPos);
+    // Le catch doit appeler Write-Warn
+    const catchBlock = PS1_SRC.slice(catchPos, catchPos + 200);
+    expect(catchBlock).toMatch(/Write-Warn/);
+  });
+});
+
 // --- RLC-H -- Parsing PowerShell reel ---
 
 describe("RLC-H -- Parsing PowerShell reel (si powershell disponible)", () => {
@@ -305,9 +347,9 @@ describe("RLC-H -- Parsing PowerShell reel (si powershell disponible)", () => {
     }
     const ps1PathFwd = PS1_PATH.replace(/\\/g, "/");
     const parseCmd = [
-      "$t=$null;$e=$null;",
-      "[System.Management.Automation.Language.Parser]::ParseFile('" + ps1PathFwd + "',[ref]$t,[ref]$e) | Out-Null;",
-      "if ($e.Count -gt 0) { $e | ForEach-Object { Write-Host $_.Message }; exit 1 }",
+      "=;=;",
+      "[System.Management.Automation.Language.Parser]::ParseFile('" + ps1PathFwd + "',[ref],[ref]) | Out-Null;",
+      "if (.Count -gt 0) {  | ForEach-Object { Write-Host /sessions/dazzling-relaxed-wozniak/mnt/projet_claude/radar-bc-bot-clean-2.Message }; exit 1 }",
       "else { Write-Host 'PS1 parse OK' }",
     ].join(" ");
     const result = spawnSync(ps, [
