@@ -1,35 +1,37 @@
 /**
- * Tests structurels — scripts\run-local-snapshot-review-cycle.ps1
+ * Tests structurels -- scripts\run-local-snapshot-review-cycle.ps1
  *
  * Pourquoi des tests Jest sur un script PowerShell ?
  * --------------------------------------------------
- * Jest ne peut pas exécuter du PS1 directement (pas de runtime PowerShell
+ * Jest ne peut pas executer du PS1 directement (pas de runtime PowerShell
  * dans le sandbox Linux/Node). Ces tests lisent le script comme texte et
- * vérifient ses INVARIANTS DE SÉCURITÉ et sa structure, de la même façon
- * que les tests SO-* vérifient radar-bc-bot.js comme texte.
+ * verifient ses INVARIANTS DE SECURITE et sa structure, de la meme facon
+ * que les tests SO-* verifient radar-bc-bot.js comme texte.
  *
- * Ce qui est testé :
- *   RLC-A  Sécurité interdite : fly, git add, git commit, git push absents
+ * Ce qui est teste :
+ *   RLC-A  Securite interdite : fly, git add, git commit, git push absents
  *   RLC-B  Variables interdites : RADAR_BC_MATCH_SHADOW, RADAR_BC_SHADOW_ACTIVE absentes
- *   RLC-C  Gardes de démarrage : check git status + check port 3000
- *   RLC-D  Variables obligatoires : RADAR_BC_SNAPSHOT_ONLY définie et nettoyée
- *   RLC-E  Structure du cycle : 6 étapes, nœuds clés présents
- *   RLC-F  Nettoyage post-scan : Remove-Item Env:\RADAR_BC_SNAPSHOT_ONLY dans finally
+ *   RLC-C  Gardes de demarrage : check git status + check port 3000
+ *   RLC-D  Variables obligatoires : RADAR_BC_SNAPSHOT_ONLY definie et nettoyee
+ *   RLC-E  Structure du cycle : 6 etapes, noeuds cles presents
+ *   RLC-F  Nettoyage post-scan et garanties de securite
+ *   RLC-G  Encodage ASCII strict (pas de caracteres corrompus)
+ *   RLC-H  Parsing PowerShell reel (si powershell.exe disponible)
  *
  * Nomenclature : RLC-N (Run Local Cycle)
  */
 
-import * as fs   from "fs";
-import * as path from "path";
+import * as fs       from "fs";
+import * as path     from "path";
+import { spawnSync } from "child_process";
 
-const PS1_SRC = fs.readFileSync(
-  path.join(__dirname, "../../scripts/run-local-snapshot-review-cycle.ps1"),
-  "utf8",
-);
+const PS1_PATH = path.join(__dirname, "../../scripts/run-local-snapshot-review-cycle.ps1");
+
+const PS1_SRC = fs.readFileSync(PS1_PATH, "utf8");
 
 /**
  * Source PS1 sans les blocs commentaires <# ... #> (synopsis/description).
- * Les tests de sécurité sur les commandes interdites portent sur le CODE,
+ * Les tests de securite sur les commandes interdites portent sur le CODE,
  * pas sur la documentation qui cite ces commandes pour les interdire.
  */
 const PS1_CODE = PS1_SRC.replace(/<#[\s\S]*?#>/g, "");
@@ -51,12 +53,11 @@ function hasCodeI(needle: string): boolean {
   return PS1_CODE.toLowerCase().includes(needle.toLowerCase());
 }
 
-// ─── RLC-A — Commandes interdites ────────────────────────────────────────────
+// ─── RLC-A -- Commandes interdites ───────────────────────────────────────────
 
-describe("RLC-A — Commandes interdites absentes du script", () => {
+describe("RLC-A -- Commandes interdites absentes du script", () => {
 
-  test("RLC-1: le code PS1 ne contient pas d'appel à fly (hors documentation)", () => {
-    // PS1_CODE = source sans les blocs <# ... #> où fly est cité pour l'interdire
+  test("RLC-1: le code PS1 ne contient pas d'appel a fly (hors documentation)", () => {
     const lines = PS1_CODE.split("\n").filter(l => !l.trim().startsWith("#"));
     const flyLines = lines.filter(l => /\bfly\b/.test(l));
     expect(flyLines).toHaveLength(0);
@@ -79,153 +80,145 @@ describe("RLC-A — Commandes interdites absentes du script", () => {
   });
 });
 
-// ─── RLC-B — Variables prod interdites ───────────────────────────────────────
+// ─── RLC-B -- Variables prod interdites ──────────────────────────────────────
 
-describe("RLC-B — Variables prod interdites non définies", () => {
+describe("RLC-B -- Variables prod interdites non definies", () => {
 
-  test("RLC-6: RADAR_BC_MATCH_SHADOW n'est jamais assigné (=)", () => {
-    // On tolère sa mention dans un Remove-Item mais pas son assignation
+  test("RLC-6: RADAR_BC_MATCH_SHADOW n'est jamais assigne (=)", () => {
     const assignLines = PS1_SRC.split("\n").filter(l =>
       /RADAR_BC_MATCH_SHADOW\s*=\s*["']?1["']?/.test(l)
     );
     expect(assignLines).toHaveLength(0);
   });
 
-  test("RLC-7: RADAR_BC_SHADOW_ACTIVE n'est jamais assigné (=)", () => {
+  test("RLC-7: RADAR_BC_SHADOW_ACTIVE n'est jamais assigne (=)", () => {
     const assignLines = PS1_SRC.split("\n").filter(l =>
       /RADAR_BC_SHADOW_ACTIVE\s*=\s*["']?1["']?/.test(l)
     );
     expect(assignLines).toHaveLength(0);
   });
 
-  test("RLC-8: RADAR_BC_MATCH_SHADOW est explicitement supprimé (Remove-Item)", () => {
-    // La bonne pratique : Remove-Item pour éviter tout héritage d'env parent
+  test("RLC-8: RADAR_BC_MATCH_SHADOW est explicitement supprime (Remove-Item)", () => {
     expect(has("RADAR_BC_MATCH_SHADOW")).toBe(true);
     expect(PS1_SRC).toMatch(/Remove-Item.*RADAR_BC_MATCH_SHADOW/);
   });
 
-  test("RLC-9: RADAR_BC_SHADOW_ACTIVE est explicitement supprimé (Remove-Item)", () => {
+  test("RLC-9: RADAR_BC_SHADOW_ACTIVE est explicitement supprime (Remove-Item)", () => {
     expect(has("RADAR_BC_SHADOW_ACTIVE")).toBe(true);
     expect(PS1_SRC).toMatch(/Remove-Item.*RADAR_BC_SHADOW_ACTIVE/);
   });
 });
 
-// ─── RLC-C — Gardes de démarrage ─────────────────────────────────────────────
+// ─── RLC-C -- Gardes de demarrage ────────────────────────────────────────────
 
-describe("RLC-C — Gardes obligatoires de démarrage", () => {
+describe("RLC-C -- Gardes obligatoires de demarrage", () => {
 
-  test("RLC-10: git status --short est présent (check git)", () => {
+  test("RLC-10: git status --short est present (check git)", () => {
     expect(has("git status --short")).toBe(true);
   });
 
   test("RLC-11: le check git status est conditionnel (-AllowDirty)", () => {
     expect(has("AllowDirty")).toBe(true);
-    // La condition doit précéder le Write-Fail lié au git dirty
-    const gitCheckPos    = PS1_SRC.indexOf("git status --short");
-    const allowDirtyPos  = PS1_SRC.indexOf("AllowDirty");
+    const gitCheckPos   = PS1_SRC.indexOf("git status --short");
+    const allowDirtyPos = PS1_SRC.indexOf("AllowDirty");
     expect(gitCheckPos).toBeGreaterThan(-1);
     expect(allowDirtyPos).toBeGreaterThan(-1);
   });
 
-  test("RLC-12: le check port 3000 est présent", () => {
+  test("RLC-12: le check port 3000 est present", () => {
     expect(has("3000")).toBe(true);
-    // Soit via Test-NetConnection soit via TcpClient
     const hasTcp = has("Test-NetConnection") || has("TcpClient");
     expect(hasTcp).toBe(true);
   });
 
-  test("RLC-13: le code PS1 échoue (Write-Fail) si port occupé", () => {
-    // $PortOccupe est la variable de résultat du check — Write-Fail doit la suivre
+  test("RLC-13: le code PS1 echoue (Write-Fail) si port occupe", () => {
     const portVarPos = PS1_CODE.indexOf("$PortOccupe");
     expect(portVarPos).toBeGreaterThan(-1);
-    // Write-Fail peut être jusqu'à 1500 chars plus loin (bloc TcpClient + if)
     const failAfter = PS1_CODE.slice(portVarPos, portVarPos + 1500);
     expect(failAfter).toMatch(/Write-Fail/);
   });
 
-  test("RLC-14: le paramètre -SkipScan est déclaré", () => {
+  test("RLC-14: le parametre -SkipScan est declare", () => {
     expect(has("SkipScan")).toBe(true);
   });
 });
 
-// ─── RLC-D — Variable SNAPSHOT_ONLY correctement gérée ───────────────────────
+// ─── RLC-D -- Variable SNAPSHOT_ONLY correctement geree ──────────────────────
 
-describe("RLC-D — RADAR_BC_SNAPSHOT_ONLY définie et nettoyée", () => {
+describe("RLC-D -- RADAR_BC_SNAPSHOT_ONLY definie et nettoyee", () => {
 
-  test("RLC-15: RADAR_BC_SNAPSHOT_ONLY est assigné à '1' pour le scan", () => {
+  test("RLC-15: RADAR_BC_SNAPSHOT_ONLY est assigne a '1' pour le scan", () => {
     expect(PS1_SRC).toMatch(/RADAR_BC_SNAPSHOT_ONLY\s*=\s*["']?1["']?/);
   });
 
-  test("RLC-16: RADAR_BC_SNAPSHOT_ONLY est supprimé après le scan (Remove-Item)", () => {
+  test("RLC-16: RADAR_BC_SNAPSHOT_ONLY est supprime apres le scan (Remove-Item)", () => {
     expect(PS1_SRC).toMatch(/Remove-Item.*RADAR_BC_SNAPSHOT_ONLY/);
   });
 
   test("RLC-17: la suppression est dans un bloc finally (nettoyage garanti)", () => {
-    const finallyPos  = PS1_SRC.indexOf("finally");
-    const removePos   = PS1_SRC.indexOf("Remove-Item Env:\\RADAR_BC_SNAPSHOT_ONLY");
+    const finallyPos = PS1_SRC.indexOf("finally");
+    const removePos  = PS1_SRC.indexOf("Remove-Item Env:\\RADAR_BC_SNAPSHOT_ONLY");
     expect(finallyPos).toBeGreaterThan(-1);
     expect(removePos).toBeGreaterThan(-1);
-    // Le Remove-Item doit être après le finally (dans le bloc finally)
     expect(removePos).toBeGreaterThan(finallyPos);
   });
 
-  test("RLC-18: node radar-bc-bot.js est lancé avec Tee-Object (log + console)", () => {
+  test("RLC-18: node radar-bc-bot.js est lance avec Tee-Object (log + console)", () => {
     expect(has("node radar-bc-bot.js")).toBe(true);
     expect(has("Tee-Object")).toBe(true);
   });
 });
 
-// ─── RLC-E — Structure du cycle ───────────────────────────────────────────────
+// ─── RLC-E -- Structure du cycle ─────────────────────────────────────────────
 
-describe("RLC-E — Structure des 6 étapes du cycle", () => {
+describe("RLC-E -- Structure des 6 etapes du cycle", () => {
 
-  test("RLC-19: étape 1 — git status présente", () => {
-    expect(PS1_SRC).toMatch(/Étape 1.*git status/i);
+  test("RLC-19: etape 1 -- git status presente (ASCII sans accent)", () => {
+    // Script en ASCII strict : Etape sans accent
+    expect(PS1_SRC).toMatch(/Etape 1.*git status/i);
   });
 
-  test("RLC-20: étape 2 — vérification port présente", () => {
-    expect(PS1_SRC).toMatch(/Étape 2.*port/i);
+  test("RLC-20: etape 2 -- verification port presente", () => {
+    expect(PS1_SRC).toMatch(/Etape 2.*port/i);
   });
 
-  test("RLC-21: étape 3 — scan snapshot présente", () => {
-    expect(PS1_SRC).toMatch(/Étape 3.*[Ss]napshot/);
+  test("RLC-21: etape 3 -- scan snapshot presente", () => {
+    expect(PS1_SRC).toMatch(/Etape 3.*[Ss]napshot/);
   });
 
-  test("RLC-22: étape 4 — identification dernier snapshot présente", () => {
-    expect(PS1_SRC).toMatch(/Étape 4/);
+  test("RLC-22: etape 4 -- identification dernier snapshot presente", () => {
+    expect(PS1_SRC).toMatch(/Etape 4/);
     expect(has("bc-input-*.jsonl")).toBe(true);
   });
 
-  test("RLC-23: étape 5 — replay shadow présente", () => {
-    expect(PS1_SRC).toMatch(/Étape 5.*[Rr]eplay/);
+  test("RLC-23: etape 5 -- replay shadow presente", () => {
+    expect(PS1_SRC).toMatch(/Etape 5.*[Rr]eplay/);
     expect(has("replay-shadow-from-input-snapshot.js")).toBe(true);
   });
 
-  test("RLC-24: étape 6 — analyse shadow présente", () => {
-    expect(PS1_SRC).toMatch(/Étape 6.*[Aa]nalys/);
+  test("RLC-24: etape 6 -- analyse shadow presente", () => {
+    expect(PS1_SRC).toMatch(/Etape 6.*[Aa]nalys/);
     expect(has("analyze-shadow-report.js")).toBe(true);
   });
 
-  test("RLC-25: --export-review-csv est passé à analyze-shadow-report.js", () => {
+  test("RLC-25: --export-review-csv est passe a analyze-shadow-report.js", () => {
     expect(has("--export-review-csv")).toBe(true);
   });
 
-  test("RLC-26: --review-reason-hints est passé à analyze-shadow-report.js si hints présents", () => {
+  test("RLC-26: --review-reason-hints est passe a analyze-shadow-report.js si hints presents", () => {
     expect(has("--review-reason-hints")).toBe(true);
     expect(has("review-reason-hint-candidates-approved-")).toBe(true);
   });
 });
 
-// ─── RLC-F — Nettoyage et sécurité finale ────────────────────────────────────
+// ─── RLC-F -- Nettoyage et securite finale ───────────────────────────────────
 
-describe("RLC-F — Nettoyage et garanties de sécurité", () => {
+describe("RLC-F -- Nettoyage et garanties de securite", () => {
 
-  test("RLC-27: git status --short est affiché en fin de cycle", () => {
-    // Doit apparaître au moins 2 fois : check début + affichage fin
+  test("RLC-27: git status --short est affiche en fin de cycle", () => {
     const occurrences = (PS1_SRC.match(/git status --short/g) || []).length;
     expect(occurrences).toBeGreaterThanOrEqual(2);
   });
-
 
   test("RLC-28: le script affiche aucun commit et aucun push en conclusion", () => {
     expect(hasCodeI("aucun commit")).toBe(true);
@@ -247,7 +240,88 @@ describe("RLC-F — Nettoyage et garanties de sécurité", () => {
 
   test("RLC-32: -ClientFilter est declare avec type string dans param()", () => {
     expect(has("[string]$ClientFilter")).toBe(true);
-   });
+  });
+});
+
+// ─── RLC-G -- Encodage ASCII strict ──────────────────────────────────────────
+
+describe("RLC-G -- Encodage ASCII strict (pas de caracteres non-ASCII)", () => {
+
+  test("RLC-33: le fichier PS1 ne contient aucun octet non-ASCII (> 0x7F)", () => {
+    const rawBytes = fs.readFileSync(PS1_PATH);
+    const nonAsciiOffsets: number[] = [];
+    for (let i = 0; i < rawBytes.length; i++) {
+      if ((rawBytes[i] ?? 0) > 0x7f) { nonAsciiOffsets.push(i); }
+    }
+    if (nonAsciiOffsets.length > 0) {
+      const samples = nonAsciiOffsets.slice(0, 5).map(idx => {
+        const byte = rawBytes[idx] ?? 0;
+        const ctx  = rawBytes.slice(Math.max(0, idx - 10), idx + 10).toString("latin1");
+        return `offset ${idx} (0x${byte.toString(16)}): ...${ctx}...`;
+      });
+      throw new Error(
+        `${nonAsciiOffsets.length} octet(s) non-ASCII detectes :\n${samples.join("\n")}`
+      );
+    }
+    expect(nonAsciiOffsets).toHaveLength(0);
+  });
+
+  test("RLC-34: pas de sequences de corruption UTF-8 visibles (a-tilde, A-tilde)", () => {
+    const rawLatin = fs.readFileSync(PS1_PATH).toString("latin1");
+    expect(rawLatin.includes("\xE2")).toBe(false);
+    expect(rawLatin.includes("\xC3")).toBe(false);
+  });
+
+  test("RLC-35: pas de fleche Unicode (U+2192) -- seulement la fleche ASCII ->", () => {
+    const arrowU = "\u2192";
+    expect(PS1_SRC.includes(arrowU)).toBe(false);
+    expect(has("->")).toBe(true);
+  });
+
+  test("RLC-36: les helpers Write-Ok/Write-Warn/Write-Fail utilisent [OK]/[WARN]/[FAIL] ASCII", () => {
+    expect(has("[OK]")).toBe(true);
+    expect(has("[WARN]")).toBe(true);
+    expect(has("[FAIL]")).toBe(true);
+  });
+});
+
+// --- RLC-H -- Parsing PowerShell reel ---
+
+describe("RLC-H -- Parsing PowerShell reel (si powershell disponible)", () => {
+
+  test("RLC-37: le script parse sans erreur via powershell.exe ou pwsh", () => {
+    const candidates = ["powershell.exe", "pwsh", "powershell"];
+    let ps: string | null = null;
+    for (const bin of candidates) {
+      const probe = spawnSync(bin, ["-NoProfile", "-Command", "exit 0"], {
+        timeout: 5000,
+        stdio: "pipe",
+      });
+      if (probe.status === 0) { ps = bin; break; }
+    }
+    if (!ps) {
+      console.log("  [SKIP RLC-37] powershell/pwsh non disponible -- test de parsing ignore");
+      return;
+    }
+    const ps1PathFwd = PS1_PATH.replace(/\\/g, "/");
+    const parseCmd = [
+      "$t=$null;$e=$null;",
+      "[System.Management.Automation.Language.Parser]::ParseFile('" + ps1PathFwd + "',[ref]$t,[ref]$e) | Out-Null;",
+      "if ($e.Count -gt 0) { $e | ForEach-Object { Write-Host $_.Message }; exit 1 }",
+      "else { Write-Host 'PS1 parse OK' }",
+    ].join(" ");
+    const result = spawnSync(ps, [
+      "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", parseCmd,
+    ], { timeout: 15000, encoding: "utf8" });
+    const stdout = (result.stdout || "").trim();
+    const stderr = (result.stderr || "").trim();
+    if (result.status !== 0) {
+      throw new Error(
+        "Parsing PowerShell echoue (exit " + result.status + "):\nSTDOUT: " + stdout + "\nSTDERR: " + stderr
+      );
+    }
+    expect(stdout).toMatch(/PS1 parse OK/);
+  });
 });
 
 export {};
