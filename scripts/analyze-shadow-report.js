@@ -384,12 +384,21 @@ function analyzeClient(c) {
       ai_review_generated_at: expl.ai_review_generated_at,
     });
   });
-  // GD-035 : Enrichir les candidats review avec les insights contextuels
+  // GD-035 / GD-040 : Enrichir les candidats review avec les insights contextuels
+  // GD-040 : profil structurel complet transmis (shadow reporting uniquement)
   var ctxTs = new Date().toISOString();
   revCands = revCands.map(function(e) {
     var clientProfile = {
-      client_name:      c.client_name || "",
-      business_profile: c.business_profile || c.profile_label || "",
+      client_name:       c.client_name || "",
+      business_profile:  c.business_profile || c.profile_label || "",
+      // Profil structurel complet (GD-040) -- utilise uniquement pour le diagnostic,
+      // jamais pour modifier le score, les seuils ou le matching.
+      secteurs:          Array.isArray(c.secteurs)          ? c.secteurs          : [],
+      types_prestation:  Array.isArray(c.types_prestation)  ? c.types_prestation  : [],
+      organismes_cibles: Array.isArray(c.organismes_cibles) ? c.organismes_cibles : [],
+      exclusions_metier: Array.isArray(c.exclusions_metier) ? c.exclusions_metier : [],
+      produits:          Array.isArray(c.produits)          ? c.produits          : [],
+      specifications:    Array.isArray(c.specifications)    ? c.specifications    : [],
     };
     var ctx = contextualInsights.analyzeReviewContext(e, clientProfile, "", {
       generatedAt: ctxTs,
@@ -407,6 +416,13 @@ function analyzeClient(c) {
       ctx_why_it_may_be_wrong:        ctx.why_it_may_be_wrong,
       ctx_context_model:              ctx.context_model,
       ctx_context_generated_at:       ctx.context_generated_at,
+      // Diagnostic profil structurel (GD-040 -- shadow reporting only)
+      ctx_client_sectors:             ctx.client_sectors,
+      ctx_client_service_types:       ctx.client_service_types,
+      ctx_client_target_orgs:         ctx.client_target_orgs,
+      ctx_client_exclusions:          ctx.client_exclusions,
+      ctx_client_products:            ctx.client_products,
+      ctx_client_specs:               ctx.client_specs,
     });
   });
   // GD-036 : Enrichir les candidats review avec les raisons humaines normalisées
@@ -498,6 +514,9 @@ function buildReviewCsv(candidates) {
               "human_review_reason","human_review_reason_label",
               "human_review_comment","allowed_review_reason_codes",
               "rrh_applied","rrh_action","rrh_ids","rrh_explanation",
+              // Diagnostic profil structurel (GD-040 -- shadow reporting only)
+              "client_sectors","client_service_types","client_target_orgs",
+              "client_exclusions","client_products","client_specs",
               "decision"];
   var lines = [BOM + COLS.join(SEP)];
   candidates.forEach(function(e) {
@@ -533,6 +552,13 @@ function buildReviewCsv(candidates) {
       csvCell(e.review_reason_hint_action || ""),
       csvCell(Array.isArray(e.review_reason_hint_ids) ? e.review_reason_hint_ids.join("|") : (e.review_reason_hint_ids || "")),
       csvCell((e.review_reason_hint_explanation || "").replace(/[\r\n]+/g, " ").trim()),
+      // Diagnostic profil structurel (GD-040)
+      csvCell(Array.isArray(e.ctx_client_sectors)       ? e.ctx_client_sectors.join(", ")       : ""),
+      csvCell(Array.isArray(e.ctx_client_service_types) ? e.ctx_client_service_types.join(", ") : ""),
+      csvCell(Array.isArray(e.ctx_client_target_orgs)   ? e.ctx_client_target_orgs.join(", ")   : ""),
+      csvCell(Array.isArray(e.ctx_client_exclusions)    ? e.ctx_client_exclusions.join(", ")    : ""),
+      csvCell(Array.isArray(e.ctx_client_products)      ? e.ctx_client_products.join(", ")      : ""),
+      csvCell(Array.isArray(e.ctx_client_specs)         ? e.ctx_client_specs.join(", ")         : ""),
       csvCell(""),   // decision : vide pour saisie humaine
     ];
     lines.push(row.join(SEP));

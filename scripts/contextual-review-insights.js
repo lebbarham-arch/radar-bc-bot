@@ -170,11 +170,22 @@ function detectFamiliesInText(text) {
 // ── Détection du profil client ────────────────────────────────────────────────
 function detectClientProfileFamilies(clientProfile) {
   if (!clientProfile) return {};
-  // Utiliser valueToSearchText pour gérer string, array, objet imbriqué
+  // Utiliser valueToSearchText pour gérer string, array, objet imbriqué.
+  // GD-040 : les champs structurés (secteurs, types_prestation, produits,
+  // specifications, organismes_cibles) contribuent au profil positif.
+  // exclusions_metier est délibérément absent : il s'agit de termes à éviter,
+  // pas de domaines d'intérêt -- les inclure fausserait l'alignement.
   var profileText = [
     valueToSearchText(clientProfile.client_name),
     valueToSearchText(clientProfile.business_profile),
     valueToSearchText(clientProfile.technical_profile),
+    // Champs structurés explicites (GD-040)
+    valueToSearchText(clientProfile.secteurs),
+    valueToSearchText(clientProfile.types_prestation),
+    valueToSearchText(clientProfile.organismes_cibles),
+    valueToSearchText(clientProfile.produits),
+    valueToSearchText(clientProfile.specifications),
+    // Champs legacy
     valueToSearchText(clientProfile.criteres),
     valueToSearchText(clientProfile.ai_inclusions),
     valueToSearchText(clientProfile.exclusions),
@@ -322,6 +333,16 @@ function analyzeReviewContext(entry, clientProfile, decision, opts) {
 
   var hintBlock = !!entry.hint_block_auto;
 
+  // GD-040 : extraction des champs structurés du profil client (diagnostic uniquement)
+  // Ces champs ne modifient jamais le score, les seuils, le matching ou auto_notify.
+  var cp = clientProfile || {};
+  var clientSectors     = Array.isArray(cp.secteurs)          ? cp.secteurs.slice()          : [];
+  var clientServiceTypes = Array.isArray(cp.types_prestation) ? cp.types_prestation.slice()  : [];
+  var clientTargetOrgs  = Array.isArray(cp.organismes_cibles) ? cp.organismes_cibles.slice() : [];
+  var clientExclusions  = Array.isArray(cp.exclusions_metier) ? cp.exclusions_metier.slice() : [];
+  var clientProducts    = Array.isArray(cp.produits)          ? cp.produits.slice()          : [];
+  var clientSpecs       = Array.isArray(cp.specifications)    ? cp.specifications.slice()    : [];
+
   // Détection des familles de contexte
   var bcFamilies      = detectFamiliesInText(bcText);
   var profileFamilies = detectClientProfileFamilies(clientProfile);
@@ -422,12 +443,19 @@ function analyzeReviewContext(entry, clientProfile, decision, opts) {
     context_confidence:        contextConfidence,
     learnable_context_hint:    learnableHint,
     should_create_context_hint: shouldCreateHint,
+    // Diagnostic profil structurel (GD-040 -- shadow reporting only, jamais dans le scoring)
+    client_sectors:             clientSectors,
+    client_service_types:       clientServiceTypes,
+    client_target_orgs:         clientTargetOrgs,
+    client_exclusions:          clientExclusions,
+    client_products:            clientProducts,
+    client_specs:               clientSpecs,
   };
 }
 
 module.exports = {
   analyzeReviewContext:        analyzeReviewContext,
-  // Exposé pour les tests et la réutilisation
+  // Expose pour les tests et la reutilisation
   detectFamiliesInText:        detectFamiliesInText,
   detectClientProfileFamilies: detectClientProfileFamilies,
   computeProfileAlignment:     computeProfileAlignment,
