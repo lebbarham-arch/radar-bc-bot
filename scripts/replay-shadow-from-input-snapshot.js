@@ -707,6 +707,17 @@ function _computeShadowComparison(client, items, criteres, radarType) {
   return {
     client_id:                  client.id,
     client_name:                clientName,
+    // Profil enrichi (GD-041) -- shadow reporting uniquement, jamais dans le scoring
+    business_profile:     client.business_profile     || "",
+    technical_profile:    client.technical_profile    || "",
+    organization_profile: client.organization_profile || "",
+    profile_label:        client.profile_label        || "",
+    secteurs:             Array.isArray(client.secteurs)          ? client.secteurs          : [],
+    types_prestation:     Array.isArray(client.types_prestation)  ? client.types_prestation  : [],
+    organismes_cibles:    Array.isArray(client.organismes_cibles) ? client.organismes_cibles : [],
+    exclusions_metier:    Array.isArray(client.exclusions_metier) ? client.exclusions_metier : [],
+    produits:             Array.isArray(client.produits)          ? client.produits          : [],
+    specifications:       Array.isArray(client.specifications)    ? client.specifications    : [],
     radar_type:                 radarType,
     total_checked:              items.filter(function(i) { return isEnCours(i); }).length,
     legacy:                     legacyTotal,
@@ -842,6 +853,17 @@ function loadClientsFromSupabase() {
                 nom:      c.nom || c.id,
                 pack:     pack,
                 criteres: allCr.slice(0, limits.maxCriteres),
+                // Profil enrichi (GD-041) -- transport shadow uniquement, jamais dans le scoring
+                business_profile:     c.business_profile     || c.profile_label || "",
+                technical_profile:    c.technical_profile    || "",
+                organization_profile: c.organization_profile || "",
+                profile_label:        c.profile_label        || "",
+                secteurs:             Array.isArray(c.secteurs)          ? c.secteurs          : [],
+                types_prestation:     Array.isArray(c.types_prestation)  ? c.types_prestation  : [],
+                organismes_cibles:    Array.isArray(c.organismes_cibles) ? c.organismes_cibles : [],
+                exclusions_metier:    Array.isArray(c.exclusions_metier) ? c.exclusions_metier : [],
+                produits:             Array.isArray(c.produits)          ? c.produits          : [],
+                specifications:       Array.isArray(c.specifications)    ? c.specifications    : [],
               };
             });
           var nbCriteres = clients.reduce(function(s, c) { return s + c.criteres.length; }, 0);
