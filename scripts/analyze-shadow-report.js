@@ -932,7 +932,9 @@ if (exportReviewCsv) {
     var csvContent = buildReviewCsv(allCsvCands);
     require("fs").writeFileSync(csvFpath, csvContent, "utf8");
     console.log("\n[--export-review-csv] " + allCsvCands.length + " candidat(s) → " + csvFname);
-    console.log("  Colonnes : client;bc_id;score;signal_origin;matched_signals;strength_reason;weak_single_signal;clean_text_excerpt;ai_explanation;ai_confidence;ai_suggested_decision;ctx_profile_alignment;ctx_context_ambiguity;ctx_context_confidence;ctx_positive_context_terms;ctx_negative_context_terms;ctx_learnable_context_hint;ctx_should_create_hint;human_review_reason;human_review_reason_label;human_review_comment;allowed_review_reason_codes;decision");
+    // GD-045 : log dynamique depuis le CSV genere (evite desynchronisation)
+    var csvHeader = csvContent.split("\r\n")[0].replace(/^\uFEFF/, "");
+    console.log("  Colonnes : " + csvHeader);
     console.log("  Chemin   : " + csvFpath);
   }
 }
