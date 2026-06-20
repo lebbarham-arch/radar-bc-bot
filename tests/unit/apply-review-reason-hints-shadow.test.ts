@@ -71,7 +71,8 @@ const AH_SKIP_STATUSES       = ['candidate_pending_human_validation','human_reje
 
 // ── Helpers miroir ──────────────────────────────────────────────────────────
 function normSignal(s: string): string {
-  return String(s || '').trim().toLowerCase();
+  if (!s) return '';
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
 function extractMatchedSignals(entry: ShadowEntry): string[] {
@@ -752,6 +753,124 @@ describe('GD-039 apply-review-reason-hints-shadow — résolution contextuelle (
     const result = applyHintsToEntry(entry, hints);
     expect(result.review_reason_hint_applied).toBe(true);
     expect(result.clean_score).toBe(9);
+  });
+
+  // -- AH-41..AH-47 : normalisation accent dans signalMatches (generique, GD-054)
+
+  // AH-41 : normSignal strip accents et lowercase
+  test('AH-41 - normSignal strip accents et lowercase', () => {
+    expect(normSignal('SIGNAL ÉCOLE TEST')).toBe('signal ecole test');
+    expect(normSignal('signal ecole test')).toBe('signal ecole test');
+    expect(normSignal('SIGNAL ÉCOLE TEST')).toBe(normSignal('signal ecole test'));
+  });
+
+  // AH-42 : normSignal normalise espaces multiples
+  test('AH-42 - normSignal normalise espaces multiples', () => {
+    expect(normSignal('signal  ecole  test')).toBe('signal ecole test');
+    expect(normSignal('  SIGNAL   ECOLE  TEST  ')).toBe('signal ecole test');
+  });
+
+  // AH-43 : signaux differents ne matchent pas
+  test('AH-43 - normSignal : signaux differents restent differents', () => {
+    expect(normSignal('signal alpha')).not.toBe(normSignal('signal beta'));
+    expect(normSignal('nettoyage')).not.toBe(normSignal('desinfection'));
+  });
+
+  // AH-44 : hint applique quand signal entry sans accent matche hint avec accent
+  test('AH-44 - hint applique : signal sans accent matche hint avec accent', () => {
+    const h = makeHint({
+      candidate_id: 'rrhc_sig_001',
+      client_key:   'CLIENT ÉCOLE TEST',
+      signal_key:   'SIGNAL ÉCOLE TEST',
+      context_key:  'context_test',
+      proposed_effect: {
+        action:     'block_auto_and_send_to_review',
+        scope:      'client_signal_context',
+        applies_to: { client_key: 'CLIENT ÉCOLE TEST', signal_key: 'SIGNAL ÉCOLE TEST', context_key: 'context_test' },
+      },
+    });
+    const hints = loadApprovedHints({ candidates: [h] }).approved_hints;
+    expect(hints).toHaveLength(1);
+    const entry = makeEntry({
+      client:          'client ecole test',
+      matched_signals: ['signal ecole test'],
+      ctx_context_key: 'context_test',
+    });
+    const result = applyHintsToEntry(entry, hints);
+    expect(result.review_reason_hint_applied).toBe(true);
+  });
+
+  // AH-45 : hint non applique si contexte different
+  test('AH-45 - hint non applique si contexte different', () => {
+    const h = makeHint({
+      candidate_id: 'rrhc_sig_002',
+      client_key:   'CLIENT ÉCOLE TEST',
+      signal_key:   'SIGNAL ÉCOLE TEST',
+      context_key:  'context_test',
+      proposed_effect: {
+        action:     'block_auto_and_send_to_review',
+        scope:      'client_signal_context',
+        applies_to: { client_key: 'CLIENT ÉCOLE TEST', signal_key: 'SIGNAL ÉCOLE TEST', context_key: 'context_test' },
+      },
+    });
+    const hints = loadApprovedHints({ candidates: [h] }).approved_hints;
+    const entry = makeEntry({
+      client:          'client ecole test',
+      matched_signals: ['signal ecole test'],
+      ctx_context_key: 'other_context',
+    });
+    const result = applyHintsToEntry(entry, hints);
+    expect(result.review_reason_hint_applied).toBeUndefined();
+  });
+
+  // AH-46 : score non modifie par hint via signal accent-matching
+  test('AH-46 - score non modifie par hint via signal accent-matching', () => {
+    const h = makeHint({
+      candidate_id: 'rrhc_sig_003',
+      client_key:   'CLIENT ÉCOLE TEST',
+      signal_key:   'SIGNAL ÉCOLE TEST',
+      context_key:  'context_test',
+      proposed_effect: {
+        action:     'block_auto_and_send_to_review',
+        scope:      'client_signal_context',
+        applies_to: { client_key: 'CLIENT ÉCOLE TEST', signal_key: 'SIGNAL ÉCOLE TEST', context_key: 'context_test' },
+      },
+    });
+    const hints = loadApprovedHints({ candidates: [h] }).approved_hints;
+    const entry = makeEntry({
+      client:          'client ecole test',
+      matched_signals: ['signal ecole test'],
+      ctx_context_key: 'context_test',
+      clean_score:     11,
+    });
+    const result = applyHintsToEntry(entry, hints);
+    expect(result.review_reason_hint_applied).toBe(true);
+    expect(result.clean_score).toBe(11);
+  });
+
+  // AH-47 : auto_notify_candidate jamais mis a true par hint
+  test('AH-47 - auto_notify_candidate jamais true apres hint signal accent', () => {
+    const h = makeHint({
+      candidate_id: 'rrhc_sig_004',
+      client_key:   'CLIENT ÉCOLE TEST',
+      signal_key:   'SIGNAL ÉCOLE TEST',
+      context_key:  'context_test',
+      proposed_effect: {
+        action:     'block_auto_and_send_to_review',
+        scope:      'client_signal_context',
+        applies_to: { client_key: 'CLIENT ÉCOLE TEST', signal_key: 'SIGNAL ÉCOLE TEST', context_key: 'context_test' },
+      },
+    });
+    const hints = loadApprovedHints({ candidates: [h] }).approved_hints;
+    const entry = makeEntry({
+      client:          'client ecole test',
+      matched_signals: ['signal ecole test'],
+      ctx_context_key: 'context_test',
+      auto_notify_candidate: false,
+    });
+    const result = applyHintsToEntry(entry, hints);
+    expect(result.review_reason_hint_applied).toBe(true);
+    expect(result.auto_notify_candidate).not.toBe(true);
   });
 
 });

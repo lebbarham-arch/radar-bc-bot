@@ -74,7 +74,8 @@ var ALLOWED_SCOPES = [
  * Normalise un signal : trim + lowercase.
  */
 function normSignal(s) {
-  return String(s || '').trim().toLowerCase();
+  if (!s) return '';
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
 /**
