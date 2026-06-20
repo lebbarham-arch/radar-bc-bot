@@ -16,6 +16,13 @@
 //   review_source : operator (calibration interne) | client (feedback réel) | system
 //   reviewed_at   : timestamp ISO de l'import
 //
+// Champs contextuels optionnels (GD-058) :
+//   Transportes depuis le CSV si presents -- retrocompatible si absents.
+//   ctx_learnable_context_hint, ctx_negative_context_terms, ctx_positive_context_terms,
+//   ctx_profile_alignment, ctx_context_ambiguity, ctx_context_confidence,
+//   ctx_should_create_hint, human_review_reason, human_review_reason_label,
+//   human_review_comment, rrh_applied, rrh_action, rrh_ids, rrh_explanation
+//
 // Sortie : data/review-decisions/review-decisions-YYYY-MM-DDTHH-mm-ss.json
 //          (fallback : même dossier que le CSV d'entrée si data/review-decisions/ inaccessible)
 
@@ -139,6 +146,52 @@ if (missing.length) {
   process.exit(1);
 }
 
+// ---------------------------------------------
+// Colonnes optionnelles -- contexte + review reason + rrh (GD-058)
+// Presentes dans le CSV exporte par analyze-shadow-report.js.
+// Retrocompatible : indexOf retourne -1 si absente -> ignoree.
+// ---------------------------------------------
+
+// Colonnes transportees comme string
+var OPT_STR_COLS = [
+  'ctx_learnable_context_hint',
+  'ctx_profile_alignment',
+  'ctx_context_ambiguity',
+  'ctx_context_confidence',
+  'ctx_should_create_hint',
+  'human_review_reason',
+  'human_review_reason_label',
+  'human_review_comment',
+  'rrh_applied',
+  'rrh_action',
+  'rrh_ids',
+  'rrh_explanation',
+];
+
+// Colonnes transportees comme array (separateur virgule)
+var OPT_ARR_COLS = [
+  'ctx_negative_context_terms',
+  'ctx_positive_context_terms',
+];
+
+var COL_OPT = {};
+OPT_STR_COLS.concat(OPT_ARR_COLS).forEach(function(k) {
+  COL_OPT[k] = header.indexOf(k);
+});
+
+/** Valeur string depuis une colonne optionnelle (vide si absente ou vide). */
+function optStr(row, idx) {
+  if (idx === -1 || idx >= row.length) return '';
+  return (row[idx] || '').trim();
+}
+
+/** Liste de termes depuis une colonne optionnelle (split virgule, trim, filtre). */
+function optTerms(row, idx) {
+  var v = optStr(row, idx);
+  if (!v) return null;
+  return v.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+}
+
 // ─────────────────────────────────────────────
 // Traitement lignes
 // ─────────────────────────────────────────────
@@ -179,6 +232,18 @@ rows.slice(1).forEach(function(row) {
     review_source:      reviewSource,   // operator | client | system
     reviewed_at:        _reviewedAt,    // timestamp ISO de l'import
   };
+
+  // Transport des champs contextuels optionnels (GD-058)
+  // Ajoutes uniquement si non vides -- pas de pollution pour les CSV minimaux.
+  OPT_STR_COLS.forEach(function(k) {
+    var v = optStr(row, COL_OPT[k]);
+    if (v) rec[k] = v;
+  });
+  OPT_ARR_COLS.forEach(function(k) {
+    var arr = optTerms(row, COL_OPT[k]);
+    if (arr && arr.length) rec[k] = arr;
+  });
+
   records.push(rec);
 
   if (decision === 'keep') {
