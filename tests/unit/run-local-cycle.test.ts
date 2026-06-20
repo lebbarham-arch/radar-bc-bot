@@ -347,9 +347,10 @@ describe("RLC-H -- Parsing PowerShell reel (si powershell disponible)", () => {
     }
     const ps1PathFwd = PS1_PATH.replace(/\\/g, "/");
     const parseCmd = [
-      "=;=;",
-      "[System.Management.Automation.Language.Parser]::ParseFile('" + ps1PathFwd + "',[ref],[ref]) | Out-Null;",
-      "if (.Count -gt 0) {  | ForEach-Object { Write-Host /sessions/dazzling-relaxed-wozniak/mnt/projet_claude/radar-bc-bot-clean-2.Message }; exit 1 }",
+      "$tokens=$null;",
+      "$errors=$null;",
+      "[System.Management.Automation.Language.Parser]::ParseFile('" + ps1PathFwd + "',[ref]$tokens,[ref]$errors) | Out-Null;",
+      "if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_.Message }; exit 1 }",
       "else { Write-Host 'PS1 parse OK' }",
     ].join(" ");
     const result = spawnSync(ps, [
@@ -366,4 +367,4 @@ describe("RLC-H -- Parsing PowerShell reel (si powershell disponible)", () => {
   });
 });
 
-export {};
+export {}
