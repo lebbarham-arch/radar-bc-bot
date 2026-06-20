@@ -1,4 +1,4 @@
-﻿# BETA_CONTROLLED_PROTOCOL.md - Radar BC
+# BETA_CONTROLLED_PROTOCOL.md - Radar BC
 
 > Protocole operationnel pour une beta controlee Radar BC.
 > Version : 2026-06-20
@@ -323,4 +323,3 @@ node scripts/analyze-shadow-report.js data\shadow\shadow-bc-input-replay-<date>.
 ---
 
 *Document cree GD-055 - 2026-06-20. Ne pas modifier sans ticket valide.*
-
