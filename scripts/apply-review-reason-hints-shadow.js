@@ -99,11 +99,16 @@ function extractMatchedSignals(entry) {
  * Utilise entry.client || entry.client_key || entry.clientName.
  * Si client inconnu → pas d'application.
  */
+function normClient(s) {
+  if (!s) return '';
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
 function clientMatches(entry, hintClientKey) {
   if (!hintClientKey || hintClientKey === 'unknown_client') return false;
   var entryClient = String(entry.client || entry.client_key || entry.clientName || '').trim();
   if (!entryClient) return false;
-  return entryClient === hintClientKey;
+  return normClient(entryClient) === normClient(hintClientKey);
 }
 
 // ── Matching signal ───────────────────────────────────────────────────────────

@@ -82,10 +82,16 @@ function extractMatchedSignals(entry: ShadowEntry): string[] {
   return [];
 }
 
+function normClient(s: string | undefined | null): string {
+  if (!s) return '';
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
 function clientMatches(entry: ShadowEntry, clientKey: string): boolean {
   if (!clientKey || clientKey === 'unknown_client') return false;
   const ec = String(entry.client || entry.client_key || entry.clientName || '').trim();
-  return ec === clientKey;
+  if (!ec) return false;
+  return normClient(ec) === normClient(clientKey);
 }
 
 function signalMatches(entry: ShadowEntry, signalKey: string): boolean {
@@ -676,6 +682,76 @@ describe('GD-039 apply-review-reason-hints-shadow — résolution contextuelle (
     const result = applyHintsToEntry(entry, medHints());
     expect(result.review_reason_hint_applied).toBe(true);
     expect(result.clean_score).toBe(5);
+  });
+
+  // -- AH-36..AH-40 : normalisation accent dans clientMatches (generique)
+
+  // AH-36 : normClient strip accents et lowercase
+  test('AH-36 - normClient strip accents et lowercase', () => {
+    expect(normClient('CLIENT ÉCOLE TEST')).toBe('client ecole test');
+    expect(normClient('client ecole test')).toBe('client ecole test');
+    expect(normClient('CLIENT ÉCOLE TEST')).toBe(normClient('client ecole test'));
+  });
+
+  // AH-37 : normClient normalise espaces multiples
+  test('AH-37 - normClient normalise espaces multiples', () => {
+    expect(normClient('client  ecole  test')).toBe('client ecole test');
+    expect(normClient('  CLIENT   ECOLE  TEST  ')).toBe('client ecole test');
+  });
+
+  // AH-38 : clients vraiment differents ne matchent pas
+  test('AH-38 - normClient : clients differents restent differents', () => {
+    expect(normClient('Client Alpha')).not.toBe(normClient('Client Beta'));
+    expect(normClient('MAIRIE A')).not.toBe(normClient('MAIRIE B'));
+  });
+
+  // AH-39 : hint applique quand entry sans accent matche hint avec accent
+  test('AH-39 - hint applique : entry sans accent matche hint avec accent', () => {
+    const genericHint = makeHint({
+      candidate_id: 'rrhc_generic_001',
+      client_key:   'CLIENT ÉCOLE TEST',
+      signal_key:   'signal_test',
+      context_key:  'context_test',
+      proposed_effect: {
+        action:     'block_auto_and_send_to_review',
+        scope:      'client_signal_context',
+        applies_to: { client_key: 'CLIENT ÉCOLE TEST', signal_key: 'signal_test', context_key: 'context_test' },
+      },
+    });
+    const hints = loadApprovedHints({ candidates: [genericHint] }).approved_hints;
+    expect(hints).toHaveLength(1);
+    const entry = makeEntry({
+      client:          'client ecole test',
+      matched_signals: ['signal_test'],
+      ctx_context_key: 'context_test',
+    });
+    const result = applyHintsToEntry(entry, hints);
+    expect(result.review_reason_hint_applied).toBe(true);
+  });
+
+  // AH-40 : score non modifie apres application hint via accent-matching
+  test('AH-40 - score non modifie apres hint via accent-matching', () => {
+    const genericHint = makeHint({
+      candidate_id: 'rrhc_generic_002',
+      client_key:   'CLIENT ÉCOLE TEST',
+      signal_key:   'signal_test',
+      context_key:  'context_test',
+      proposed_effect: {
+        action:     'block_auto_and_send_to_review',
+        scope:      'client_signal_context',
+        applies_to: { client_key: 'CLIENT ÉCOLE TEST', signal_key: 'signal_test', context_key: 'context_test' },
+      },
+    });
+    const hints = loadApprovedHints({ candidates: [genericHint] }).approved_hints;
+    const entry = makeEntry({
+      client:          'client ecole test',
+      matched_signals: ['signal_test'],
+      ctx_context_key: 'context_test',
+      clean_score:     9,
+    });
+    const result = applyHintsToEntry(entry, hints);
+    expect(result.review_reason_hint_applied).toBe(true);
+    expect(result.clean_score).toBe(9);
   });
 
 });
