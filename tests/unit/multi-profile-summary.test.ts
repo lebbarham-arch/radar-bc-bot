@@ -1,6 +1,6 @@
 /**
  * tests/unit/multi-profile-summary.test.ts
- * Tests GD-048 -- Rapport synthetique multi-profils shadow-only.
+ * Tests GD-048 / GD-049 -- Rapport synthetique multi-profils shadow-only.
  *
  * analyze-local-multi-profile-report.js n'est pas require()'able (IIFE main).
  * On teste via fonctions miroir inline.
@@ -10,15 +10,16 @@
  *   MPS-B  detectBroadSignalWarning
  *   MPS-C  computeClientSummary -- totaux
  *   MPS-D  computeClientSummary -- exemples auto/review
- *   MPS-E  buildSummaryCsv -- format CSV
+ *   MPS-E  buildSummaryCsv -- format CSV (15 colonnes)
  *   MPS-F  securite -- pas de scoring/seuils/prod dans le script
+ *   MPS-G  GD-049 -- diagnostic statistique des signaux
  */
 
 import * as fs   from "fs";
 import * as path from "path";
 
 // ============================================================
-// Miroir des fonctions de analyze-local-multi-profile-report.js
+// Types communs
 // ============================================================
 
 type ShadowEntry = {
@@ -48,6 +49,137 @@ type ShadowClient = {
   recommendation?: string;
   clean_only?: ShadowEntry[];
 };
+
+// ============================================================
+// Miroir GD-049 -- diagnostic statistique des signaux
+// (declare avant computeClientSummary qui l'utilise)
+// ============================================================
+
+const MIN_SIGNAL_TOTAL = 3;
+const BROAD_REVIEW_MIN = 0.60;
+const BROAD_WEAK_MIN   = 0.40;
+const BROAD_AUTO_MAX   = 0.30;
+const FIABLE_AUTO_MIN  = 0.50;
+const FIABLE_WEAK_MAX  = 0.25;
+const COMBO_AUTO_MIN   = 0.20;
+
+type SignalStat = {
+  signal: string;
+  total_count: number;
+  auto_count: number;
+  review_count: number;
+  weak_single_count: number;
+};
+
+type SignalDiag = {
+  signal: string;
+  total_count: number;
+  auto_count: number;
+  review_count: number;
+  weak_single_count: number;
+  auto_ratio: number;
+  review_ratio: number;
+  weak_single_ratio: number;
+  diagnostic_classification: string;
+  diagnostic_reason: string;
+};
+
+function computeSignalStats(entries: ShadowEntry[]): Record<string, SignalStat> {
+  const stats: Record<string, SignalStat> = {};
+  entries.forEach(function(e) {
+    const isAuto   = !e.review_candidate;
+    const isReview = !!e.review_candidate;
+    const isWeak   = !!e.weak_single_signal;
+    (e.matched_signals || []).forEach(function(s) {
+      const k = String(s || "").trim();
+      if (!k) return;
+      if (!stats[k]) {
+        stats[k] = { signal: k, total_count: 0, auto_count: 0, review_count: 0, weak_single_count: 0 };
+      }
+      stats[k]!.total_count++;
+      if (isAuto)   { stats[k]!.auto_count++;       }
+      if (isReview) { stats[k]!.review_count++;      }
+      if (isWeak)   { stats[k]!.weak_single_count++; }
+    });
+  });
+  return stats;
+}
+
+function classifySignal(stat: SignalStat): { diagnostic_classification: string; diagnostic_reason: string } {
+  const total = stat.total_count;
+  if (total < MIN_SIGNAL_TOTAL) {
+    return {
+      diagnostic_classification: "signal_insuffisant_donnees",
+      diagnostic_reason: "observe: " + total + " occurrence(s) -- donnees insuffisantes."
+    };
+  }
+  const autoRatio   = stat.auto_count        / total;
+  const reviewRatio = stat.review_count      / total;
+  const weakRatio   = stat.weak_single_count / total;
+  if (reviewRatio >= BROAD_REVIEW_MIN && weakRatio >= BROAD_WEAK_MIN && autoRatio <= BROAD_AUTO_MAX) {
+    return {
+      diagnostic_classification: "signal_trop_large_observe",
+      diagnostic_reason: "observe: " + stat.review_count + " review, " +
+                         stat.auto_count + " auto, " +
+                         Math.round(weakRatio * 100) + "% weak_single."
+    };
+  }
+  if (autoRatio >= FIABLE_AUTO_MIN && weakRatio <= FIABLE_WEAK_MAX) {
+    return {
+      diagnostic_classification: "signal_fiable_en_combinaison_observe",
+      diagnostic_reason: "observe: " + stat.auto_count + " auto (" +
+                         Math.round(autoRatio * 100) + "%), " +
+                         Math.round(weakRatio * 100) + "% weak_single."
+    };
+  }
+  if (stat.auto_count >= 1 && autoRatio >= COMBO_AUTO_MIN) {
+    return {
+      diagnostic_classification: "signal_fiable_en_combinaison_observe",
+      diagnostic_reason: "observe: " + stat.auto_count + " auto sur " + total +
+                         " (" + Math.round(autoRatio * 100) + "%), " +
+                         stat.review_count + " review."
+    };
+  }
+  if (stat.auto_count === 0) {
+    return {
+      diagnostic_classification: "signal_faible_seul_observe",
+      diagnostic_reason: "observe: " + stat.review_count + " review, 0 auto, " +
+                         Math.round(weakRatio * 100) + "% weak_single."
+    };
+  }
+  return {
+    diagnostic_classification: "signal_a_surveiller",
+    diagnostic_reason: "observe: " + stat.auto_count + " auto, " +
+                       stat.review_count + " review sur " + total + "."
+  };
+}
+
+function buildSignalDiagnostics(entries: ShadowEntry[]): SignalDiag[] {
+  const statsMap = computeSignalStats(entries);
+  return Object.keys(statsMap)
+    .sort(function(a, b) { return statsMap[b]!.total_count - statsMap[a]!.total_count; })
+    .map(function(s) {
+      const st    = statsMap[s]!;
+      const total = st.total_count;
+      const diag  = classifySignal(st);
+      return {
+        signal                   : s,
+        total_count              : total,
+        auto_count               : st.auto_count,
+        review_count             : st.review_count,
+        weak_single_count        : st.weak_single_count,
+        auto_ratio               : total > 0 ? Math.round(st.auto_count        / total * 100) / 100 : 0,
+        review_ratio             : total > 0 ? Math.round(st.review_count      / total * 100) / 100 : 0,
+        weak_single_ratio        : total > 0 ? Math.round(st.weak_single_count / total * 100) / 100 : 0,
+        diagnostic_classification: diag.diagnostic_classification,
+        diagnostic_reason        : diag.diagnostic_reason
+      };
+    });
+}
+
+// ============================================================
+// Miroir GD-048
+// ============================================================
 
 function countSignals(entries: ShadowEntry[]): Record<string, number> {
   const counts: Record<string, number> = {};
@@ -130,25 +262,30 @@ function computeClientSummary(c: ShadowClient, n: number): Record<string, unknow
   });
 
   return {
-    client_id         : c.client_id,
-    client_name       : c.client_name || c.client_id,
-    profile_label     : c.profile_label || "",
-    total_checked     : c.total_checked || 0,
-    total_clean       : totalClean,
-    auto_candidates   : autoCount,
-    review_candidates : reviewCount,
-    clean_strong      : c.clean_strong_count || 0,
-    clean_weak        : c.clean_weak_count   || 0,
-    weak_single_signal: c.weak_single_signal_count || 0,
-    top_signals_all   : topSignals(sigAll,    n),
-    top_signals_auto  : topSignals(sigAuto,   n),
-    top_signals_review: topSignals(sigReview, n),
-    best_auto_examples: bestAuto,
-    review_examples   : reviewExamples,
-    warnings          : detectBroadSignalWarning(c),
-    recommendation    : c.recommendation || ""
+    client_id          : c.client_id,
+    client_name        : c.client_name || c.client_id,
+    profile_label      : c.profile_label || "",
+    total_checked      : c.total_checked || 0,
+    total_clean        : totalClean,
+    auto_candidates    : autoCount,
+    review_candidates  : reviewCount,
+    clean_strong       : c.clean_strong_count || 0,
+    clean_weak         : c.clean_weak_count   || 0,
+    weak_single_signal : c.weak_single_signal_count || 0,
+    top_signals_all    : topSignals(sigAll,    n),
+    top_signals_auto   : topSignals(sigAuto,   n),
+    top_signals_review : topSignals(sigReview, n),
+    best_auto_examples : bestAuto,
+    review_examples    : reviewExamples,
+    warnings           : detectBroadSignalWarning(c),
+    recommendation     : c.recommendation || "",
+    signal_diagnostics : buildSignalDiagnostics(allEntries)
   };
 }
+
+// ============================================================
+// CSV helpers
+// ============================================================
 
 function csvEsc(v: unknown): string {
   const s = String(v == null ? "" : v);
@@ -166,6 +303,20 @@ function signalsToStr(arr: unknown[]): string {
   }).join(", ");
 }
 
+function signalDiagsToStr(diags: SignalDiag[], maxN: number): string {
+  return (diags || []).slice(0, maxN).map(function(d) {
+    return d.signal + ":" + d.diagnostic_classification;
+  }).join(", ");
+}
+
+function signalsByClass(diags: SignalDiag[], cls: string): string {
+  return (diags || [])
+    .filter(function(d) { return d.diagnostic_classification === cls; })
+    .map(function(d) { return d.signal; })
+    .join(", ");
+}
+
+// 15-column CSV (GD-048) -- inchange
 function buildSummaryCsv(summaries: Record<string, unknown>[]): string {
   const COLS = [
     "client_id", "client_name", "profile_label",
@@ -193,6 +344,51 @@ function buildSummaryCsv(summaries: Record<string, unknown>[]): string {
       csvEsc(signalsToStr(s["top_signals_review"] as unknown[])),
       csvEsc(((s["warnings"] as string[]) || []).join(" | ")),
       csvEsc(s["recommendation"])
+    ];
+    rows.push(row.join(";"));
+  });
+  return rows.join("\r\n");
+}
+
+// 19-column CSV (GD-049)
+function buildSummaryCsv49(summaries: Record<string, unknown>[]): string {
+  const COLS = [
+    "client_id", "client_name", "profile_label",
+    "total_checked", "total_clean",
+    "auto_candidates", "review_candidates",
+    "clean_strong", "clean_weak", "weak_single_signal",
+    "top_signals_all", "top_signals_auto", "top_signals_review",
+    "warnings", "recommendation",
+    "nb_signal_diagnostics", "top_signal_diagnostics",
+    "broad_observed_signals", "weak_single_observed_signals"
+  ];
+  const rows = ["\uFEFF" + COLS.join(";")];
+  summaries.forEach(function(s) {
+    const diags    = (s["signal_diagnostics"] as SignalDiag[]) || [];
+    const weakOnly = diags
+      .filter(function(d) { return d.auto_count === 0; })
+      .map(function(d) { return d.signal; })
+      .join(", ");
+    const row = [
+      csvEsc(s["client_id"]),
+      csvEsc(s["client_name"]),
+      csvEsc(s["profile_label"]),
+      csvEsc(s["total_checked"]),
+      csvEsc(s["total_clean"]),
+      csvEsc(s["auto_candidates"]),
+      csvEsc(s["review_candidates"]),
+      csvEsc(s["clean_strong"]),
+      csvEsc(s["clean_weak"]),
+      csvEsc(s["weak_single_signal"]),
+      csvEsc(signalsToStr(s["top_signals_all"] as unknown[])),
+      csvEsc(signalsToStr(s["top_signals_auto"] as unknown[])),
+      csvEsc(signalsToStr(s["top_signals_review"] as unknown[])),
+      csvEsc(((s["warnings"] as string[]) || []).join(" | ")),
+      csvEsc(s["recommendation"]),
+      csvEsc(diags.length),
+      csvEsc(signalDiagsToStr(diags, 3)),
+      csvEsc(signalsByClass(diags, "signal_trop_large_observe")),
+      csvEsc(weakOnly)
     ];
     rows.push(row.join(";"));
   });
@@ -235,6 +431,8 @@ function makeClient(overrides: Partial<ShadowClient> = {}): ShadowClient {
     overrides
   );
 }
+
+const SCRIPT_PATH = path.resolve(__dirname, "../../scripts/analyze-local-multi-profile-report.js");
 
 // ============================================================
 // MPS-A : countSignals / topSignals
@@ -303,7 +501,7 @@ describe("MPS-B -- detectBroadSignalWarning", () => {
       clean: 20,
       clean_auto_notify_candidates: 1,
       clean_review_candidates: 19,
-      weak_single_signal_count: 5  // 25% -- sous le seuil 50%
+      weak_single_signal_count: 5
     });
     expect(detectBroadSignalWarning(c)).toHaveLength(0);
   });
@@ -313,7 +511,7 @@ describe("MPS-B -- detectBroadSignalWarning", () => {
       clean: 20,
       clean_auto_notify_candidates: 1,
       clean_review_candidates: 19,
-      weak_single_signal_count: 15  // 75% > 50%
+      weak_single_signal_count: 15
     });
     const warns = detectBroadSignalWarning(c);
     expect(warns).toHaveLength(1);
@@ -455,7 +653,7 @@ describe("MPS-D -- computeClientSummary exemples", () => {
   test("MPS-21: review_examples.weak_single_signal est un booleen", () => {
     const entries: ShadowEntry[] = [
       makeEntry({ bc_id: "R1", review_candidate: true, weak_single_signal: true }),
-      makeEntry({ bc_id: "R2", review_candidate: true })  // weak_single_signal absent
+      makeEntry({ bc_id: "R2", review_candidate: true })
     ];
     const c = makeClient({ clean_only: entries });
     const s = computeClientSummary(c, 5);
@@ -478,28 +676,29 @@ describe("MPS-D -- computeClientSummary exemples", () => {
 });
 
 // ============================================================
-// MPS-E : buildSummaryCsv
+// MPS-E : buildSummaryCsv (15 colonnes)
 // ============================================================
 
 describe("MPS-E -- buildSummaryCsv format CSV", () => {
 
   function makeSummary(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return Object.assign({
-      client_id        : "local-test",
-      client_name      : "TEST Client",
-      profile_label    : "Label",
-      total_checked    : 100,
-      total_clean      : 10,
-      auto_candidates  : 3,
-      review_candidates: 7,
-      clean_strong     : 2,
-      clean_weak       : 8,
+      client_id         : "local-test",
+      client_name       : "TEST Client",
+      profile_label     : "Label",
+      total_checked     : 100,
+      total_clean       : 10,
+      auto_candidates   : 3,
+      review_candidates : 7,
+      clean_strong      : 2,
+      clean_weak        : 8,
       weak_single_signal: 5,
-      top_signals_all  : [{ signal: "nettoyage", count: 5 }],
-      top_signals_auto : [{ signal: "nettoyage", count: 2 }],
+      top_signals_all   : [{ signal: "nettoyage", count: 5 }],
+      top_signals_auto  : [{ signal: "nettoyage", count: 2 }],
       top_signals_review: [{ signal: "nettoyage", count: 3 }],
-      warnings         : [],
-      recommendation   : "keep_legacy_production"
+      warnings          : [],
+      recommendation    : "keep_legacy_production",
+      signal_diagnostics: []
     }, overrides);
   }
 
@@ -522,7 +721,7 @@ describe("MPS-E -- buildSummaryCsv format CSV", () => {
   test("MPS-25: une ligne de donnees par summary", () => {
     const csv = buildSummaryCsv([makeSummary(), makeSummary()]);
     const rows = csv.split("\r\n");
-    expect(rows).toHaveLength(3);  // header + 2 data rows
+    expect(rows).toHaveLength(3);
   });
 
   test("MPS-26: les warnings sont joints par ' | ' dans la colonne CSV", () => {
@@ -548,18 +747,15 @@ describe("MPS-E -- buildSummaryCsv format CSV", () => {
 
 describe("MPS-F -- securite shadow-only + structure JSON", () => {
 
-  const SCRIPT_PATH = path.resolve(__dirname, "../../scripts/analyze-local-multi-profile-report.js");
-
   test("MPS-28: le script ne contient pas d'appel reseau Supabase ni de notification", () => {
     const src = fs.readFileSync(SCRIPT_PATH, "utf8");
-    // Aucun appel supabase.from(), sendNotification, ou INSERT bcs_vus en code
     expect(src).not.toMatch(/sendNotification/);
     expect(src).not.toMatch(/supabase\.from/);
-    expect(src).not.toMatch(/'bcs_vus'/);   // literal string en code (pas commentaire)
+    expect(src).not.toMatch(/'bcs_vus'/);
     expect(src).not.toMatch(/require\(['"]@supabase/);
   });
 
-  test("MPS-29: computeClientSummary retourne les 17 champs attendus", () => {
+  test("MPS-29: computeClientSummary retourne les 18 champs attendus", () => {
     const c = makeClient();
     const s = computeClientSummary(c, 5);
     const expected = [
@@ -569,7 +765,8 @@ describe("MPS-F -- securite shadow-only + structure JSON", () => {
       "clean_strong", "clean_weak", "weak_single_signal",
       "top_signals_all", "top_signals_auto", "top_signals_review",
       "best_auto_examples", "review_examples",
-      "warnings", "recommendation"
+      "warnings", "recommendation",
+      "signal_diagnostics"
     ];
     expected.forEach(function(k) {
       expect(s).toHaveProperty(k);
@@ -582,9 +779,162 @@ describe("MPS-F -- securite shadow-only + structure JSON", () => {
     ];
     const c = makeClient({ clean_only: entries });
     computeClientSummary(c, 5);
-    // L'entree originale est inchangee
     expect(entries[0]!.clean_score).toBe(25);
     expect(entries[0]!.review_candidate).toBe(false);
+  });
+
+});
+
+// ============================================================
+// MPS-G : GD-049 -- diagnostic statistique des signaux
+// ============================================================
+
+describe("MPS-G -- GD-049 diagnostic statistique des signaux", () => {
+
+  test("MPS-31: computeSignalStats calcule total/auto/review/weak par signal", () => {
+    const entries: ShadowEntry[] = [
+      makeEntry({ matched_signals: ["nettoyage"], review_candidate: false, weak_single_signal: false }),
+      makeEntry({ matched_signals: ["nettoyage"], review_candidate: true,  weak_single_signal: true  }),
+      makeEntry({ matched_signals: ["hygiene"],   review_candidate: true,  weak_single_signal: true  })
+    ];
+    const stats = computeSignalStats(entries);
+    expect(stats["nettoyage"]!.total_count).toBe(2);
+    expect(stats["nettoyage"]!.auto_count).toBe(1);
+    expect(stats["nettoyage"]!.review_count).toBe(1);
+    expect(stats["nettoyage"]!.weak_single_count).toBe(1);
+    expect(stats["hygiene"]!.total_count).toBe(1);
+    expect(stats["hygiene"]!.weak_single_count).toBe(1);
+  });
+
+  test("MPS-32: classifySignal -> signal_trop_large_observe (review dominant, weak_single eleve)", () => {
+    const stat: SignalStat = {
+      signal: "sig_x", total_count: 30,
+      auto_count: 2, review_count: 28, weak_single_count: 25
+    };
+    const r = classifySignal(stat);
+    expect(r.diagnostic_classification).toBe("signal_trop_large_observe");
+    expect(r.diagnostic_reason).toContain("review");
+    expect(r).not.toHaveProperty("recommandation");
+  });
+
+  test("MPS-33: classifySignal -> signal_fiable_en_combinaison_observe (auto existe, minoritaire)", () => {
+    const stat: SignalStat = {
+      signal: "sig_y", total_count: 13,
+      auto_count: 4, review_count: 9, weak_single_count: 5
+    };
+    const r = classifySignal(stat);
+    expect(r.diagnostic_classification).toBe("signal_fiable_en_combinaison_observe");
+    expect(r).not.toHaveProperty("recommandation");
+  });
+
+  test("MPS-34: classifySignal -> signal_faible_seul_observe (auto_count=0, total >= 3)", () => {
+    const stat: SignalStat = {
+      signal: "sig_z", total_count: 4,
+      auto_count: 0, review_count: 4, weak_single_count: 1
+    };
+    const r = classifySignal(stat);
+    expect(r.diagnostic_classification).toBe("signal_faible_seul_observe");
+    expect(r).not.toHaveProperty("recommandation");
+  });
+
+  test("MPS-35: classifySignal -> signal_insuffisant_donnees (total < MIN_SIGNAL_TOTAL)", () => {
+    const stat: SignalStat = {
+      signal: "sig_rare", total_count: 2,
+      auto_count: 2, review_count: 0, weak_single_count: 0
+    };
+    const r = classifySignal(stat);
+    expect(r.diagnostic_classification).toBe("signal_insuffisant_donnees");
+    expect(r.diagnostic_reason).toContain("2");
+    expect(r).not.toHaveProperty("recommandation");
+  });
+
+  test("MPS-36: classifySignal -> signal_fiable_en_combinaison_observe (auto eleve, weak faible)", () => {
+    const stat: SignalStat = {
+      signal: "sig_w", total_count: 6,
+      auto_count: 4, review_count: 2, weak_single_count: 1
+    };
+    // auto_ratio=0.67 >= FIABLE_AUTO_MIN, weak_ratio=0.17 <= FIABLE_WEAK_MAX
+    const r = classifySignal(stat);
+    expect(r.diagnostic_classification).toBe("signal_fiable_en_combinaison_observe");
+    expect(r).not.toHaveProperty("recommandation");
+  });
+
+  test("MPS-37: toutes les classifications produites sont des valeurs generiques connues", () => {
+    const VALID_CLASSIFICATIONS = [
+      "signal_trop_large_observe",
+      "signal_fiable_en_combinaison_observe",
+      "signal_faible_seul_observe",
+      "signal_insuffisant_donnees",
+      "signal_a_surveiller"
+    ];
+    const entries: ShadowEntry[] = [
+      makeEntry({ matched_signals: ["a", "b"], review_candidate: false }),
+      makeEntry({ matched_signals: ["a"],      review_candidate: true, weak_single_signal: true }),
+      makeEntry({ matched_signals: ["a"],      review_candidate: true, weak_single_signal: true }),
+      makeEntry({ matched_signals: ["a"],      review_candidate: true, weak_single_signal: true })
+    ];
+    const diags = buildSignalDiagnostics(entries);
+    diags.forEach(function(d) {
+      expect(VALID_CLASSIFICATIONS).toContain(d.diagnostic_classification);
+      expect(d).not.toHaveProperty("recommandation");
+    });
+  });
+
+  test("MPS-38: computeClientSummary retourne signal_diagnostics sans champ recommandation", () => {
+    const entries: ShadowEntry[] = [
+      makeEntry({ matched_signals: ["nettoyage"], review_candidate: false }),
+      makeEntry({ matched_signals: ["nettoyage"], review_candidate: true, weak_single_signal: true })
+    ];
+    const c = makeClient({ clean_only: entries });
+    const s = computeClientSummary(c, 5);
+    expect(s).toHaveProperty("signal_diagnostics");
+    expect(s).not.toHaveProperty("signal_recommendations");
+    const diags = s["signal_diagnostics"] as SignalDiag[];
+    expect(Array.isArray(diags)).toBe(true);
+    expect(diags[0]!.signal).toBe("nettoyage");
+    expect(diags[0]).toHaveProperty("diagnostic_classification");
+    expect(diags[0]).toHaveProperty("diagnostic_reason");
+    expect(diags[0]).not.toHaveProperty("recommandation");
+  });
+
+  test("MPS-39: buildSummaryCsv49 contient les 4 nouvelles colonnes GD-049 (19 total)", () => {
+    const entries: ShadowEntry[] = [
+      makeEntry({ matched_signals: ["sig1"], review_candidate: false }),
+      makeEntry({ matched_signals: ["sig1"], review_candidate: true, weak_single_signal: true }),
+      makeEntry({ matched_signals: ["sig1"], review_candidate: true, weak_single_signal: true }),
+      makeEntry({ matched_signals: ["sig1"], review_candidate: true, weak_single_signal: true }),
+      makeEntry({ matched_signals: ["sig2"], review_candidate: false })
+    ];
+    const c = makeClient({ clean_only: entries });
+    const s = computeClientSummary(c, 5);
+    const csv = buildSummaryCsv49([s]);
+    const header = csv.split("\r\n")[0]!.replace(/^\uFEFF/, "");
+    const cols = header.split(";");
+    expect(cols).toContain("nb_signal_diagnostics");
+    expect(cols).toContain("top_signal_diagnostics");
+    expect(cols).toContain("broad_observed_signals");
+    expect(cols).toContain("weak_single_observed_signals");
+    expect(cols).not.toContain("nb_signal_recommendations");
+    expect(cols).not.toContain("top_signal_recommendations");
+    expect(cols).not.toContain("review_only_signals");
+    expect(cols).toHaveLength(19);
+  });
+
+  test("MPS-40: le script reste shadow-only -- pas de Supabase, notification, scoring ni action auto/review", () => {
+    const src = fs.readFileSync(SCRIPT_PATH, "utf8");
+    expect(src).not.toMatch(/supabase\.from/);
+    expect(src).not.toMatch(/sendNotification/);
+    expect(src).not.toMatch(/'bcs_vus'/);
+    expect(src).not.toMatch(/require\(['"]@supabase/);
+    // Pas de champ recommandation (action-oriented -- double-n)
+    expect(src).not.toMatch(/recommandation:/);
+    // Pas de valeurs d'action codees en dur
+    expect(src).not.toMatch(/garder_review_si_seul/);
+    expect(src).not.toMatch(/autoriser_auto_seulement_si_combine/);
+    expect(src).not.toMatch(/renforcer_par_contexte_positif/);
+    // Pas de metier code en dur
+    expect(src).not.toMatch(/signal\s*===\s*['"]nettoyage['"]/);
+    expect(src).not.toMatch(/signal\s*===\s*['"]informatique['"]/);
   });
 
 });

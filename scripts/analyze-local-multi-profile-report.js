@@ -1,9 +1,10 @@
 'use strict';
 
 /**
- * scripts/analyze-local-multi-profile-report.js -- GD-048
+ * scripts/analyze-local-multi-profile-report.js -- GD-048 / GD-049
  *
  * Rapport synthetique multi-profils depuis un shadow-bc-input-replay-*.json.
+ * GD-049 : diagnostic statistique des signaux observes (shadow-only).
  * Shadow-only -- ne touche pas au scoring, matching, prod, Supabase, Fly.
  * Pas de notification, pas d'ecriture bcs_vus, pas de scan reel.
  * Rule-based deterministe.
@@ -43,11 +44,19 @@ var topN      = Math.max(1, parseInt(opt('--top') || '5', 10));
 
 var SHADOW_DIR = path.resolve(__dirname, '..', 'data', 'shadow');
 
+// -- Seuils de diagnostic des signaux (GD-049) --------------------------------
+// Seuils generiques, rule-based -- ne dependent pas du metier.
+
+var MIN_SIGNAL_TOTAL = 3;    // total < 3 -> signal_insuffisant_donnees
+var BROAD_REVIEW_MIN = 0.60; // review_ratio >= 0.60
+var BROAD_WEAK_MIN   = 0.40; // weak_single_ratio >= 0.40
+var BROAD_AUTO_MAX   = 0.30; // auto_ratio <= 0.30
+var FIABLE_AUTO_MIN  = 0.50; // auto_ratio >= 0.50 -> signal_fiable_en_combinaison_observe
+var FIABLE_WEAK_MAX  = 0.25; // weak_single_ratio <= 0.25
+var COMBO_AUTO_MIN   = 0.20; // auto_ratio >= 0.20 ET auto_count >= 1
+
 // -- Helpers ------------------------------------------------------------------
 
-/**
- * Retourne le chemin du dernier shadow-bc-input-replay-*.json par date de modification.
- */
 function findLatestShadowJson(dir) {
   if (!fs.existsSync(dir)) return null;
   var files = fs.readdirSync(dir)
@@ -59,11 +68,6 @@ function findLatestShadowJson(dir) {
   return files.length ? path.join(dir, files[0].name) : null;
 }
 
-/**
- * Compte les occurrences de chaque signal dans une liste d'entrees.
- * @param {Array} entries  Elements clean_only du rapport shadow.
- * @returns {Object}  { signal: count }
- */
 function countSignals(entries) {
   var counts = {};
   entries.forEach(function(e) {
@@ -75,11 +79,6 @@ function countSignals(entries) {
   return counts;
 }
 
-/**
- * Retourne les N signaux les plus frequents sous forme [{signal, count}].
- * @param {Object} counts  Resultat de countSignals.
- * @param {number} n       Nombre max a retourner.
- */
 function topSignals(counts, n) {
   return Object.keys(counts)
     .sort(function(a, b) { return counts[b] - counts[a]; })
@@ -87,26 +86,108 @@ function topSignals(counts, n) {
     .map(function(s) { return { signal: s, count: counts[s] }; });
 }
 
-/**
- * Detecte si un signal semble trop large (peu discriminant).
- * Criteres :
- *   - review >= 3 * (auto + 1)                  -- beaucoup de review vs auto
- *   - weak_single_signal_count >= 50% total_clean -- majorite weak_single
- *   Si les deux criteres sont remplis : warning.
- * @returns {string[]}  Liste de messages warning (vide si OK).
- */
+function computeSignalStats(entries) {
+  var stats = {};
+  entries.forEach(function(e) {
+    var isAuto   = !e.review_candidate;
+    var isReview = !!e.review_candidate;
+    var isWeak   = !!e.weak_single_signal;
+    (e.matched_signals || []).forEach(function(s) {
+      var k = String(s || '').trim();
+      if (!k) return;
+      if (!stats[k]) {
+        stats[k] = { signal: k, total_count: 0, auto_count: 0, review_count: 0, weak_single_count: 0 };
+      }
+      stats[k].total_count++;
+      if (isAuto)   { stats[k].auto_count++;       }
+      if (isReview) { stats[k].review_count++;      }
+      if (isWeak)   { stats[k].weak_single_count++; }
+    });
+  });
+  return stats;
+}
+
+function classifySignal(stat) {
+  var total = stat.total_count;
+  if (total < MIN_SIGNAL_TOTAL) {
+    return {
+      diagnostic_classification: 'signal_insuffisant_donnees',
+      diagnostic_reason: 'observe: ' + total + ' occurrence(s) -- donnees insuffisantes.'
+    };
+  }
+  var autoRatio   = stat.auto_count        / total;
+  var reviewRatio = stat.review_count      / total;
+  var weakRatio   = stat.weak_single_count / total;
+  if (reviewRatio >= BROAD_REVIEW_MIN && weakRatio >= BROAD_WEAK_MIN && autoRatio <= BROAD_AUTO_MAX) {
+    return {
+      diagnostic_classification: 'signal_trop_large_observe',
+      diagnostic_reason: 'observe: ' + stat.review_count + ' review, ' +
+                         stat.auto_count + ' auto, ' +
+                         Math.round(weakRatio * 100) + '% weak_single.'
+    };
+  }
+  if (autoRatio >= FIABLE_AUTO_MIN && weakRatio <= FIABLE_WEAK_MAX) {
+    return {
+      diagnostic_classification: 'signal_fiable_en_combinaison_observe',
+      diagnostic_reason: 'observe: ' + stat.auto_count + ' auto (' +
+                         Math.round(autoRatio * 100) + '%), ' +
+                         Math.round(weakRatio * 100) + '% weak_single.'
+    };
+  }
+  if (stat.auto_count >= 1 && autoRatio >= COMBO_AUTO_MIN) {
+    return {
+      diagnostic_classification: 'signal_fiable_en_combinaison_observe',
+      diagnostic_reason: 'observe: ' + stat.auto_count + ' auto sur ' + total +
+                         ' (' + Math.round(autoRatio * 100) + '%), ' +
+                         stat.review_count + ' review.'
+    };
+  }
+  if (stat.auto_count === 0) {
+    return {
+      diagnostic_classification: 'signal_faible_seul_observe',
+      diagnostic_reason: 'observe: ' + stat.review_count + ' review, 0 auto, ' +
+                         Math.round(weakRatio * 100) + '% weak_single.'
+    };
+  }
+  return {
+    diagnostic_classification: 'signal_a_surveiller',
+    diagnostic_reason: 'observe: ' + stat.auto_count + ' auto, ' +
+                       stat.review_count + ' review sur ' + total + '.'
+  };
+}
+
+function buildSignalDiagnostics(entries) {
+  var statsMap = computeSignalStats(entries);
+  return Object.keys(statsMap)
+    .sort(function(a, b) { return statsMap[b].total_count - statsMap[a].total_count; })
+    .map(function(s) {
+      var st    = statsMap[s];
+      var total = st.total_count;
+      var diag  = classifySignal(st);
+      return {
+        signal                   : s,
+        total_count              : total,
+        auto_count               : st.auto_count,
+        review_count             : st.review_count,
+        weak_single_count        : st.weak_single_count,
+        auto_ratio               : total > 0 ? Math.round(st.auto_count        / total * 100) / 100 : 0,
+        review_ratio             : total > 0 ? Math.round(st.review_count      / total * 100) / 100 : 0,
+        weak_single_ratio        : total > 0 ? Math.round(st.weak_single_count / total * 100) / 100 : 0,
+        diagnostic_classification: diag.diagnostic_classification,
+        diagnostic_reason        : diag.diagnostic_reason
+      };
+    });
+}
+
 function detectBroadSignalWarning(c) {
-  var autoCount    = typeof c.clean_auto_notify_candidates === 'number'
-                      ? c.clean_auto_notify_candidates : 0;
-  var reviewCount  = typeof c.clean_review_candidates === 'number'
-                      ? c.clean_review_candidates : 0;
-  var weakSingle   = typeof c.weak_single_signal_count === 'number'
-                      ? c.weak_single_signal_count : 0;
-  var totalClean   = typeof c.clean === 'number' ? c.clean : (autoCount + reviewCount);
+  var autoCount   = typeof c.clean_auto_notify_candidates === 'number' ? c.clean_auto_notify_candidates : 0;
+  var reviewCount = typeof c.clean_review_candidates === 'number' ? c.clean_review_candidates : 0;
+  var weakSingle  = typeof c.weak_single_signal_count === 'number' ? c.weak_single_signal_count : 0;
+  var totalClean  = typeof c.clean === 'number' ? c.clean : (autoCount + reviewCount);
   if (totalClean === 0) return [];
-  var warnings = [];
-  var ratioHigh   = reviewCount >= 3 * (autoCount + 1);
-  var weakHigh    = weakSingle >= Math.ceil(totalClean * 0.5);
+  var warnings  = [];
+  var ratioHigh = reviewCount >= 3 * (autoCount + 1);
+  var weakHigh  = weakSingle >= Math.ceil(totalClean * 0.5);
   if (ratioHigh && weakHigh) {
     warnings.push(
       'signal_trop_large: ' + reviewCount + ' review / ' + autoCount + ' auto' +
@@ -117,71 +198,55 @@ function detectBroadSignalWarning(c) {
   return warnings;
 }
 
-/**
- * Construit le resume synthetique d'un client depuis son entree shadow.
- * @param {Object} c     Entree client du rapport shadow JSON.
- * @param {number} topN  Nombre de signaux top a inclure.
- */
 function computeClientSummary(c, n) {
   var allEntries    = Array.isArray(c.clean_only) ? c.clean_only : [];
   var autoEntries   = allEntries.filter(function(e) { return !e.review_candidate; });
   var reviewEntries = allEntries.filter(function(e) { return !!e.review_candidate; });
-
   var sigAll    = countSignals(allEntries);
   var sigAuto   = countSignals(autoEntries);
   var sigReview = countSignals(reviewEntries);
-
-  var autoCount   = typeof c.clean_auto_notify_candidates === 'number'
-                     ? c.clean_auto_notify_candidates : autoEntries.length;
-  var reviewCount = typeof c.clean_review_candidates === 'number'
-                     ? c.clean_review_candidates : reviewEntries.length;
+  var autoCount   = typeof c.clean_auto_notify_candidates === 'number' ? c.clean_auto_notify_candidates : autoEntries.length;
+  var reviewCount = typeof c.clean_review_candidates === 'number' ? c.clean_review_candidates : reviewEntries.length;
   var totalClean  = typeof c.clean === 'number' ? c.clean : allEntries.length;
-
-  // Exemples auto-candidats : tries par score desc, top 3
   var bestAuto = autoEntries
     .slice()
     .sort(function(a, b) { return (b.clean_score || 0) - (a.clean_score || 0); })
     .slice(0, 3)
     .map(function(e) {
       return {
-        bc_id          : e.bc_id,
-        score          : e.clean_score,
-        matched_signals: e.matched_signals || [],
-        strength       : e.strength,
-        objet          : ((e.objet || '').trim() || (e.clean_text_excerpt || '')).slice(0, 80)
+        bc_id: e.bc_id, score: e.clean_score,
+        matched_signals: e.matched_signals || [], strength: e.strength,
+        objet: ((e.objet || '').trim() || (e.clean_text_excerpt || '')).slice(0, 80)
       };
     });
-
-  // Exemples review-candidats : top 3 (ordre original -- les plus saillants en premier)
   var reviewExamples = reviewEntries.slice(0, 3).map(function(e) {
     return {
-      bc_id             : e.bc_id,
-      score             : e.clean_score,
-      matched_signals   : e.matched_signals || [],
-      strength_reason   : e.strength_reason,
+      bc_id: e.bc_id, score: e.clean_score,
+      matched_signals: e.matched_signals || [],
+      strength_reason: e.strength_reason,
       weak_single_signal: !!e.weak_single_signal,
-      objet             : ((e.objet || '').trim() || (e.clean_text_excerpt || '')).slice(0, 80)
+      objet: ((e.objet || '').trim() || (e.clean_text_excerpt || '')).slice(0, 80)
     };
   });
-
   return {
-    client_id         : c.client_id,
-    client_name       : c.client_name || c.client_id,
-    profile_label     : c.profile_label || '',
-    total_checked     : c.total_checked || 0,
-    total_clean       : totalClean,
-    auto_candidates   : autoCount,
-    review_candidates : reviewCount,
-    clean_strong      : c.clean_strong_count || 0,
-    clean_weak        : c.clean_weak_count   || 0,
-    weak_single_signal: c.weak_single_signal_count || 0,
-    top_signals_all   : topSignals(sigAll,    n),
-    top_signals_auto  : topSignals(sigAuto,   n),
-    top_signals_review: topSignals(sigReview, n),
-    best_auto_examples: bestAuto,
-    review_examples   : reviewExamples,
-    warnings          : detectBroadSignalWarning(c),
-    recommendation    : c.recommendation || ''
+    client_id          : c.client_id,
+    client_name        : c.client_name || c.client_id,
+    profile_label      : c.profile_label || '',
+    total_checked      : c.total_checked || 0,
+    total_clean        : totalClean,
+    auto_candidates    : autoCount,
+    review_candidates  : reviewCount,
+    clean_strong       : c.clean_strong_count || 0,
+    clean_weak         : c.clean_weak_count   || 0,
+    weak_single_signal : c.weak_single_signal_count || 0,
+    top_signals_all    : topSignals(sigAll,    n),
+    top_signals_auto   : topSignals(sigAuto,   n),
+    top_signals_review : topSignals(sigReview, n),
+    best_auto_examples : bestAuto,
+    review_examples    : reviewExamples,
+    warnings           : detectBroadSignalWarning(c),
+    recommendation     : c.recommendation || '',
+    signal_diagnostics : buildSignalDiagnostics(allEntries)
   };
 }
 
@@ -201,9 +266,19 @@ function signalsToStr(arr) {
   }).join(', ');
 }
 
-/**
- * Genere le CSV BOM-UTF8 depuis un tableau de summaries client.
- */
+function signalDiagsToStr(diags, maxN) {
+  return (diags || []).slice(0, maxN || 3).map(function(d) {
+    return d.signal + ':' + d.diagnostic_classification;
+  }).join(', ');
+}
+
+function signalsByClass(diags, cls) {
+  return (diags || [])
+    .filter(function(d) { return d.diagnostic_classification === cls; })
+    .map(function(d) { return d.signal; })
+    .join(', ');
+}
+
 function buildSummaryCsv(summaries) {
   var COLS = [
     'client_id', 'client_name', 'profile_label',
@@ -211,10 +286,17 @@ function buildSummaryCsv(summaries) {
     'auto_candidates', 'review_candidates',
     'clean_strong', 'clean_weak', 'weak_single_signal',
     'top_signals_all', 'top_signals_auto', 'top_signals_review',
-    'warnings', 'recommendation'
+    'warnings', 'recommendation',
+    'nb_signal_diagnostics', 'top_signal_diagnostics',
+    'broad_observed_signals', 'weak_single_observed_signals'
   ];
   var rows = ['\uFEFF' + COLS.join(';')];
   summaries.forEach(function(s) {
+    var diags    = s.signal_diagnostics || [];
+    var weakOnly = diags
+      .filter(function(d) { return d.auto_count === 0; })
+      .map(function(d) { return d.signal; })
+      .join(', ');
     var row = [
       csvEsc(s.client_id),
       csvEsc(s.client_name),
@@ -230,7 +312,11 @@ function buildSummaryCsv(summaries) {
       csvEsc(signalsToStr(s.top_signals_auto)),
       csvEsc(signalsToStr(s.top_signals_review)),
       csvEsc((s.warnings || []).join(' | ')),
-      csvEsc(s.recommendation)
+      csvEsc(s.recommendation),
+      csvEsc(diags.length),
+      csvEsc(signalDiagsToStr(diags, 3)),
+      csvEsc(signalsByClass(diags, 'signal_trop_large_observe')),
+      csvEsc(weakOnly)
     ];
     rows.push(row.join(';'));
   });
@@ -239,10 +325,10 @@ function buildSummaryCsv(summaries) {
 
 // -- Console output ------------------------------------------------------------
 
-function printSummary(s, shadowPath) {
+function printSummary(s, shadowFile) {
   console.log('  Client : ' + s.client_name + ' [' + s.profile_label + ']');
   console.log('  ID     : ' + s.client_id);
-  console.log('  Shadow : ' + shadowPath);
+  console.log('  Shadow : ' + shadowFile);
   console.log('');
   console.log('  Totaux');
   console.log('    BCs analyses       : ' + s.total_checked);
@@ -295,7 +381,19 @@ function printSummary(s, shadowPath) {
     console.log('');
   }
   if (s.recommendation) {
-    console.log('  Recommandation : ' + s.recommendation);
+    console.log('  Recommendation : ' + s.recommendation);
+  }
+  var diags = s.signal_diagnostics || [];
+  if (diags.length > 0) {
+    console.log('');
+    console.log('  Diagnostic statistique des signaux (GD-049) :');
+    diags.forEach(function(d) {
+      console.log('    ' + d.signal +
+        ' [' + d.diagnostic_classification + ']');
+      console.log('      ' + d.diagnostic_reason +
+        ' (total=' + d.total_count + ' auto=' + d.auto_count +
+        ' review=' + d.review_count + ' weak=' + d.weak_single_count + ')');
+    });
   }
   console.log('  ' + '-'.repeat(60));
 }
@@ -303,7 +401,6 @@ function printSummary(s, shadowPath) {
 // -- Main ---------------------------------------------------------------------
 
 (function main() {
-  // 1. Chemin du shadow JSON
   var shadowPath;
   if (shadowArg && /\.json$/i.test(shadowArg)) {
     shadowPath = path.isAbsolute(shadowArg)
@@ -317,8 +414,6 @@ function printSummary(s, shadowPath) {
       (shadowPath ? ' Chemin : ' + shadowPath : '') + '\n');
     process.exit(1);
   }
-
-  // 2. Chargement
   var report;
   try {
     report = JSON.parse(fs.readFileSync(shadowPath, 'utf8'));
@@ -330,24 +425,17 @@ function printSummary(s, shadowPath) {
     process.stderr.write('[ERREUR] Aucun client dans le rapport shadow.\n');
     process.exit(1);
   }
-
-  // 3. Calcul des summaries
   var summaries = report.clients.map(function(c) {
     return computeClientSummary(c, topN);
   });
-
-  // 4. Affichage console
   console.log('');
-  console.log('=== RAPPORT MULTI-PROFILS SHADOW-ONLY (GD-048) ===');
+  console.log('=== RAPPORT MULTI-PROFILS SHADOW-ONLY (GD-048/GD-049) ===');
   console.log('  Source     : ' + path.basename(shadowPath));
   console.log('  Scan date  : ' + (report.scan_date || 'inconnue'));
   console.log('  Mode       : ' + (report.clients_mode || '?'));
   console.log('  Clients    : ' + summaries.length);
   console.log('');
-
   summaries.forEach(function(s) { printSummary(s, path.basename(shadowPath)); });
-
-  // 5. Totaux globaux
   var totalAuto   = summaries.reduce(function(acc, s) { return acc + s.auto_candidates;   }, 0);
   var totalReview = summaries.reduce(function(acc, s) { return acc + s.review_candidates; }, 0);
   var totalClean  = summaries.reduce(function(acc, s) { return acc + s.total_clean;       }, 0);
@@ -360,12 +448,9 @@ function printSummary(s, shadowPath) {
     console.log('  [!] ' + nbWarnings + ' warning(s) signal trop large');
   }
   console.log('');
-
-  // 6. Sorties fichiers
   var ts      = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   var jsonOut = path.join(SHADOW_DIR, 'multi-profile-summary-' + ts + '.json');
   var csvOut  = path.join(SHADOW_DIR, 'multi-profile-summary-' + ts + '.csv');
-
   var jsonPayload = {
     generated_at  : new Date().toISOString(),
     source_shadow : path.basename(shadowPath),
@@ -379,7 +464,6 @@ function printSummary(s, shadowPath) {
     nb_warnings   : nbWarnings,
     clients       : summaries
   };
-
   try {
     fs.mkdirSync(SHADOW_DIR, { recursive: true });
     fs.writeFileSync(jsonOut, JSON.stringify(jsonPayload, null, 2), 'utf8');
@@ -389,7 +473,6 @@ function printSummary(s, shadowPath) {
     process.stderr.write('[ERREUR] Ecriture fichiers : ' + e.message + '\n');
     process.exit(1);
   }
-
   console.log('[JSON] ' + jsonOut);
   console.log('[CSV]  ' + csvOut);
   console.log('');
