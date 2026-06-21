@@ -874,3 +874,118 @@ describe('GD-039 apply-review-reason-hints-shadow — résolution contextuelle (
   });
 
 });
+
+// GD-068 loadActiveReviewReasonHints (ARC-1..ARC-6)
+describe('GD-068 loadActiveReviewReasonHints (ARC-1..ARC-6)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs   = require('fs')   as typeof import('fs');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require('path') as typeof import('path');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const os   = require('os')   as typeof import('os');
+
+  const ACTIVE_FILENAME = 'review-reason-hints-active-current.json';
+
+  function loadActiveHintsFromDir(dir: string): {
+    approved_hints: HintCandidate[];
+    skipped: Array<{ reason: string; source: unknown }>;
+    totals: { input: number; approved: number; skipped: number };
+    loaded: boolean;
+    activePath: string | null;
+    message: string;
+  } {
+    const activePath = path.join(dir, ACTIVE_FILENAME);
+    if (!fs.existsSync(activePath)) {
+      return {
+        approved_hints: [],
+        skipped:        [],
+        totals:         { input: 0, approved: 0, skipped: 0 },
+        loaded:         false,
+        activePath:     null,
+        message:        '[ReviewHints] no active hints file found',
+      };
+    }
+    const raw    = JSON.parse(fs.readFileSync(activePath, 'utf8') as string);
+    const result = loadApprovedHints(raw);
+    const n      = result.totals.approved;
+    return { ...result, loaded: true, activePath, message: '[ReviewHints] active hints loaded: ' + n };
+  }
+
+  function makeTmpDir(): string {
+    return fs.mkdtempSync(path.join(os.tmpdir(), 'arc-test-'));
+  }
+
+  function writeHintFile(dir: string, candidates: HintCandidate[]): void {
+    fs.writeFileSync(path.join(dir, ACTIVE_FILENAME), JSON.stringify({ candidates }), 'utf8');
+  }
+
+  function cleanDir(dir: string): void {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* ignore */ }
+  }
+
+  it('ARC-1 : dossier sans fichier actif -> loaded=false', () => {
+    const dir = makeTmpDir();
+    try {
+      const r = loadActiveHintsFromDir(dir);
+      expect(r.loaded).toBe(false);
+      expect(r.approved_hints).toEqual([]);
+      expect(r.activePath).toBeNull();
+    } finally { cleanDir(dir); }
+  });
+
+  it('ARC-2 : fichier actif present -> loaded=true, hints retournes', () => {
+    const dir = makeTmpDir();
+    try {
+      writeHintFile(dir, [makeHint()]);
+      const r = loadActiveHintsFromDir(dir);
+      expect(r.loaded).toBe(true);
+      expect(r.approved_hints.length).toBe(1);
+      expect(r.activePath).toBeTruthy();
+    } finally { cleanDir(dir); }
+  });
+
+  it('ARC-3 : absent -> message [ReviewHints] no active hints file found', () => {
+    const dir = makeTmpDir();
+    try {
+      const r = loadActiveHintsFromDir(dir);
+      expect(r.message).toBe('[ReviewHints] no active hints file found');
+    } finally { cleanDir(dir); }
+  });
+
+  it('ARC-4 : present -> message [ReviewHints] active hints loaded: N', () => {
+    const dir = makeTmpDir();
+    try {
+      writeHintFile(dir, [
+        makeHint({ candidate_id: 'rrhc_arc_001' }),
+        makeHint({ candidate_id: 'rrhc_arc_002' }),
+      ]);
+      const r = loadActiveHintsFromDir(dir);
+      expect(r.message).toMatch(/^\[ReviewHints\] active hints loaded: \d+$/);
+      expect(r.message).toBe('[ReviewHints] active hints loaded: 2');
+    } finally { cleanDir(dir); }
+  });
+
+  it('ARC-5 : les hints actifs ne modifient jamais clean_score', () => {
+    const dir = makeTmpDir();
+    try {
+      writeHintFile(dir, [makeHint()]);
+      const r = loadActiveHintsFromDir(dir);
+      const entry = makeEntry({ clean_score: 42 });
+      const applied = applyHintsToEntry(entry, r.approved_hints);
+      expect(applied.clean_score).toBe(42);
+      expect(Object.keys(applied)).not.toContain('scoreBC');
+    } finally { cleanDir(dir); }
+  });
+
+  it('ARC-6 : auto_notify_candidate jamais true apres application des hints actifs', () => {
+    const dir = makeTmpDir();
+    try {
+      writeHintFile(dir, [makeHint()]);
+      const r = loadActiveHintsFromDir(dir);
+      const entry = makeEntry({ auto_notify_candidate: false });
+      const applied = applyHintsToEntry(entry, r.approved_hints);
+      expect(applied.auto_notify_candidate).not.toBe(true);
+    } finally { cleanDir(dir); }
+  });
+
+});

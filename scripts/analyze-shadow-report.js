@@ -54,7 +54,7 @@ for (var i = 0; i < args.length; i++) {
 }
 
 // GD-039 : Chargement optionnel des hint candidates approuvés P8
-// Par défaut (sans --review-reason-hints) : 0 effet, comportement identique
+// GD-068 - Auto-load active hints file when --review-reason-hints is not specified
 var APPROVED_RRH = { approved_hints: [], skipped: [], totals: { input: 0, approved: 0, skipped: 0 } };
 if (reviewReasonHintsPath) {
   APPROVED_RRH = applyHintsShadow.loadApprovedReviewReasonHints(reviewReasonHintsPath);
@@ -64,6 +64,13 @@ if (reviewReasonHintsPath) {
   }
   if (APPROVED_RRH.totals.approved === 0) {
     console.log("[RRH] 0 approved review-reason hints loaded");
+  }
+} else {
+  // GD-068 - auto-load review-reason-hints-active-current.json if present
+  var autoActive = applyHintsShadow.loadActiveReviewReasonHints();
+  console.log(autoActive.message);
+  if (autoActive.loaded) {
+    APPROVED_RRH = autoActive;
   }
 }
 

@@ -508,10 +508,51 @@ function applyReviewReasonHintsToShadowEntry(entry, hints, opts) {
   return copy;
 }
 
+// GD-068 - loadActiveReviewReasonHints
+/**
+ * Charge automatiquement le fichier de hints actifs conventionnel :
+ *   <dataDir>/review-reason-hints-active-current.json
+ *
+ * Si le fichier est absent  -> { approved_hints: [], loaded: false, message: '[ReviewHints] no active hints file found' }
+ * Si le fichier est present -> { approved_hints: [...], loaded: true,  message: '[ReviewHints] active hints loaded: N' }
+ *
+ * Shadow-only : tous les filtres de loadApprovedReviewReasonHints s'appliquent.
+ * Ne modifie jamais le score, les seuils, les poids, ni auto_notify en production.
+ *
+ * @param {string} [dataDir]  Chemin du dossier review-learning (defaut : data/review-learning)
+ * @returns {{ approved_hints: object[], skipped: object[], totals: object, loaded: boolean, activePath: string|null, message: string }}
+ */
+var ACTIVE_HINTS_FILENAME = 'review-reason-hints-active-current.json';
+
+function loadActiveReviewReasonHints(dataDir) {
+  var dir        = path.resolve(dataDir || path.join('data', 'review-learning'));
+  var activePath = path.join(dir, ACTIVE_HINTS_FILENAME);
+
+  if (!fs.existsSync(activePath)) {
+    return {
+      approved_hints: [],
+      skipped:        [],
+      totals:         { input: 0, approved: 0, skipped: 0 },
+      loaded:         false,
+      activePath:     null,
+      message:        '[ReviewHints] no active hints file found',
+    };
+  }
+
+  var result     = loadApprovedReviewReasonHints(activePath);
+  var n          = result.totals.approved;
+  return Object.assign({}, result, {
+    loaded:     true,
+    activePath: activePath,
+    message:    '[ReviewHints] active hints loaded: ' + n,
+  });
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 module.exports = {
   resolveEntryContextKey:               resolveEntryContextKey,
   loadApprovedReviewReasonHints:        loadApprovedReviewReasonHints,
+  loadActiveReviewReasonHints:          loadActiveReviewReasonHints,   // GD-068
   evaluateReviewReasonHintForEntry:      evaluateReviewReasonHintForEntry,
   applyReviewReasonHintsToShadowEntry:   applyReviewReasonHintsToShadowEntry,
   APPLY_HINTS_MODEL:                     APPLY_HINTS_MODEL,
@@ -519,6 +560,7 @@ module.exports = {
   FORBIDDEN_ACTIONS:                     FORBIDDEN_ACTIONS,
   FORBIDDEN_STATUSES:                    FORBIDDEN_STATUSES,
   STATUS_APPROVED_FOR_SHADOW:            STATUS_APPROVED_FOR_SHADOW,
+  ACTIVE_HINTS_FILENAME:                 ACTIVE_HINTS_FILENAME,        // GD-068
   // exposés pour tests
   _clientMatches:      clientMatches,
   _signalMatches:      signalMatches,
