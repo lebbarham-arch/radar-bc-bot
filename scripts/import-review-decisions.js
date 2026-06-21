@@ -3,17 +3,17 @@
 // Usage: node scripts/import-review-decisions.js <review-csv-file> [options]
 //
 // Options :
-//   --dry-run                       Affiche sans écrire le JSON
+//   --dry-run                       Affiche sans ecrire le JSON
 //   --cycle-id <valeur>             Identifiant du cycle de review (surcharge l'extraction auto)
 //   --review-source operator|client|system
-//                                   Source de la décision (défaut : operator)
+//                                   Source de la decision (defaut : operator)
 //
-// Lit un CSV de review candidates (exporté par analyze-shadow-report.js --export-review-csv)
-// et importe les décisions humaines (keep/reject/ignore/vide) dans un JSON de synthèse.
+// Lit un CSV de review candidates (exporte par analyze-shadow-report.js --export-review-csv)
+// et importe les decisions humaines (keep/reject/ignore/vide) dans un JSON de synthese.
 //
-// Champs ajoutés dans chaque record :
+// Champs ajoutes dans chaque record :
 //   cycle_id      : extrait du nom du CSV (pattern YYYY-MM-DDTHH-MM-SS) ou --cycle-id
-//   review_source : operator (calibration interne) | client (feedback réel) | system
+//   review_source : operator (calibration interne) | client (feedback reel) | system
 //   reviewed_at   : timestamp ISO de l'import
 //
 // Champs contextuels optionnels (GD-058) :
@@ -24,16 +24,16 @@
 //   human_review_comment, rrh_applied, rrh_action, rrh_ids, rrh_explanation
 //
 // Sortie : data/review-decisions/review-decisions-YYYY-MM-DDTHH-mm-ss.json
-//          (fallback : même dossier que le CSV d'entrée si data/review-decisions/ inaccessible)
+//          (fallback : meme dossier que le CSV d'entree si data/review-decisions/ inaccessible)
 
 'use strict';
 
 var fs   = require('fs');
 var path = require('path');
 
-// ─────────────────────────────────────────────
-// Parsing CSV : BOM UTF-8, séparateur ;, quotes doubles
-// ─────────────────────────────────────────────
+// ---------------------------------------------
+// Parsing CSV : BOM UTF-8, separateur ;, quotes doubles
+// ---------------------------------------------
 function parseCsv(raw) {
   if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
   var lines = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
@@ -65,12 +65,42 @@ function parseCsvLine(line) {
   return fields;
 }
 
-// ─────────────────────────────────────────────
+// ---------------------------------------------
+// GD-061 -- Parsing robuste de matched_signals
+// ---------------------------------------------
+// Gere les formats produits par le moteur :
+//   "nettoyage,hygiene"           -> ["nettoyage","hygiene"]
+//   "nettoyage;hygiene"           -> ["nettoyage","hygiene"]
+//   "['nettoyage', 'hygiene']"    -> ["nettoyage","hygiene"]
+//   '["nettoyage","hygiene"]'     -> ["nettoyage","hygiene"]
+//   espaces multiples, quotes simples/doubles, crochets [].
+//   valeur vide                   -> []
+function parseSignals(raw) {
+  if (!raw) return [];
+  var s = raw.trim();
+  // 1. Retirer les crochets optionnels
+  if (s.charAt(0) === '[') s = s.slice(1);
+  if (s.length && s.charAt(s.length - 1) === ']') s = s.slice(0, s.length - 1);
+  // 2. Normaliser le separateur : remplacer ; par ,
+  s = s.replace(/;/g, ',');
+  // 3. Split, trim, retirer quotes simples/doubles symetriques, filtrer vides
+  return s.split(',').map(function(t) {
+    t = t.trim();
+    var first = t.charAt(0);
+    var last  = t.charAt(t.length - 1);
+    if (t.length >= 2 && ((first === "'" && last === "'") || (first === '"' && last === '"'))) {
+      t = t.slice(1, t.length - 1).trim();
+    }
+    return t;
+  }).filter(Boolean);
+}
+
+// ---------------------------------------------
 // Extraction cycle_id depuis le nom de fichier
-// ─────────────────────────────────────────────
+// ---------------------------------------------
 // Cherche le pattern YYYY-MM-DDTHH-MM-SS dans le basename du fichier CSV.
-// Ex : review-candidates-2026-06-17T22-15-41.csv → "2026-06-17T22-15-41"
-// Ex : auto-candidates-admin-2026-06-18T09-00-00.csv → "2026-06-18T09-00-00"
+// Ex : review-candidates-2026-06-17T22-15-41.csv -> "2026-06-17T22-15-41"
+// Ex : auto-candidates-admin-2026-06-18T09-00-00.csv -> "2026-06-18T09-00-00"
 // Retourne null si le pattern est absent.
 function extractCycleId(filePath) {
   var basename = path.basename(filePath);
@@ -78,9 +108,9 @@ function extractCycleId(filePath) {
   return m ? m[1] : null;
 }
 
-// ─────────────────────────────────────────────
+// ---------------------------------------------
 // Args
-// ─────────────────────────────────────────────
+// ---------------------------------------------
 var args         = process.argv.slice(2);
 var csvPath      = null;
 var dryRun       = false;
@@ -98,7 +128,7 @@ for (var _i = 0; _i < args.length; _i++) {
     if (_src === 'operator' || _src === 'client' || _src === 'system') {
       reviewSource = _src;
     } else {
-      console.warn('WARN: --review-source invalide "' + _src + '" → "operator" utilisé');
+      console.warn('WARN: --review-source invalide "' + _src + '" -> "operator" utilise');
     }
   } else if (!csvPath && !_a.startsWith('--')) {
     csvPath = _a;
@@ -115,14 +145,14 @@ if (!fs.existsSync(csvPath)) {
   process.exit(1);
 }
 
-// ─────────────────────────────────────────────
+// ---------------------------------------------
 // Lecture + parsing
-// ─────────────────────────────────────────────
+// ---------------------------------------------
 var raw  = fs.readFileSync(csvPath, 'utf8');
 var rows = parseCsv(raw).filter(function(r) { return r.join('').trim() !== ''; });
 
 if (rows.length < 2) {
-  console.error('ERROR: CSV vide ou sans ligne de données.');
+  console.error('ERROR: CSV vide ou sans ligne de donnees.');
   process.exit(1);
 }
 
@@ -142,7 +172,7 @@ var COL = {
 var missing = Object.keys(COL).filter(function(k) { return COL[k] === -1; });
 if (missing.length) {
   console.error('ERROR: Colonnes manquantes dans le CSV : ' + missing.join(', '));
-  console.error('  Header détecté :', header.join(' | '));
+  console.error('  Header detecte :', header.join(' | '));
   process.exit(1);
 }
 
@@ -192,10 +222,10 @@ function optTerms(row, idx) {
   return v.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
 }
 
-// ─────────────────────────────────────────────
+// ---------------------------------------------
 // Traitement lignes
-// ─────────────────────────────────────────────
-// Résoudre les métadonnées de cycle avant la boucle
+// ---------------------------------------------
+// Resoudre les metadonnees de cycle avant la boucle
 var _reviewedAt  = new Date().toISOString();
 var _cycleId     = (cycleIdArg !== undefined) ? cycleIdArg : extractCycleId(csvPath);
 
@@ -210,13 +240,12 @@ rows.slice(1).forEach(function(row) {
 
   var decision = (row[COL.decision] || '').trim().toLowerCase();
   if (VALID_DECISIONS.indexOf(decision) === -1) {
-    console.warn('  WARN: décision invalide "' + decision + '" pour bc_id=' + row[COL.bc_id] + ' → remis à vide');
+    console.warn('  WARN: decision invalide "' + decision + '" pour bc_id=' + row[COL.bc_id] + ' -> remis a vide');
     counters.invalid++;
     decision = '';
   }
 
-  var signals = (row[COL.matched_signals] || '')
-    .split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  var signals = parseSignals(row[COL.matched_signals] || '');
 
   var rec = {
     client:             row[COL.client]             || '',
@@ -228,7 +257,7 @@ rows.slice(1).forEach(function(row) {
     weak_single_signal: row[COL.weak_single_signal] === 'true',
     clean_text_excerpt: row[COL.clean_text_excerpt]  || '',
     decision:           decision,
-    cycle_id:           _cycleId,       // null si non détectable depuis le nom du fichier
+    cycle_id:           _cycleId,       // null si non detectable depuis le nom du fichier
     review_source:      reviewSource,   // operator | client | system
     reviewed_at:        _reviewedAt,    // timestamp ISO de l'import
   };
@@ -259,20 +288,20 @@ rows.slice(1).forEach(function(row) {
   }
 });
 
-// ─────────────────────────────────────────────
-// Affichage résumé
-// ─────────────────────────────────────────────
+// ---------------------------------------------
+// Affichage resume
+// ---------------------------------------------
 function topSignals(map, n) {
   return Object.keys(map)
     .sort(function(a, b) { return map[b] - map[a]; })
     .slice(0, n)
-    .map(function(s) { return s + '×' + map[s]; })
+    .map(function(s) { return s + 'x' + map[s]; })
     .join(', ');
 }
 
 console.log('\n=== Import Review Decisions ===');
 console.log('Fichier       :', csvPath);
-console.log('cycle_id      :', _cycleId      || '(non détecté)');
+console.log('cycle_id      :', _cycleId      || '(non detecte)');
 console.log('review_source :', reviewSource);
 console.log('reviewed_at   :', _reviewedAt);
 console.log('Total         :', counters.total);
@@ -280,17 +309,17 @@ console.log('keep     :', counters.keep);
 console.log('reject   :', counters.reject);
 console.log('ignore   :', counters.ignore);
 console.log('vide     :', counters.vide);
-if (counters.invalid) console.log('invalide :', counters.invalid, '(remis à vide)');
+if (counters.invalid) console.log('invalide :', counters.invalid, '(remis a vide)');
 if (counters.keep)    console.log('Top signaux keep   :', topSignals(signalKeep,   5));
 if (counters.reject)  console.log('Top signaux reject :', topSignals(signalReject, 5));
 
-// ─────────────────────────────────────────────
-// Écriture JSON
-// ─────────────────────────────────────────────
+// ---------------------------------------------
+// Ecriture JSON
+// ---------------------------------------------
 if (dryRun) {
-  console.log('\n[DRY-RUN] Aucun fichier écrit.');
-  console.log('Serait écrit dans : data/review-decisions/');
-  console.log('\nRecords prévus :');
+  console.log('\n[DRY-RUN] Aucun fichier ecrit.');
+  console.log('Serait ecrit dans : data/review-decisions/');
+  console.log('\nRecords prevus :');
   records.forEach(function(r) { console.log('  ', JSON.stringify(r)); });
   process.exit(0);
 }
@@ -313,16 +342,16 @@ var outputPath = path.join(outputDir, fname);
 try {
   fs.mkdirSync(outputDir, { recursive: true });
   fs.writeFileSync(outputPath, JSON.stringify(outputData, null, 2), 'utf8');
-  console.log('\nJSON écrit :', outputPath);
+  console.log('\nJSON ecrit :', outputPath);
 } catch (e1) {
-  // Fallback VirtioFS : même dossier que le CSV
+  // Fallback VirtioFS : meme dossier que le CSV
   var fallbackDir  = path.dirname(path.resolve(csvPath));
   var fallbackPath = path.join(fallbackDir, fname);
   try {
     fs.writeFileSync(fallbackPath, JSON.stringify(outputData, null, 2), 'utf8');
-    console.log('\nJSON écrit (fallback) :', fallbackPath);
+    console.log('\nJSON ecrit (fallback) :', fallbackPath);
   } catch (e2) {
-    console.error('\nERROR: Impossible d\'écrire le JSON :', e1.message, '/', e2.message);
+    console.error('\nERROR: Impossible d\'ecrire le JSON :', e1.message, '/', e2.message);
     process.exit(1);
   }
 }

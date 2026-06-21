@@ -1,23 +1,23 @@
 /**
  * tests/unit/import-review-decisions.test.ts
  *
- * IRD-1..IRD-14 — Tests unitaires pour import-review-decisions.js (GD-058)
+ * IRD-1..IRD-14 -- Tests unitaires pour import-review-decisions.js (GD-058)
  * Transport des champs contextuels (ctx_*, human_review_reason, rrh_*) dans
- * les décisions importées.
+ * les decisions importees.
  *
- * Pattern miroir — logique locale, pas de require du script CLI.
+ * Pattern miroir -- logique locale, pas de require du script CLI.
  *
  * STRICT :
- *  - Pas de scoring / seuil / poids modifié
+ *  - Pas de scoring / seuil / poids modifie
  *  - Pas de prod / Supabase / Fly / notification / bcs_vus
  *  - keep / reject / ignore / vide uniquement
- *  - Décision invalide → remise à vide
- *  - Champs budget/prix/montant/estimation jamais utilisés comme raison review
- *  - ctx_negative_context_terms et ctx_positive_context_terms → array
- *  - Champs absents → omis du record (pas de clé avec '' ou null)
+ *  - Decision invalide -> remise a vide
+ *  - Champs budget/prix/montant/estimation jamais utilises comme raison review
+ *  - ctx_negative_context_terms et ctx_positive_context_terms -> array
+ *  - Champs absents -> omis du record (pas de cle avec '' ou null)
  */
 
-// ── Types locaux ────────────────────────────────────────────────────────────
+// -- Types locaux ------------------------------------------------------------
 interface IRDRecord {
   client:             string;
   bc_id:              string;
@@ -49,7 +49,7 @@ interface IRDRecord {
   [key: string]: unknown;
 }
 
-// ── Miroir inline des fonctions d'import ────────────────────────────────────
+// -- Miroir inline des fonctions d'import ------------------------------------
 
 const OPT_STR_COLS = [
   'ctx_learnable_context_hint',
@@ -114,6 +114,28 @@ function optTerms(row: string[], idx: number): string[] | null {
   return v.split(',').map(s => s.trim()).filter(Boolean);
 }
 
+// GD-061 -- miroir de parseSignals()
+// Parsing robuste de matched_signals : Python-list, CSV simple, separateur ; ou ,
+function parseSignals(raw: string): string[] {
+  if (!raw) return [];
+  let s = raw.trim();
+  // 1. Retirer les crochets optionnels
+  if (s.charAt(0) === '[') s = s.slice(1);
+  if (s.length && s.charAt(s.length - 1) === ']') s = s.slice(0, s.length - 1);
+  // 2. Normaliser le separateur : remplacer ; par ,
+  s = s.replace(/;/g, ',');
+  // 3. Split, trim, retirer quotes simples/doubles symetriques, filtrer vides
+  return s.split(',').map(t => {
+    t = t.trim();
+    const first = t.charAt(0);
+    const last  = t.charAt(t.length - 1);
+    if (t.length >= 2 && ((first === "'" && last === "'") || (first === '"' && last === '"'))) {
+      t = t.slice(1, t.length - 1).trim();
+    }
+    return t;
+  }).filter(Boolean);
+}
+
 const VALID_DECISIONS = ['keep', 'reject', 'ignore', ''];
 
 function importCsv(csvRaw: string, cycleId: string | null = null): IRDRecord[] {
@@ -141,8 +163,7 @@ function importCsv(csvRaw: string, cycleId: string | null = null): IRDRecord[] {
     let decision = (row[COL.decision] || '').trim().toLowerCase();
     if (VALID_DECISIONS.indexOf(decision) === -1) decision = '';
 
-    const signals = (row[COL.matched_signals] || '')
-      .split(',').map(s => s.trim()).filter(Boolean);
+    const signals = parseSignals(row[COL.matched_signals] || '');
 
     const rec: IRDRecord = {
       client:             row[COL.client]             || '',
@@ -175,7 +196,7 @@ function importCsv(csvRaw: string, cycleId: string | null = null): IRDRecord[] {
   return records;
 }
 
-// ── Helpers CSV de test ───────────────────────────────────────────────────────
+// -- Helpers CSV de test ------------------------------------------------------
 // CSV minimal (sans colonnes ctx_*)
 const HEADER_MIN = 'client;bc_id;score;signal_origin;matched_signals;strength_reason;weak_single_signal;clean_text_excerpt;decision';
 
@@ -233,12 +254,12 @@ function fullRow(fields: Partial<{
   ].join(';');
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
+// -- Tests -------------------------------------------------------------------
 
-describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
+describe('IRD -- import-review-decisions ctx transport (GD-058)', () => {
 
-  // ── IRD-1 : ctx_learnable_context_hint transporté ──────────────────────────
-  test('IRD-1 : ctx_learnable_context_hint transporté depuis le CSV', () => {
+  // IRD-1 : ctx_learnable_context_hint transporte
+  test('IRD-1 : ctx_learnable_context_hint transporte depuis le CSV', () => {
     const csv = [
       HEADER_FULL,
       fullRow({ ctx_learnable_context_hint: 'cleaning_disinfection_context', decision: 'keep' }),
@@ -247,8 +268,8 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(rec!.ctx_learnable_context_hint).toBe('cleaning_disinfection_context');
   });
 
-  // ── IRD-2 : CSV sans colonnes ctx_* — pas de crash, pas de champ ctx_ ──────
-  test('IRD-2 : CSV minimal sans ctx_* — import OK, aucun champ ctx_ dans le record', () => {
+  // IRD-2 : CSV sans colonnes ctx_* -- pas de crash, pas de champ ctx_
+  test('IRD-2 : CSV minimal sans ctx_* -- import OK, aucun champ ctx_ dans le record', () => {
     const csv = [
       HEADER_MIN,
       minRow('CLIENT A', '100001', 10, 'nettoyage', 'keep'),
@@ -261,8 +282,8 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(ctxKeys).toHaveLength(0);
   });
 
-  // ── IRD-3 : ctx_negative_context_terms parsé comme array ───────────────────
-  test('IRD-3 : ctx_negative_context_terms parsé comme array de termes', () => {
+  // IRD-3 : ctx_negative_context_terms parse comme array
+  test('IRD-3 : ctx_negative_context_terms parse comme array de termes', () => {
     const csv = [
       HEADER_FULL,
       fullRow({ ctx_negative_context_terms: 'hopital, soins, chp' }),
@@ -272,8 +293,8 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(rec!.ctx_negative_context_terms).toEqual(['hopital', 'soins', 'chp']);
   });
 
-  // ── IRD-4 : ctx_positive_context_terms parsé comme array ───────────────────
-  test('IRD-4 : ctx_positive_context_terms parsé comme array de termes', () => {
+  // IRD-4 : ctx_positive_context_terms parse comme array
+  test('IRD-4 : ctx_positive_context_terms parse comme array de termes', () => {
     const csv = [
       HEADER_FULL,
       fullRow({ ctx_positive_context_terms: 'nettoyage, batiment, administration' }),
@@ -283,8 +304,8 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(rec!.ctx_positive_context_terms).toEqual(['nettoyage', 'batiment', 'administration']);
   });
 
-  // ── IRD-5 : ctx_profile_alignment transporté comme string ──────────────────
-  test('IRD-5 : ctx_profile_alignment transporté comme string', () => {
+  // IRD-5 : ctx_profile_alignment transporte comme string
+  test('IRD-5 : ctx_profile_alignment transporte comme string', () => {
     const csv = [
       HEADER_FULL,
       fullRow({ ctx_profile_alignment: 'high' }),
@@ -293,8 +314,8 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(rec!.ctx_profile_alignment).toBe('high');
   });
 
-  // ── IRD-6 : human_review_reason transporté ─────────────────────────────────
-  test('IRD-6 : human_review_reason transporté si présent', () => {
+  // IRD-6 : human_review_reason transporte
+  test('IRD-6 : human_review_reason transporte si present', () => {
     const csv = [
       HEADER_FULL,
       fullRow({ human_review_reason: 'bon_signal_mauvais_contexte', decision: 'reject' }),
@@ -304,8 +325,8 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(rec!.decision).toBe('reject');
   });
 
-  // ── IRD-7 : human_review_comment transporté ────────────────────────────────
-  test('IRD-7 : human_review_comment transporté si présent', () => {
+  // IRD-7 : human_review_comment transporte
+  test('IRD-7 : human_review_comment transporte si present', () => {
     const csv = [
       HEADER_FULL,
       fullRow({ human_review_comment: 'Contexte hospitalier exclu du profil', decision: 'ignore' }),
@@ -315,8 +336,8 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(rec!.decision).toBe('ignore');
   });
 
-  // ── IRD-8 : rrh_applied et rrh_action transportés ──────────────────────────
-  test('IRD-8 : rrh_applied et rrh_action transportés si présents', () => {
+  // IRD-8 : rrh_applied et rrh_action transportes
+  test('IRD-8 : rrh_applied et rrh_action transportes si presents', () => {
     const csv = [
       HEADER_FULL,
       fullRow({ rrh_applied: 'true', rrh_action: 'context_keep_review_or_boost_candidate' }),
@@ -326,7 +347,7 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(rec!.rrh_action).toBe('context_keep_review_or_boost_candidate');
   });
 
-  // ── IRD-9 : décision vide → '' (pending) ───────────────────────────────────
+  // IRD-9 : decision vide -> '' (pending)
   test('IRD-9 : decision vide reste vide (pending)', () => {
     const csv = [
       HEADER_MIN,
@@ -336,7 +357,7 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(rec!.decision).toBe('');
   });
 
-  // ── IRD-10 : décision invalide → remise à vide ─────────────────────────────
+  // IRD-10 : decision invalide -> remise a vide
   test('IRD-10 : decision invalide remise a vide', () => {
     const csv = [
       HEADER_MIN,
@@ -346,7 +367,7 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(rec!.decision).toBe('');
   });
 
-  // ── IRD-11 : keep / reject / ignore uniquement valides ─────────────────────
+  // IRD-11 : keep / reject / ignore uniquement valides
   test('IRD-11 : keep / reject / ignore sont les seules decisions valides', () => {
     const csv = [
       HEADER_MIN,
@@ -360,11 +381,11 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(recs[0]!.decision).toBe('keep');
     expect(recs[1]!.decision).toBe('reject');
     expect(recs[2]!.decision).toBe('ignore');
-    expect(recs[3]!.decision).toBe('');   // invalide → vide
-    expect(recs[4]!.decision).toBe('');   // invalide → vide
+    expect(recs[3]!.decision).toBe('');
+    expect(recs[4]!.decision).toBe('');
   });
 
-  // ── IRD-12 : champs vides non inclus dans le record ────────────────────────
+  // IRD-12 : champs vides non inclus dans le record
   test('IRD-12 : ctx fields vides omis du record', () => {
     const csv = [
       HEADER_FULL,
@@ -382,7 +403,7 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     expect(rec).not.toHaveProperty('rrh_applied');
   });
 
-  // ── IRD-13 : pas de champ budget/prix/montant/estimation ───────────────────
+  // IRD-13 : pas de champ budget/prix/montant/estimation
   test('IRD-13 : aucun champ budget/prix/montant/estimation dans les records', () => {
     const csv = [
       HEADER_FULL,
@@ -397,7 +418,7 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     });
   });
 
-  // ── IRD-14 : plusieurs records — champs ctx_ indépendants par ligne ──────
+  // IRD-14 : plusieurs records -- champs ctx_ independants par ligne
   test('IRD-14 : champs ctx_ independants par ligne', () => {
     const csv = [
       HEADER_FULL,
@@ -416,12 +437,74 @@ describe('IRD — import-review-decisions ctx transport (GD-058)', () => {
     ].join('\n');
     const recs = importCsv(csv);
 
-    // Record 1 : hint présent, pas de neg_terms
+    // Record 1 : hint present, pas de neg_terms
     expect(recs[0]!.ctx_learnable_context_hint).toBe('cleaning_disinfection_context');
     expect(recs[0]).not.toHaveProperty('ctx_negative_context_terms');
 
     // Record 2 : neg_terms array, pas de hint
     expect(recs[1]).not.toHaveProperty('ctx_learnable_context_hint');
     expect(recs[1]!.ctx_negative_context_terms).toEqual(['hopital', 'soins']);
+  });
+});
+
+// ==============================================================================
+//  GD-061 -- parseSignals() : parsing robuste matched_signals (IRD-15..IRD-22)
+// ==============================================================================
+
+describe('IRD -- parseSignals parsing robuste matched_signals (GD-061)', () => {
+
+  // IRD-15 : format CSV standard separateur virgule
+  test('IRD-15 -- "nettoyage,hygiene" -> ["nettoyage","hygiene"]', () => {
+    expect(parseSignals('nettoyage,hygiene')).toEqual(['nettoyage', 'hygiene']);
+  });
+
+  // IRD-16 : format separateur point-virgule
+  test('IRD-16 -- "nettoyage;hygiene" -> ["nettoyage","hygiene"]', () => {
+    expect(parseSignals('nettoyage;hygiene')).toEqual(['nettoyage', 'hygiene']);
+  });
+
+  // IRD-17 : format Python-list quotes simples
+  test("IRD-17 -- \"['nettoyage', 'hygiene']\" -> [\"nettoyage\",\"hygiene\"]", () => {
+    expect(parseSignals("['nettoyage', 'hygiene']")).toEqual(['nettoyage', 'hygiene']);
+  });
+
+  // IRD-18 : format JSON-array quotes doubles
+  test('IRD-18 -- \'["nettoyage","hygiene"]\' -> ["nettoyage","hygiene"]', () => {
+    expect(parseSignals('["nettoyage","hygiene"]')).toEqual(['nettoyage', 'hygiene']);
+  });
+
+  // IRD-19 : valeur vide -> []
+  test('IRD-19 -- valeur vide -> []', () => {
+    expect(parseSignals('')).toEqual([]);
+  });
+
+  // IRD-20 : signal unique sans crochet ni quote -> inchange
+  test('IRD-20 -- signal unique "nettoyage" -> ["nettoyage"]', () => {
+    expect(parseSignals('nettoyage')).toEqual(['nettoyage']);
+  });
+
+  // IRD-21 : import CSV avec matched_signals Python-list -> matched_signals propres dans le record
+  test('IRD-21 -- import CSV Python-list -> matched_signals propres sans mangling', () => {
+    const pyList = "['nettoyage', 'hygiene']";
+    const csv = [
+      HEADER_MIN,
+      minRow('CLIENT TEST', '353283', 10, pyList, 'keep'),
+    ].join('\n');
+    const [rec] = importCsv(csv);
+    // Le champ matched_signals doit contenir 2 signaux propres, pas des fragments mangles
+    expect(rec!.matched_signals).toEqual(['nettoyage', 'hygiene']);
+    expect(rec!.matched_signals).not.toContain("['nettoyage'");
+    expect(rec!.matched_signals).not.toContain("'hygiene']");
+  });
+
+  // IRD-22 : retrocompatibilite CSV minimal mono-signal -- signal unique inchange
+  test('IRD-22 -- retrocompat CSV minimal mono-signal : signal unique conserve', () => {
+    const csv = [
+      HEADER_MIN,
+      minRow('CLIENT A', '100001', 10, 'nettoyage', 'keep'),
+    ].join('\n');
+    const [rec] = importCsv(csv);
+    expect(rec!.matched_signals).toEqual(['nettoyage']);
+    expect(rec!.decision).toBe('keep');
   });
 });
