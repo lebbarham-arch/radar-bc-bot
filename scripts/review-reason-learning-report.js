@@ -66,9 +66,17 @@ var MEDICAL_NEGATIVE_TERMS = [
   'hopital', 'hôpital', 'chp ', 'chr ', 'chu ',
 ];
 function contextKey(entry) {
-  // 1. ctx_learnable_context_hint — si c'est un label générique reconnu
+  // 1. ctx_learnable_context_hint -- label exact reconnu dans KNOWN_CONTEXT_LABELS
   var hint = normStr(entry.ctx_learnable_context_hint || '');
   if (hint && KNOWN_CONTEXT_LABELS.indexOf(hint) !== -1) return hint;
+
+  // 1b. ctx_learnable_context_hint -- contient un label KNOWN en substring (prose generee par le moteur)
+  //     Priorite : premier label trouve dans l'ordre de KNOWN_CONTEXT_LABELS (deterministe, sans regle client).
+  if (hint) {
+    for (var _ki = 0; _ki < KNOWN_CONTEXT_LABELS.length; _ki++) {
+      if (hint.indexOf(KNOWN_CONTEXT_LABELS[_ki]) !== -1) return KNOWN_CONTEXT_LABELS[_ki];
+    }
+  }
 
   // 2. ctx_context_key ou context_key — si non-vide et non générique
   var ctk = normStr((entry.ctx_context_key || entry.context_key || ''));

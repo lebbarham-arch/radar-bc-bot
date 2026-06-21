@@ -100,9 +100,17 @@ const MEDICAL_NEGATIVE_TERMS_T = [
   'hopital', 'hôpital', 'chp ', 'chr ', 'chu ',
 ];
 function contextKeyT(entry: LearningReviewEntry): string {
-  // 1. ctx_learnable_context_hint — label générique reconnu
+  // 1. ctx_learnable_context_hint -- label exact reconnu dans KNOWN_CONTEXT_LABELS
   const hint = normStrT(entry.ctx_learnable_context_hint || '');
   if (hint && KNOWN_CONTEXT_LABELS_T.includes(hint)) return hint;
+
+  // 1b. ctx_learnable_context_hint -- contient un label KNOWN en substring (prose generee par le moteur)
+  //     Priorite : premier label trouve dans l'ordre de KNOWN_CONTEXT_LABELS_T (deterministe, sans regle client).
+  if (hint) {
+    for (let _i = 0; _i < KNOWN_CONTEXT_LABELS_T.length; _i++) {
+      if (hint.indexOf(KNOWN_CONTEXT_LABELS_T[_i]!) !== -1) return KNOWN_CONTEXT_LABELS_T[_i]!;
+    }
+  }
 
   // 2. ctx_context_key ou context_key — non-vide, non-générique
   const ctk = normStrT((entry as Record<string, unknown>)['ctx_context_key'] as string || '');
@@ -686,6 +694,85 @@ describe('review-reason-learning-report — evidence dans suggestion', () => {
 });
 
 
+// ==============================================================================
+//  GD-059 -- contextKey extraction label depuis prose (SS-RL37..SS-RL42)
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('P7 contextKey -- extraction label depuis prose (GD-059)', () => {
+
+  // SS-RL37 : prose avec un seul label connu -> retourne le label pur
+  test('SS-RL37 -- "Contexte detecte : cleaning_disinfection_context." -> cleaning_disinfection_context', () => {
+    const entry: LearningReviewEntry = {
+      ...BASE_ENTRY,
+      ctx_learnable_context_hint: 'Contexte detecte : cleaning_disinfection_context.',
+    };
+    expect(contextKeyT(entry)).toBe('cleaning_disinfection_context');
+  });
+
+  // SS-RL38 : prose avec medical_admin_context -> retourne medical_admin_context
+  test('SS-RL38 -- "Contexte detecte : medical_admin_context." -> medical_admin_context', () => {
+    const entry: LearningReviewEntry = {
+      ...BASE_ENTRY,
+      ctx_learnable_context_hint: 'Contexte detecte : medical_admin_context.',
+    };
+    expect(contextKeyT(entry)).toBe('medical_admin_context');
+  });
+
+  // SS-RL39 : prose avec plusieurs labels -> premier dans l'ordre de KNOWN_CONTEXT_LABELS_T
+  //   KNOWN order : medical_admin_context (index 0) < cleaning_disinfection_context (index 1)
+  //   -> medical_admin_context gagne meme si cleaning_disinfection_context est premier dans la phrase
+  test('SS-RL39 -- prose multi-labels : premier dans KNOWN_CONTEXT_LABELS_T gagne (medical_admin_context index 0)', () => {
+    const entry: LearningReviewEntry = {
+      ...BASE_ENTRY,
+      ctx_learnable_context_hint: 'Contexte detecte : cleaning_disinfection_context, medical_admin_context. Verifier.',
+    };
+    // cleaning apparait en premier dans la phrase, mais medical_admin_context est index 0 dans KNOWN
+    expect(contextKeyT(entry)).toBe('medical_admin_context');
+  });
+
+  // SS-RL40 : prose sans aucun label connu -> aucun label KNOWN retourne (pas de faux positif)
+  test('SS-RL40 -- hint sans label connu ne retourne pas un label KNOWN', () => {
+    const entry: LearningReviewEntry = {
+      ...BASE_ENTRY,
+      ctx_learnable_context_hint: 'Aucun contexte metier clairement identifie. Revue manuelle recommandee.',
+    };
+    const ctk = contextKeyT(entry);
+    KNOWN_CONTEXT_LABELS_T.forEach(label => {
+      expect(ctk).not.toBe(label);
+    });
+  });
+
+  // SS-RL41 : prose avec label connu -> context_key est le label pur, pas la prose entiere
+  test('SS-RL41 -- hint prose avec label connu -> context_key est le label pur, jamais la prose entiere', () => {
+    const prose = 'Contexte detecte : cleaning_disinfection_context. Verifier si ce contexte correspond.';
+    const entry: LearningReviewEntry = { ...BASE_ENTRY, ctx_learnable_context_hint: prose };
+    const ctk = contextKeyT(entry);
+    expect(ctk).toBe('cleaning_disinfection_context');
+    expect(ctk).not.toBe(prose);
+    expect(ctk.length).toBeLessThan(prose.length);
+  });
+
+  // SS-RL42 : KNOWN_CONTEXT_LABELS sont generiques -- pas de nom client/signal specifique.
+  //   Termes interdits = noms de clients / signaux metier (nettoyage, hygiene...).
+  //   "medical" est autorise car medical_admin_context est un label de categorie KNOWN,
+  //   non un nom de client. La contrainte GD-059 vise la logique de code, pas les labels.
+  test('SS-RL42 -- KNOWN_CONTEXT_LABELS ne contient aucun nom client ou signal specifique hardcode', () => {
+    // Termes qui seraient des noms de clients ou signaux metier specifiques (a ne pas hardcoder)
+    const clientOrSignalNames = ['nettoyage', 'hygiene', 'hopital', 'maroc', 'ibn_sina', 'client_'];
+    KNOWN_CONTEXT_LABELS_T.forEach(label => {
+      clientOrSignalNames.forEach(f => {
+        expect(label.toLowerCase()).not.toContain(f);
+      });
+    });
+    // Verifier que les labels suivent la convention snake_case *_context
+    KNOWN_CONTEXT_LABELS_T.forEach(label => {
+      expect(label).toMatch(/^[a-z][a-z0-9_]*_context$/);
+    });
+  });
+
+});
+
+
 // ══════════════════════════════════════════════════════════════════════════════
 //  DÉDUPLICATION PAR bc_id (SS-RL32..36)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -767,7 +854,6 @@ describe('P7 review-reason-learning-report — déduplication bc_id (SS-RL32..36
     expect(r.duplicate_decisions_ignored).toBe(0);
     expect(r.groups[0]!.decisions).toBe(3);
   });
-
   // SS-RL36 : 3 bc_id distincts client A + doublon client B → client-mix correct
   test('SS-RL36 — doublons scoped par client : BC1/clientA et BC1/clientB comptent séparément', () => {
     const eA1 = { ...makeEntry('BC1', 'reject'), client: 'A' };
