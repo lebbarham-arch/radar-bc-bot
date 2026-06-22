@@ -205,9 +205,14 @@ describe("RLC-E -- Structure des 6 etapes du cycle", () => {
     expect(has("--export-review-csv")).toBe(true);
   });
 
-  test("RLC-26: --review-reason-hints est passe a analyze-shadow-report.js si hints presents", () => {
-    expect(has("--review-reason-hints")).toBe(true);
-    expect(has("review-reason-hint-candidates-approved-")).toBe(true);
+  // GD-073 : le wrapper ne passe plus --review-reason-hints par defaut.
+  // analyze-shadow-report.js charge automatiquement active-current via GD-068.
+  test("RLC-26: GD-073 -- --review-reason-hints n'est plus passe par defaut", () => {
+    // Le flag ne doit PAS apparaitre dans AnalyzeArgs sans condition explicite
+    expect(has("--review-reason-hints")).toBe(false);
+    expect(has("review-reason-hint-candidates-approved-")).toBe(false);
+    // La mention GD-068 documente l'intention dans le script
+    expect(has("GD-068")).toBe(true);
   });
 });
 

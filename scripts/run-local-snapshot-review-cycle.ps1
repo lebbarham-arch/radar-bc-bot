@@ -8,7 +8,7 @@
     2. Verification port 3000 libre
     3. Scan snapshot-only (RADAR_BC_SNAPSHOT_ONLY=1, log horodate)
     4. Replay shadow sur le dernier snapshot
-    5. Analyse shadow-report avec approved hints + exports
+    5. Analyse shadow-report (hints actifs via GD-068) + exports
     6. Resume console
 
   SECURITE :
@@ -232,27 +232,11 @@ Write-Ok "Rapport shadow : data\shadow\$ReportFname"
 # ========================================================
 Write-Step "Etape 6/6 -- Analyse Shadow Report"
 
-# Chercher le dernier fichier approved hints
-$HintsDir    = Join-Path $RepoRoot "data\review-learning"
+# GD-068 : analyze-shadow-report.js charge automatiquement
+#          data/review-learning/review-reason-hints-active-current.json
+#          Aucun flag hints a passer par defaut (chargement auto).
 $AnalyzeArgs = @("scripts\analyze-shadow-report.js", $ReportPath,
                  "--export-review", "--export-review-csv")
-
-$LatestHints = $null
-if (Test-Path $HintsDir) {
-    $LatestHints = Get-ChildItem -Path $HintsDir -Filter "review-reason-hint-candidates-approved-*.json" |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-
-    if ($LatestHints) {
-        $AnalyzeArgs += "--review-reason-hints"
-        $AnalyzeArgs += $LatestHints.FullName
-        Write-Host "  Hints approuves : $($LatestHints.Name)" -ForegroundColor DarkGray
-    } else {
-        Write-Warn "Aucun fichier approved hints trouve dans data\review-learning -- analyse sans hints"
-    }
-} else {
-    Write-Warn "Dossier data\review-learning absent -- analyse sans hints"
-}
 
 if ($ClientFilter) {
     $AnalyzeArgs += "--client"
@@ -354,10 +338,6 @@ Write-Host "  Legacy only       : $LegacyOnly  (FP rate legacy ~${FpRate}%)" -Fo
 Write-Host "  Clean only        : $CleanOnly"    -ForegroundColor White
 Write-Host "  Auto candidates   : $AutoCands"    -ForegroundColor White
 Write-Host "  Review candidates : $ReviewCands"  -ForegroundColor White
-if ($LatestHints) {
-    Write-Host "  Hints appliques   : $($LatestHints.Name)" -ForegroundColor DarkGray
-}
-
 Write-Host ""
 Write-Host "========================================================" -ForegroundColor DarkCyan
 Write-Host "  git status --short (fin de cycle)" -ForegroundColor Cyan
@@ -369,3 +349,4 @@ Write-Host ""
 Write-Host "  Cycle termine -- aucun commit, aucun push." -ForegroundColor Green
 Write-Host "  Log scan : logs\snapshot-only-full-$SessionTs.log" -ForegroundColor DarkGray
 Write-Host ""
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
