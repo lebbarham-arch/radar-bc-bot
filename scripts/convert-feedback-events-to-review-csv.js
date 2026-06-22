@@ -30,6 +30,9 @@
 var fs   = require('fs');
 var path = require('path');
 
+// GD-077B : mapping enrichi (type + reason optionnel) depuis le module GD-077
+var mapFeedbackToReview = require('./feedback-reason-mapping').mapFeedbackToReview;
+
 // ---------------------------------------------------------------------------
 // Mapping feedback type -> (decision, human_review_reason)
 // ---------------------------------------------------------------------------
@@ -105,7 +108,19 @@ function convertFeedbackEvent(event) {
   if (!item_id)   return null;
   if (!client_id) return null;
 
-  var mapping = FEEDBACK_TYPE_MAP[type];
+  // GD-077B : extraire reason depuis event.reason (prioritaire) ou raw_payload.reason
+  // Si absent ou inconnu, mapFeedbackToReview utilise le _default du type => comportement GD-076 inchange.
+  var raw_payload = event.raw_payload;
+  var reason;
+  if (typeof event.reason === 'string' && event.reason.trim()) {
+    reason = event.reason.trim();
+  } else if (raw_payload && typeof raw_payload === 'object' &&
+             typeof raw_payload.reason === 'string' && raw_payload.reason.trim()) {
+    reason = raw_payload.reason.trim();
+  }
+
+  // GD-077B : mapping enrichi -- delegue a feedback-reason-mapping.js
+  var mapping = mapFeedbackToReview(type, reason);
   if (!mapping) return null; // type inconnu -> ignore
 
   var critere       = (event.critere       || '').trim();
@@ -121,12 +136,7 @@ function convertFeedbackEvent(event) {
   var comment_parts = ['Feedback client brut: type=' + type];
   if (critere)    comment_parts.push('critere=' + critere);
   if (notif_id)   comment_parts.push('notif_id=' + notif_id);
-
-  // Ajouter reason depuis raw_payload si present (preparation future)
-  var raw_payload = event.raw_payload;
-  if (raw_payload && typeof raw_payload === 'object' && raw_payload.reason) {
-    comment_parts.push('reason=' + String(raw_payload.reason).trim());
-  }
+  if (reason)     comment_parts.push('reason=' + reason);
 
   var human_review_comment = comment_parts.join('; ');
 
@@ -324,7 +334,7 @@ if (dryRun) {
   console.log('\n--- Preview CSV (header + ' + reviews.length + ' ligne(s)) ---');
   console.log(CSV_HEADER.join(';'));
   reviews.forEach(function(r) {
-    var line = CSV_HEADER.map(function(col) { return r[col] !== undefined ? r[col] : ''; }).join(';');
+        var line = CSV_HEADER.map(function(col) { return r[col] !== undefined ? r[col] : ''; }).join(';');
     console.log(line);
   });
   console.log('\n[dry-run] Aucun fichier ecrit.');

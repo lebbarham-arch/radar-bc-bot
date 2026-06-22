@@ -877,6 +877,12 @@ function isFeedbackEnabledForClient(clientId) {
 
 const _VALID_FEEDBACK_TYPES = ["relevant", "irrelevant", "duplicate", "out_of_scope", "wrong_category", "watch"];
 const _VALID_RADAR_TYPES    = ["bc", "mp"];
+// GD-077 : raisons client optionnelles -- valeurs valides pour le parametre ?r=
+// Aucun lien existant ne contient ce parametre => comportement prod inchange.
+const _VALID_FEEDBACK_REASONS = [
+  "not_my_business", "wrong_buyer", "wrong_zone", "wrong_product",
+  "not_sure", "duplicate", "insufficient_info", "other",
+];
 
 /**
  * Valide les paramètres GET de la route /feedback.
@@ -903,6 +909,11 @@ function validateFeedbackQuery(query) {
   if (bc_title      !== undefined) data.bc_title      = bc_title;
   if (matched_terms !== undefined) data.matched_terms = matched_terms;
   if (notif_id      !== undefined) data.notif_id      = notif_id;
+
+  // GD-077 : raison client optionnelle (?r=) -- passive, aucun lien existant ne la contient.
+  // Si absente ou invalide : ignoree silencieusement, pas d'erreur, comportement prod inchange.
+  const reason = typeof query.r === "string" ? query.r.slice(0, 64).trim() : undefined;
+  if (reason !== undefined && _VALID_FEEDBACK_REASONS.includes(reason)) data.reason = reason;
 
   return { valid: true, data };
 }

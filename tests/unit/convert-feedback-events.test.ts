@@ -241,4 +241,63 @@ describe('CFE-19..20 -- buildCsvContent', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// CFE-21..25 -- GD-077B : mapping enrichi avec reason
+// ---------------------------------------------------------------------------
+
+describe('CFE-21..25 -- GD-077B : mapping enrichi (type + reason)', () => {
+
+  test('CFE-21: irrelevant + reason=wrong_product -> reject / bon_signal_mauvais_contexte', () => {
+    // wrong_product distingue hors_profil (default) de bon_signal_mauvais_contexte
+    const r = convertFeedbackEvent(makeFeedbackEvent({
+      type: 'irrelevant',
+      reason: 'wrong_product',
+    }));
+    expect(r).not.toBeNull();
+    expect(r.decision).toBe('reject');
+    expect(r.human_review_reason).toBe('bon_signal_mauvais_contexte');
+  });
+
+  test('CFE-22: irrelevant + reason=wrong_buyer -> reject / hors_profil', () => {
+    const r = convertFeedbackEvent(makeFeedbackEvent({
+      type: 'irrelevant',
+      reason: 'wrong_buyer',
+    }));
+    expect(r!.decision).toBe('reject');
+    expect(r!.human_review_reason).toBe('hors_profil');
+  });
+
+  test('CFE-23: reason lu depuis event.reason (prioritaire sur raw_payload.reason)', () => {
+    const r = convertFeedbackEvent(makeFeedbackEvent({
+      type: 'irrelevant',
+      reason: 'wrong_product',           // event.reason => bon_signal_mauvais_contexte
+      raw_payload: { reason: 'wrong_buyer' }, // raw_payload.reason => hors_profil si prioritaire
+    }));
+    // event.reason doit prendre la precedence
+    expect(r!.human_review_reason).toBe('bon_signal_mauvais_contexte');
+    expect(r!.human_review_comment).toContain('reason=wrong_product');
+  });
+
+  test('CFE-24: reason lu depuis raw_payload.reason quand event.reason absent', () => {
+    const r = convertFeedbackEvent(makeFeedbackEvent({
+      type: 'irrelevant',
+      raw_payload: { reason: 'wrong_product' },
+    }));
+    expect(r!.decision).toBe('reject');
+    expect(r!.human_review_reason).toBe('bon_signal_mauvais_contexte');
+    expect(r!.human_review_comment).toContain('reason=wrong_product');
+  });
+
+  test('CFE-25: reason inconnu -> fallback _default du type (comportement GD-076 inchange)', () => {
+    // reason inconnu => mapFeedbackToReview retourne _default = hors_profil pour irrelevant
+    const r = convertFeedbackEvent(makeFeedbackEvent({
+      type: 'irrelevant',
+      reason: 'totally_unknown_reason',
+    }));
+    expect(r!.decision).toBe('reject');
+    expect(r!.human_review_reason).toBe('hors_profil');
+  });
+});
+
 export {};
