@@ -12,6 +12,9 @@ try { pdfParse = require("pdf-parse"); } catch(e) { pdfParse = null; }
 let AdmZip;
 try { AdmZip = require("adm-zip"); } catch(e) { AdmZip = null; }
 
+// GD-078 : helpers purs pour liens feedback avec raison client (flag desactive par defaut)
+const _fbl = require("./scripts/feedback-links-builder");
+
 puppeteer.use(Stealth());
 
 const CFG = {
@@ -823,41 +826,17 @@ async function sendEmail(client, item, matchedCriteres, radarType, aiResume) {
  * Construit la section feedback à ajouter aux notifications.
  * Retourne null si feedbackUrl n'est pas configuré.
  * @param {string} mode  "html" | "plain"
+ *
+ * GD-078 : deleguee a _fbl.buildFeedbackReasonLinks (helper pur testable).
+ * FEEDBACK_REASON_LINKS_ENABLED=true  => 8 liens avec r= par raison client.
+ * FEEDBACK_REASON_LINKS_ENABLED=false (defaut) => 3 liens originaux sans r= (prod inchange).
  */
 function _buildFeedbackSection(clientId, itemId, critereValeur, radarType, mode, opts) {
-  const base = (CFG.feedbackUrl || "").trim();
-  if (!base) return null;
-
-  const clean = base.replace(/\/$/, "") + "/feedback";
-  const types = [
-    ["relevant",  "✅ Pertinent"],
-    ["irrelevant","❌ Pas pertinent"],
-    ["watch",     "👀 À surveiller"],
-  ];
-
-  function makeUrl(type) {
-    let u = clean
-      + "?client_id=" + encodeURIComponent(clientId)
-      + "&radar_type=" + encodeURIComponent(radarType)
-      + "&item_id="    + encodeURIComponent(itemId)
-      + "&critere="    + encodeURIComponent(critereValeur)
-      + "&type="       + encodeURIComponent(type);
-    if (opts && opts.notifId)      u += "&nid=" + encodeURIComponent(opts.notifId);
-    if (opts && opts.matchedTerms) u += "&mt="  + encodeURIComponent(opts.matchedTerms);
-    if (opts && opts.bcTitle)      u += "&bt="  + encodeURIComponent(String(opts.bcTitle).slice(0, 60));
-    return u;
-  }
-
-  const lines = ["", "Feedback :"];
-  for (const [type, label] of types) {
-    const url = makeUrl(type);
-    if (mode === "html") {
-      lines.push('<a href="' + url + '">' + label + "</a>");
-    } else {
-      lines.push(label + " — " + url);
-    }
-  }
-  return lines.join("\n");
+  const enabled = _fbl.isFeedbackReasonLinksEnabled(process.env.FEEDBACK_REASON_LINKS_ENABLED);
+  return _fbl.buildFeedbackReasonLinks(
+    (CFG.feedbackUrl || "").trim(),
+    clientId, itemId, critereValeur, radarType, opts, mode, enabled
+  );
 }
 
 /**
