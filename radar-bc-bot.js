@@ -14,6 +14,8 @@ try { AdmZip = require("adm-zip"); } catch(e) { AdmZip = null; }
 
 // GD-078 : helpers purs pour liens feedback avec raison client (flag desactive par defaut)
 const _fbl = require("./scripts/feedback-links-builder");
+// GD-080 : fonctions pures feedback extraites pour tests isoles
+const _fbh = require("./scripts/feedback-handler");
 
 puppeteer.use(Stealth());
 
@@ -852,60 +854,20 @@ function isFeedbackEnabledForClient(clientId) {
   return CFG.feedbackAllowed.includes(String(clientId));
 }
 
-// ─── Feedback capture helpers ────────────────────────────────────────────────
+// ─── Feedback capture helpers ─────────────────────────────────────────────────
+// GD-080 : logique extraite dans scripts/feedback-handler.js pour tests isoles.
+// Aliases identiques -- comportement de la route /feedback inchange.
 
-const _VALID_FEEDBACK_TYPES = ["relevant", "irrelevant", "duplicate", "out_of_scope", "wrong_category", "watch"];
-const _VALID_RADAR_TYPES    = ["bc", "mp"];
-// GD-077 : raisons client optionnelles -- valeurs valides pour le parametre ?r=
-// Aucun lien existant ne contient ce parametre => comportement prod inchange.
-const _VALID_FEEDBACK_REASONS = [
-  "not_my_business", "wrong_buyer", "wrong_zone", "wrong_product",
-  "not_sure", "duplicate", "insufficient_info", "other",
-];
+const _VALID_FEEDBACK_TYPES   = _fbh.VALID_FEEDBACK_TYPES;
+const _VALID_RADAR_TYPES      = _fbh.VALID_RADAR_TYPES;
+// GD-077 : raisons client optionnelles (passives, ?r=)
+const _VALID_FEEDBACK_REASONS = _fbh.VALID_FEEDBACK_REASONS;
 
-/**
- * Valide les paramètres GET de la route /feedback.
- * Retourne { valid, error?, data? }
- */
-function validateFeedbackQuery(query) {
-  const client_id  = (query.client_id  || "").trim();
-  const radar_type = (query.radar_type || "").trim();
-  const item_id    = (query.item_id    || "").trim();
-  const critere    = (query.critere    || "").trim();
-  const type       = (query.type       || "").trim();
+/** Valide les parametres GET de /feedback. Retourne { valid, error?, data? } */
+const validateFeedbackQuery = _fbh.validateFeedbackQuery;
 
-  if (!client_id)                               return { valid: false, error: "client_id manquant" };
-  if (!_VALID_RADAR_TYPES.includes(radar_type)) return { valid: false, error: "radar_type invalide" };
-  if (!item_id)                                 return { valid: false, error: "item_id manquant" };
-  if (!critere)                                 return { valid: false, error: "critere manquant" };
-  if (!_VALID_FEEDBACK_TYPES.includes(type))    return { valid: false, error: "type invalide" };
-
-  // Champs optionnels d'enrichissement (FB-3) — présents uniquement dans les liens enrichis
-  const data = { client_id, radar_type, item_id, critere, type };
-  const bc_title      = typeof query.bt  === "string" ? query.bt.slice(0, 60).trim()   : undefined;
-  const matched_terms = typeof query.mt  === "string" ? query.mt.slice(0, 100).trim()  : undefined;
-  const notif_id      = typeof query.nid === "string" ? query.nid.slice(0, 128).trim()  : undefined;
-  if (bc_title      !== undefined) data.bc_title      = bc_title;
-  if (matched_terms !== undefined) data.matched_terms = matched_terms;
-  if (notif_id      !== undefined) data.notif_id      = notif_id;
-
-  // GD-077 : raison client optionnelle (?r=) -- passive, aucun lien existant ne la contient.
-  // Si absente ou invalide : ignoree silencieusement, pas d'erreur, comportement prod inchange.
-  const reason = typeof query.r === "string" ? query.r.slice(0, 64).trim() : undefined;
-  if (reason !== undefined && _VALID_FEEDBACK_REASONS.includes(reason)) data.reason = reason;
-
-  return { valid: true, data };
-}
-
-/**
- * Ajoute un événement feedback en JSONL dans filePath.
- * Crée le dossier parent si absent.
- */
-function appendFeedbackEvent(event, filePath) {
-  const dir = require("path").dirname(filePath);
-  if (!require("fs").existsSync(dir)) require("fs").mkdirSync(dir, { recursive: true });
-  require("fs").appendFileSync(filePath, JSON.stringify(event) + "\n", "utf8");
-}
+/** Ajoute un evenement feedback en JSONL (path injectable). */
+const appendFeedbackEvent = _fbh.appendFeedbackEventToJsonl;
 
 /**
  * Persiste un événement feedback dans Supabase (table client_feedback_events).
@@ -4698,7 +4660,7 @@ const _httpServer = http.createServer(async (req, res) => {
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       return res.end("<html><body><p>Erreur : " + validation.error + "</p></body></html>");
     }
-    const event = Object.assign({}, validation.data, { created_at: new Date().toISOString() });
+    const event = _fbh.buildFeedbackEvent(validation.data);
     // \u00c9criture Supabase \u2014 fire-and-forget, ne bloque jamais la r\u00e9ponse HTTP
     appendFeedbackToSupabase(event);
     // \u00c9criture JSONL locale \u2014 miroir/fallback, jamais bloquante
