@@ -3,3 +3,7 @@ node_modules/
 *.log
 .DS_Store
 package-lock.json
+
+# Local feedback data (GD-083) -- ne jamais committer les evenements feedback client
+data/feedback/
+data/feedback/*.jsonl
