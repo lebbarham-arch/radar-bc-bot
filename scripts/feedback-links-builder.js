@@ -12,6 +12,9 @@
 
 'use strict';
 
+// GD-085 : helper de signature optionnelle (pur, injectable, crypto Node)
+var _fbs = require('./feedback-signature');
+
 // ---------------------------------------------------------------------------
 // Entrees par defaut -- comportement original, 3 liens sans r=
 // Labels identiques a ceux presents dans _buildFeedbackSection avant GD-078.
@@ -71,7 +74,12 @@ function isFeedbackReasonLinksEnabled(envVal) {
  * @param {boolean} reasonLinksEnabled true => 8 liens avec r=; false => 3 liens originaux sans r=
  * @returns {string|null}              Section feedback ou null si base vide
  */
-function buildFeedbackReasonLinks(base, clientId, itemId, critereValeur, radarType, opts, mode, reasonLinksEnabled) {
+/**
+ * @param {object|null} [signatureOpts]  GD-085 : { enabled, secret, ttlSeconds?, now? }
+ *   Si enabled=true ET secret present => ajoute &exp=<unix>&sig=<hmac> a chaque URL.
+ *   Si absent/null => comportement original inchange (retro-compatible).
+ */
+function buildFeedbackReasonLinks(base, clientId, itemId, critereValeur, radarType, opts, mode, reasonLinksEnabled, signatureOpts) {
   var b = (base || "").trim();
   if (!b) return null;
 
@@ -89,6 +97,27 @@ function buildFeedbackReasonLinks(base, clientId, itemId, critereValeur, radarTy
     if (opts && opts.bcTitle)      u += "&bt="  + encodeURIComponent(String(opts.bcTitle).slice(0, 60));
     // GD-078 : r= ajoutee uniquement si reason fournie (liens enrichis, flag=true)
     if (reason)                    u += "&r="   + encodeURIComponent(reason);
+    // GD-085 : signature HMAC optionnelle (uniquement si flag true + secret defini)
+    if (signatureOpts && signatureOpts.enabled && signatureOpts.secret) {
+      var exp = _fbs.buildFeedbackExpiry(
+        signatureOpts.now || new Date(),
+        signatureOpts.ttlSeconds || _fbs.DEFAULT_TTL_SECONDS
+      );
+      var sigParams = {
+        client_id:  clientId,
+        radar_type: radarType,
+        item_id:    itemId,
+        critere:    critereValeur,
+        type:       type,
+        exp:        exp,
+      };
+      if (opts && opts.notifId)      sigParams.nid = opts.notifId;
+      if (opts && opts.matchedTerms) sigParams.mt  = opts.matchedTerms;
+      if (opts && opts.bcTitle)      sigParams.bt  = String(opts.bcTitle).slice(0, 60);
+      if (reason)                    sigParams.r   = reason;
+      var sig = _fbs.signFeedbackParams(sigParams, signatureOpts.secret);
+      u += "&exp=" + encodeURIComponent(exp) + "&sig=" + encodeURIComponent(sig);
+    }
     return u;
   }
 

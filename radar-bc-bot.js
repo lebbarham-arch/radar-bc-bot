@@ -16,6 +16,7 @@ try { AdmZip = require("adm-zip"); } catch(e) { AdmZip = null; }
 const _fbl = require("./scripts/feedback-links-builder");
 // GD-080 : fonctions pures feedback extraites pour tests isoles
 const _fbh = require("./scripts/feedback-handler");
+const _fbs = require("./scripts/feedback-signature");  // GD-085 : signature HMAC optionnelle
 
 puppeteer.use(Stealth());
 
@@ -33,6 +34,7 @@ const CFG = {
   feedbackUrl:     process.env.FEEDBACK_BASE_URL        || "",
   feedbackAllowed: (process.env.FEEDBACK_ALLOWED_CLIENTS || "")
     .split(",").map(function(s) { return s.trim(); }).filter(Boolean),
+  feedbackSigningSecret: process.env.FEEDBACK_SIGNING_SECRET || "",  // GD-085
   // BC - Bons de Commande
   bcListUrl:  "https://www.marchespublics.gov.ma/bdc/entreprise/consultation/",
   bcLoginUrl: "https://www.marchespublics.gov.ma/index.php?page=entreprise.EntrepriseHome",
@@ -835,9 +837,15 @@ async function sendEmail(client, item, matchedCriteres, radarType, aiResume) {
  */
 function _buildFeedbackSection(clientId, itemId, critereValeur, radarType, mode, opts) {
   const enabled = _fbl.isFeedbackReasonLinksEnabled(process.env.FEEDBACK_REASON_LINKS_ENABLED);
+  // GD-085 : signature optionnelle des liens, inchangee si flags absents
+  const signatureOpts = {
+    enabled:    _fbs.isFeedbackSignedLinksEnabled(process.env.FEEDBACK_SIGNED_LINKS_ENABLED),
+    secret:     CFG.feedbackSigningSecret,
+    ttlSeconds: parseInt(process.env.FEEDBACK_LINK_TTL_SECONDS || "604800", 10) || 604800,
+  };
   return _fbl.buildFeedbackReasonLinks(
     (CFG.feedbackUrl || "").trim(),
-    clientId, itemId, critereValeur, radarType, opts, mode, enabled
+    clientId, itemId, critereValeur, radarType, opts, mode, enabled, signatureOpts
   );
 }
 
@@ -4659,6 +4667,20 @@ const _httpServer = http.createServer(async (req, res) => {
     if (!validation.valid) {
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       return res.end("<html><body><p>Erreur : " + validation.error + "</p></body></html>");
+    }
+    // GD-085 : verification signature si FEEDBACK_REQUIRE_SIGNATURE=true
+    // Comportement par defaut (flag absent) : anciens liens non signes acceptes
+    if (_fbs.isFeedbackSignatureRequired(process.env.FEEDBACK_REQUIRE_SIGNATURE)) {
+      const fbSecret = CFG.feedbackSigningSecret || "";
+      if (!fbSecret) {
+        res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
+        return res.end("<html><body><p>Erreur configuration : FEEDBACK_SIGNING_SECRET absent.</p></body></html>");
+      }
+      const sigVerif = _fbs.verifyFeedbackSignature(parsed.query, fbSecret, new Date());
+      if (!sigVerif.valid) {
+        res.writeHead(403, { "Content-Type": "text/html; charset=utf-8" });
+        return res.end("<html><body><p>Lien feedback invalide : " + sigVerif.error + "</p></body></html>");
+      }
     }
     const event = _fbh.buildFeedbackEvent(validation.data);
     // \u00c9criture Supabase \u2014 fire-and-forget, ne bloque jamais la r\u00e9ponse HTTP
