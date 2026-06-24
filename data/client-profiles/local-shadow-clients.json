@@ -35,12 +35,20 @@
         "radar_type": "bc",
         "ai_inclusions": [
           "logiciel",
-          "developpement",
           "maintenance informatique",
           "cybersecurite",
-          "reseaux",
+          "reseau informatique",
+          "infrastructure reseau informatique",
+          "reseau lan",
+          "reseau wan",
+          "routeur",
+          "firewall",
           "serveurs",
-          "cloud"
+          "cloud",
+          "developpement logiciel",
+          "developpement informatique",
+          "developpement applicatif",
+          "developpement web"
         ],
         "ai_exclusions": [
           "nettoyage",
