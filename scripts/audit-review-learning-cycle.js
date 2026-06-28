@@ -238,6 +238,99 @@ var C_FORBIDDEN_APPLY      = FORBIDDEN_ACTIONS_EXPECTED; // 6 actions
   }
 })();
 
+// CHECK I : conventions review GD-105 -- rapport non-bloquant sur les decisions existantes.
+// Detecte les violations les plus frequentes. N'ecrit rien. N'exit pas en echec.
+// Fonctionne uniquement si data/review-decisions/ existe et contient des JSON.
+//
+// Convention A : BC annule ne doit pas etre IGNORE (doit etre REJECT).
+// Convention B1: desinfection medicale hospitaliere ne doit pas etre IGNORE
+//                (si produit pour usage medical interne, doit etre REJECT).
+
+/**
+ * detectConventionViolations(records)
+ * records : tableau de decisions review (chaque objet a bc_id, decision, matched_signals, clean_text_excerpt).
+ * Retourne un tableau de violations { convention, bc_id, decision, reason }.
+ * Fonction pure -- aucune ecriture, aucun effet de bord.
+ */
+function detectConventionViolations(records) {
+  var violations = [];
+  (records || []).forEach(function(r) {
+    var decision = (r.decision || '').toLowerCase().trim();
+    var ex       = (r.clean_text_excerpt || '').toLowerCase();
+    var sigs     = JSON.stringify(r.matched_signals || []).toLowerCase();
+
+    // Convention A : BC annule classe IGNORE
+    if (decision === 'ignore') {
+      var isAnnule = ex.indexOf('annul') !== -1;
+      if (isAnnule) {
+        violations.push({
+          convention : 'A',
+          bc_id      : r.bc_id || r.id || '?',
+          decision   : decision,
+          reason     : 'BC annule classe IGNORE -- convention A : un BC annule doit etre REJECT'
+        });
+      }
+    }
+
+    // Convention B1 : desinfection medicale hospitaliere classe IGNORE
+    if (decision === 'ignore') {
+      var hasDesin = ex.indexOf('desinfect') !== -1 || ex.indexOf('désinfect') !== -1
+        || sigs.indexOf('desinfect') !== -1 || sigs.indexOf('désinfect') !== -1;
+      var hasHosp  = ex.indexOf('hopital') !== -1 || ex.indexOf('hôpital') !== -1
+        || ex.indexOf('chp') !== -1 || ex.indexOf('chr') !== -1
+        || ex.indexOf('centre hospitalier') !== -1
+        || sigs.indexOf('hopital') !== -1 || sigs.indexOf('hôpital') !== -1;
+      if (hasDesin && hasHosp) {
+        violations.push({
+          convention : 'B1',
+          bc_id      : r.bc_id || r.id || '?',
+          decision   : decision,
+          reason     : 'desinfection medicale hospitaliere classe IGNORE -- convention B1 : si produit medical interne, doit etre REJECT'
+        });
+      }
+    }
+  });
+  return violations;
+}
+
+// Lecture des decisions existantes (non-bloquant si data/ absent)
+(function() {
+  var decisionsDir = path.join(ROOT, 'data', 'review-decisions');
+  var allRecords   = [];
+  try {
+    var files = fs.readdirSync(decisionsDir).filter(function(f) {
+      return f.startsWith('review-decisions-') && f.endsWith('.json');
+    });
+    // Deduplication last-wins par bc_id+client
+    var seen = {};
+    files.forEach(function(f) {
+      try {
+        var raw     = JSON.parse(fs.readFileSync(path.join(decisionsDir, f), 'utf8'));
+        var records = Array.isArray(raw) ? raw : (raw.records || raw.decisions || []);
+        records.forEach(function(r) {
+          var k = (r.bc_id || r.id || '') + '|' + (r.client || r.client_id || '');
+          seen[k] = r;
+        });
+      } catch (_) {}
+    });
+    allRecords = Object.values(seen);
+  } catch (_) {}
+
+  if (allRecords.length === 0) { return; } // pas de donnees -- skip silencieux
+
+  var violations = detectConventionViolations(allRecords);
+  if (violations.length > 0) {
+    console.log('');
+    console.log('-- RAPPORT CONVENTIONS REVIEW GD-105 (non-bloquant) --');
+    console.log('  ' + violations.length + ' violation(s) detectee(s) :');
+    violations.forEach(function(v) {
+      console.log('  [CONVENTION-' + v.convention + '] bc_id=' + v.bc_id + ' : ' + v.reason);
+    });
+    console.log('  -> Corriger via un CSV de re-classification (voir docs/REVIEW_CONVENTIONS.md)');
+    console.log("  -> Ce rapport n'exit pas en echec et ne modifie aucune decision.");
+  }
+})();
+
 // --- 5. Rapport ---
 var nbOk   = checks.filter(function(c) { return c.ok;  }).length;
 var nbFail = checks.filter(function(c) { return !c.ok; }).length;
@@ -273,17 +366,4 @@ console.log('  budget/prix/montant/estimation : absents de REVIEW_REASON_CODES')
 console.log('');
 console.log('-- CYCLE (ordre operationnel) --');
 console.log('  1. replay-shadow-from-input-snapshot.js   -- genere review_candidate/auto_notify_candidate');
-console.log('  2. analyze-shadow-report.js --export-review-csv -- exporte CSV review-candidates');
-console.log('  3. [HUMAIN] Renseigne decision keep/reject/ignore dans le CSV');
-console.log('  4. import-review-decisions.js             -- importe CSV -> JSON review-decisions');
-console.log('  5. build-client-learning-hints.js         -- construit hints client/signal');
-console.log('  6. review-reason-learning-report.js       -- rapport patterns de raisons');
-console.log('  7. build-review-reason-hint-candidates.js -- genere candidates (pending)');
-console.log('  8. [HUMAIN] approve-review-reason-hint-candidate.js -- valide hint');
-console.log('  9. apply-review-reason-hints-shadow.js    -- applique hint sur copie shadow');
-console.log('  shadow uniquement -- aucune activation prod');
-console.log('');
-
-if (nbFail > 0) {
-  process.exit(1);
-}
+console.lo

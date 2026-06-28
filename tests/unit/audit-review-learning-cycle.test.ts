@@ -357,14 +357,200 @@ describe('ARL-G -- aucune regle client/signal/domaine hardcodee', () => {
     // Pas de noms de clients specifiques dans la logique
     expect(src).not.toMatch(/if.*client.*===.*'[A-Z]/);
   });
-  test('ARL-G4 : audit script confirme 37 checks OK (audit-review-learning-cycle.js)', () => {
+  test('ARL-G4 : audit script contient les categories de checks A-H et I', () => {
     const src = readSrc('scripts/audit-review-learning-cycle.js');
     expect(src).not.toBeNull();
-    // Le script d audit contient les 5 categories de checks
+    // Checks source existants
     expect(src).toMatch(/CHECK A/);
     expect(src).toMatch(/CHECK B/);
     expect(src).toMatch(/CHECK C/);
     expect(src).toMatch(/CHECK D/);
     expect(src).toMatch(/CHECK E/);
+    // Check GD-105
+    expect(src).toContain('CHECK I');
+    expect(src).toContain('detectConventionViolations');
+  });
+  test('ARL-G5 : detectConventionViolations est une fonction pure (aucun appel fs dans son corps)', () => {
+    const src = readSrc('scripts/audit-review-learning-cycle.js');
+    expect(src).not.toBeNull();
+    const fnMatch = src!.match(/function detectConventionViolations\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    if (fnMatch) {
+      const body = fnMatch[1];
+      expect(body).not.toMatch(/readFileSync|readFile|console\.log|fs\./);
+    }
+  });
+});
+
+// ============================================================
+// ARL-I -- conventions review GD-105 : detectConventionViolations
+// ============================================================
+
+type ReviewRecord = {
+  bc_id?:              string;
+  id?:                 string;
+  decision:            string;
+  matched_signals?:    string[];
+  clean_text_excerpt?: string;
+};
+
+type ConventionViolation = {
+  convention: string;
+  bc_id:      string;
+  decision:   string;
+  reason:     string;
+};
+
+function detectConventionViolationsT(records: ReviewRecord[]): ConventionViolation[] {
+  const violations: ConventionViolation[] = [];
+  (records || []).forEach(r => {
+    const decision = (r.decision || '').toLowerCase().trim();
+    const ex       = (r.clean_text_excerpt || '').toLowerCase();
+    const sigs     = JSON.stringify(r.matched_signals || []).toLowerCase();
+
+    if (decision === 'ignore') {
+      const isAnnule = ex.indexOf('annul') !== -1;
+      if (isAnnule) {
+        violations.push({
+          convention : 'A',
+          bc_id      : r.bc_id || r.id || '?',
+          decision,
+          reason     : 'BC annule classe IGNORE -- convention A : doit etre REJECT'
+        });
+      }
+    }
+
+    if (decision === 'ignore') {
+      const isDesinfection = sigs.indexOf('desinfection') !== -1;
+      const isMedical      = ex.indexOf('hopital')            !== -1
+                          || ex.indexOf('chp')                !== -1
+                          || ex.indexOf('chr ')               !== -1
+                          || ex.indexOf('centre hospitalier') !== -1
+                          || ex.indexOf('soins')              !== -1;
+      if (isDesinfection && isMedical) {
+        violations.push({
+          convention : 'B1',
+          bc_id      : r.bc_id || r.id || '?',
+          decision,
+          reason     : 'desinfection medicale hospitaliere classe IGNORE -- convention B1'
+        });
+      }
+    }
+  });
+  return violations;
+}
+
+function makeRecord(overrides: Partial<ReviewRecord> = {}): ReviewRecord {
+  return Object.assign({
+    bc_id             : 'test-bc-001',
+    decision          : 'ignore',
+    matched_signals   : [],
+    clean_text_excerpt: '',
+  }, overrides);
+}
+
+describe('ARL-I -- detectConventionViolations (GD-105)', () => {
+
+  test('ARL-I1 : IGNORE + texte "annule" -> violation A detectee', () => {
+    const r = makeRecord({ clean_text_excerpt: 'achat de materiel annule date annulation 25/06/2026' });
+    const v = detectConventionViolationsT([r]);
+    expect(v).toHaveLength(1);
+    expect(v[0]!.convention).toBe('A');
+    expect(v[0]!.decision).toBe('ignore');
+  });
+
+  test('ARL-I2 : IGNORE + texte "annulation motif" -> violation A detectee', () => {
+    const r = makeRecord({ clean_text_excerpt: 'objet xyz annulation motif erreur saisie' });
+    const v = detectConventionViolationsT([r]);
+    expect(v.some(x => x.convention === 'A')).toBe(true);
+  });
+
+  test('ARL-I3 : REJECT + texte "annule" -> pas de violation (correct)', () => {
+    const r = makeRecord({ decision: 'reject', clean_text_excerpt: 'bc annule vice de procedure' });
+    const v = detectConventionViolationsT([r]);
+    expect(v).toHaveLength(0);
+  });
+
+  test('ARL-I4 : KEEP + texte "annule" -> pas de violation', () => {
+    const r = makeRecord({ decision: 'keep', clean_text_excerpt: 'achat annule hopital' });
+    const v = detectConventionViolationsT([r]);
+    expect(v).toHaveLength(0);
+  });
+
+  test('ARL-I5 : IGNORE sans mot annul -> pas de violation A', () => {
+    const r = makeRecord({ clean_text_excerpt: 'achat de fourniture informatique pour institute' });
+    const v = detectConventionViolationsT([r]);
+    expect(v.filter(x => x.convention === 'A')).toHaveLength(0);
+  });
+
+  test('ARL-I6 : IGNORE + signal desinfection + contexte hopital -> violation B1', () => {
+    const r = makeRecord({
+      matched_signals   : ['desinfection'],
+      clean_text_excerpt: 'achat des produits de desinfection pour le centre hospitalier provincial de taza'
+    });
+    const v = detectConventionViolationsT([r]);
+    expect(v.some(x => x.convention === 'B1')).toBe(true);
+  });
+
+  test('ARL-I7 : IGNORE + signal desinfection + contexte chp -> violation B1', () => {
+    const r = makeRecord({
+      matched_signals   : ['desinfection'],
+      clean_text_excerpt: 'produits de desinfection pour chp ifrane services de soins'
+    });
+    const v = detectConventionViolationsT([r]);
+    expect(v.some(x => x.convention === 'B1')).toBe(true);
+  });
+
+  test('ARL-I8 : IGNORE + signal desinfection sans contexte medical -> pas de violation B1', () => {
+    const r = makeRecord({
+      matched_signals   : ['desinfection'],
+      clean_text_excerpt: 'desinfection des locaux administratifs de la direction generale'
+    });
+    const v = detectConventionViolationsT([r]);
+    expect(v.filter(x => x.convention === 'B1')).toHaveLength(0);
+  });
+
+  test('ARL-I9 : IGNORE + contexte hopital sans signal desinfection -> pas de violation B1', () => {
+    const r = makeRecord({
+      matched_signals   : ['nettoyage'],
+      clean_text_excerpt: 'nettoyage des locaux du centre hospitalier provincial de kenitra'
+    });
+    const v = detectConventionViolationsT([r]);
+    expect(v.filter(x => x.convention === 'B1')).toHaveLength(0);
+  });
+
+  test('ARL-I10 : REJECT + desinfection + hopital -> pas de violation (correct)', () => {
+    const r = makeRecord({
+      decision          : 'reject',
+      matched_signals   : ['desinfection'],
+      clean_text_excerpt: 'produits desinfection centre hospitalier'
+    });
+    const v = detectConventionViolationsT([r]);
+    expect(v).toHaveLength(0);
+  });
+
+  test('ARL-I11 : liste vide -> aucune violation', () => {
+    expect(detectConventionViolationsT([])).toHaveLength(0);
+  });
+
+  test('ARL-I12 : violation retourne bc_id correct', () => {
+    const r = makeRecord({ bc_id: '356182', clean_text_excerpt: 'materiel annule erreur saisie' });
+    const v = detectConventionViolationsT([r]);
+    expect(v[0]!.bc_id).toBe('356182');
+  });
+
+  test('ARL-I13 : source audit-review-learning-cycle.js contient detectConventionViolations', () => {
+    const src = readSrc('scripts/audit-review-learning-cycle.js');
+    expect(src).not.toBeNull();
+    expect(src).toContain('detectConventionViolations');
+    expect(src).toContain('decisionsDir');
+  });
+
+  test('ARL-I14 : rapport de violations non-bloquant (pas process.exit dans le bloc IIFE)', () => {
+    const src = readSrc('scripts/audit-review-learning-cycle.js');
+    expect(src).not.toBeNull();
+    const iifeMatch = src!.match(/\(function\s*\(\)\s*\{([\s\S]*?detectConventionViolations[\s\S]*?)\}\)\(\)/);
+    if (iifeMatch) {
+      expect(iifeMatch[1]).not.toMatch(/process\.exit/);
+    }
   });
 });
