@@ -1,0 +1,89 @@
+{
+  "imported_at": "2026-06-29T00-00-00-000Z",
+  "source_csv": "gd106-conventions-correctives",
+  "counters": {
+    "keep": 0,
+    "reject": 4,
+    "ignore": 0,
+    "vide": 0,
+    "total": 4
+  },
+  "records": [
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "348693",
+      "score": 5,
+      "signal_origin": "inclusion_only",
+      "matched_signals": [
+        "hygiene"
+      ],
+      "strength_reason": "weak_single_signal",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat de Produit d'Hygiène INFORMATIONS LIÉES À L'ANNULATION Date d'annulation :",
+      "decision": "reject",
+      "human_review_reason": "autre",
+      "human_review_reason_label": "Autre raison",
+      "human_review_comment": "GD-105 convention A : BC explicitement annule, doit etre REJECT et non IGNORE.",
+      "cycle_id": "gd106-conventions-2026-06-29",
+      "review_source": "operator",
+      "reviewed_at": "2026-06-29T00:00:00.000Z"
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "353465",
+      "score": 10,
+      "signal_origin": "inclusion_only",
+      "matched_signals": [
+        "desinfection"
+      ],
+      "strength_reason": "weak_single_signal",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat des produits de désinfection pour le Centre Hospitalier Provincial de Taza",
+      "decision": "reject",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_reason_label": "Bon signal, mauvais contexte",
+      "human_review_comment": "GD-105 convention B1 : achat de produits de desinfection medicale hospitaliere pour besoins internes, hors prestation de nettoyage.",
+      "cycle_id": "gd106-conventions-2026-06-29",
+      "review_source": "operator",
+      "reviewed_at": "2026-06-29T00:00:00.000Z"
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "352653",
+      "score": 10,
+      "signal_origin": "inclusion_only",
+      "matched_signals": [
+        "desinfection"
+      ],
+      "strength_reason": "weak_single_signal",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat De Produits De Désinfection Des Surfaces, Des Paillasses et Du Matériel Po",
+      "decision": "reject",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_reason_label": "Bon signal, mauvais contexte",
+      "human_review_comment": "GD-105 convention B1 : desinfection/paillasses CHP, produit ou besoin medico-technique hospitalier, hors prestation de nettoyage.",
+      "cycle_id": "gd106-conventions-2026-06-29",
+      "review_source": "operator",
+      "reviewed_at": "2026-06-29T00:00:00.000Z"
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "349068",
+      "score": 10,
+      "signal_origin": "primary_based",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "weak_single_signal",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat d'équipement informatique pour les besoins de la HACA. INFORMATIONS LIÉES À L'ANNULATION",
+      "decision": "reject",
+      "human_review_reason": "autre",
+      "human_review_reason_label": "Autre raison",
+      "human_review_comment": "GD-105 convention A : BC explicitement annule.",
+      "cycle_id": "gd106-conventions-2026-06-29",
+      "review_source": "operator",
+      "reviewed_at": "2026-06-29T00:00:00.000Z"
+    }
+  ]
+}
