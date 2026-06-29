@@ -15,20 +15,16 @@
 
 var fs   = require('fs');
 var path = require('path');
+var normalizeLearningKey = require('./learning-key-utils').normalizeLearningKey;
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 
 var DECISIONS_DIR = path.join(__dirname, '..', 'data', 'review-decisions');
 
-// ── Normalisation (identique à analyze-review-decisions.js) ──────────────────
+// ── Normalisation (GD-109 : via learning-key-utils) ──────────────────────────
 
 function normSignal(s) {
-  return String(s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+  return normalizeLearningKey(s);
 }
 
 function signalKey(signals) {

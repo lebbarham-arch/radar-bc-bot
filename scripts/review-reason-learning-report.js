@@ -1,5 +1,7 @@
 'use strict';
 
+var normalizeLearningKey = require('./learning-key-utils').normalizeLearningKey;
+
 /**
  * scripts/review-reason-learning-report.js — GD-037
  *
@@ -41,12 +43,12 @@ function parseSignals(raw) {
     .filter(function(s) { return s && s.indexOf('bloque(') === -1; });
 }
 
-/** Clé de signal canonique (premier signal actif, ou "_none_"). */
+/** Clé de signal canonique — normalisée (GD-109), triée pour déterminisme. */
 function signalKey(entry) {
   var sigs = parseSignals(entry.matched_signals);
   if (sigs.length === 0) return '_none_';
-  // Trier pour déterminisme, prendre le premier alphabétiquement
-  return sigs.slice().sort().join('+');
+  // Normaliser chaque signal avant de joindre (élimine fragmentation accent)
+  return sigs.map(function(s) { return normalizeLearningKey(s) || s; }).sort().join('+');
 }
 
 /**
@@ -98,10 +100,11 @@ function contextKey(entry) {
   return 'no_context';
 }
 
-/** Clé client. */
+/** Clé client — normalisée (GD-109 : élimine fragmentation accent). */
 function clientKey(entry) {
-  var c = normStr(entry.client) || normStr(entry.client_name) || normStr(entry.client_id);
-  return c || 'unknown_client';
+  var raw = normStr(entry.client) || normStr(entry.client_name) || normStr(entry.client_id);
+  if (!raw) return 'unknown_client';
+  return normalizeLearningKey(raw) || raw;
 }
 
 /** Clé de raison humaine. */

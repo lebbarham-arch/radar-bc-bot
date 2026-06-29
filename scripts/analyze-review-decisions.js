@@ -18,6 +18,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { normalizeLearningKey } = require('./learning-key-utils');
 
 const ROOT     = path.resolve(__dirname, '..');
 const DEC_DIR  = path.join(ROOT, 'data', 'review-decisions');
@@ -65,15 +66,17 @@ function aggregate(rows, rawRecords) {
     if (!dec[d] && dec[d] !== 0) continue;
     dec[d]++;
 
-    // par client
-    if (!byClient[r.client]) byClient[r.client] = { keep: 0, reject: 0, ignore: 0 };
-    byClient[r.client][d]++;
+    // par client — clé normalisée, label original conservé
+    const ck = normalizeLearningKey(r.client) || r.client || '';
+    if (!byClient[ck]) byClient[ck] = { label: r.client, keep: 0, reject: 0, ignore: 0 };
+    byClient[ck][d]++;
 
-    // par signal
+    // par signal — clé normalisée, label original (premier vu) conservé
     for (const s of (r.matched_signals || [])) {
-      if (!bySignal[s]) bySignal[s] = { keep: 0, reject: 0, ignore: 0, total: 0, cycles: new Set() };
-      bySignal[s][d]++;
-      bySignal[s].total++;
+      const sk = normalizeLearningKey(s) || s || '';
+      if (!bySignal[sk]) bySignal[sk] = { label: s, keep: 0, reject: 0, ignore: 0, total: 0, cycles: new Set() };
+      bySignal[sk][d]++;
+      bySignal[sk].total++;
     }
 
     // par score
@@ -85,7 +88,8 @@ function aggregate(rows, rawRecords) {
   // Cycles depuis les records bruts (avant dedup) pour un décompte correct multi-cycles
   for (const r of (rawRecords || rows)) {
     for (const s of (r.matched_signals || [])) {
-      if (bySignal[s] && r.cycle_id) bySignal[s].cycles.add(r.cycle_id);
+      const sk = normalizeLearningKey(s) || s || '';
+      if (bySignal[sk] && r.cycle_id) bySignal[sk].cycles.add(r.cycle_id);
     }
   }
 
@@ -102,7 +106,8 @@ function aggregate(rows, rawRecords) {
   const signalReport = Object.entries(bySignal)
     .sort((a, b) => b[1].total - a[1].total)
     .map(([sig, v]) => ({
-      signal:       sig,
+      signal:       sig,               // clé normalisée (aggrégation)
+      label:        v.label || sig,    // label original (premier vu, pour affichage)
       total:        v.total,
       keep:         v.keep,
       reject:       v.reject,
@@ -186,7 +191,8 @@ function printReport(agg, rows, shadow) {
   console.log('── Par client ──────────────────────────────────────────────');
   for (const [c, v] of Object.entries(byClient)) {
     const total = v.keep + v.reject + v.ignore;
-    console.log(`  ${c.replace('TEST PROD - ', '').padEnd(30)} K=${v.keep} R=${v.reject} I=${v.ignore}  (total=${total})`);
+    const displayLabel = (v.label || c).replace('TEST PROD - ', '');
+    console.log(`  ${displayLabel.padEnd(30)} K=${v.keep} R=${v.reject} I=${v.ignore}  (total=${total})`);
   }
 
   console.log('\n── Par score ───────────────────────────────────────────────');
@@ -199,9 +205,10 @@ function printReport(agg, rows, shadow) {
   console.log('\n── Par signal ──────────────────────────────────────────────');
   const cats = { FORT_KEEP: [], FORT_REJECT: [], AMBIGU: [], UNIQUE: [] };
   for (const s of signalReport) {
-    const line = `  ${JSON.stringify(s.signal).padEnd(30)} total=${s.total}  cycles=${s.cycles_count}  K=${s.keep}(${s.keep_rate}%)  R=${s.reject}(${s.reject_rate}%)  I=${s.ignore}`;
+    const displaySig = s.label !== s.signal ? `${s.label} [${s.signal}]` : s.label;
+    const line = `  ${JSON.stringify(displaySig).padEnd(30)} total=${s.total}  cycles=${s.cycles_count}  K=${s.keep}(${s.keep_rate}%)  R=${s.reject}(${s.reject_rate}%)  I=${s.ignore}`;
     console.log(line);
-    (cats[s.category] || cats.AMBIGU).push(s.signal);
+    (cats[s.category] || cats.AMBIGU).push(s.label);
   }
 
   console.log('\n\u2500\u2500 Signaux FORT KEEP (\u226580% keep) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500');

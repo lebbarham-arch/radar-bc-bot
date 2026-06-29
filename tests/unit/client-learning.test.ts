@@ -63,34 +63,59 @@ function computeReadiness(sig: { cycles: Set<string>; verdict: string; reject: n
   return { ready, blockers };
 }
 
-// ─── Mirror : aggregate ───────────────────────────────────────────────────────
+// ─── Mirror : normalizeLearningKey (GD-109) ──────────────────────────────────
+// Identique à scripts/learning-key-utils.js
+
+function normalizeLearningKey(value: unknown): string {
+  if (value == null) return '';
+  return String(value)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// ─── Mirror : aggregate (GD-109 : clés normalisées pour agrégation) ───────────
+// Clé interne = normalisée (fusionne hygiene + hygiène).
+// Résultat Map = indexé par label original (premier vu) pour rétrocompatibilité.
+
+interface InternalSigEntry {
+  signal: string; label: string;
+  keep: number; reject: number; ignore: number;
+  total: number; cycles: Set<string>; sources: Set<string>;
+}
 
 function aggregate(records: ReviewRecord[], rawRecords?: ReviewRecord[]): Map<string, SigEntry[]> {
-  const byClient = new Map<string, Map<string, {
-    signal: string; keep: number; reject: number; ignore: number;
-    total: number; cycles: Set<string>; sources: Set<string>;
-  }>>();
+  // byClient : clé = ck (normalisée), valeur = { _label, [sk]: InternalSigEntry }
+  const byClient = new Map<string, Map<string, InternalSigEntry | string>>();
+  // labels map : ck → rawClient label
+  const clientLabels = new Map<string, string>();
 
   // Phase 1 : stats keep/reject/ignore/total depuis les records dédupliqués
   for (const r of records) {
-    const client = (r.client || '(inconnu)').trim();
+    const rawClient = (r.client || '(inconnu)').trim();
+    const ck        = normalizeLearningKey(rawClient) || rawClient;
 
-    if (!byClient.has(client)) byClient.set(client, new Map());
-    const sigMap = byClient.get(client)!;
+    if (!byClient.has(ck)) {
+      byClient.set(ck, new Map());
+      clientLabels.set(ck, rawClient);  // premier label vu
+    }
+    const sigMap = byClient.get(ck)!;
 
     if (!Array.isArray(r.matched_signals) || r.matched_signals.length === 0) continue;
 
     for (const s of r.matched_signals) {
-      const sig = (s || '').trim();
-      if (!sig) continue;
+      const rawSig = (s || '').trim();
+      if (!rawSig) continue;
+      const sk = normalizeLearningKey(rawSig) || rawSig;
 
-      if (!sigMap.has(sig)) {
-        sigMap.set(sig, { signal: sig, keep: 0, reject: 0, ignore: 0, total: 0, cycles: new Set(), sources: new Set() });
+      if (!sigMap.has(sk)) {
+        sigMap.set(sk, { signal: sk, label: rawSig, keep: 0, reject: 0, ignore: 0, total: 0, cycles: new Set(), sources: new Set() });
       }
-      const e = sigMap.get(sig)!;
+      const e = sigMap.get(sk) as InternalSigEntry;
       if (r.decision === 'keep' || r.decision === 'reject' || r.decision === 'ignore') {
-        const eRec = e as unknown as Record<string, unknown>;
-        eRec[r.decision] = ((eRec[r.decision] as number | undefined) ?? 0) + 1;
+        (e as unknown as Record<string, unknown>)[r.decision] = ((e as unknown as Record<string, unknown>)[r.decision] as number ?? 0) + 1;
       }
       e.total++;
     }
@@ -98,29 +123,35 @@ function aggregate(records: ReviewRecord[], rawRecords?: ReviewRecord[]): Map<st
 
   // Phase 2 : cycles et sources depuis tous les records bruts (avant dedup)
   for (const r of (rawRecords ?? records)) {
-    const client = (r.client || '(inconnu)').trim();
-    const src    = r.review_source || 'operator';
+    const rawClient = (r.client || '(inconnu)').trim();
+    const ck        = normalizeLearningKey(rawClient) || rawClient;
+    const src       = r.review_source || 'operator';
 
-    if (!byClient.has(client)) continue;
-    const sigMap = byClient.get(client)!;
+    if (!byClient.has(ck)) continue;
+    const sigMap = byClient.get(ck)!;
 
     if (!Array.isArray(r.matched_signals) || r.matched_signals.length === 0) continue;
 
     for (const s of r.matched_signals) {
-      const sig = (s || '').trim();
-      if (!sig || !sigMap.has(sig)) continue;
+      const rawSig = (s || '').trim();
+      if (!rawSig) continue;
+      const sk = normalizeLearningKey(rawSig) || rawSig;
+      if (!sigMap.has(sk)) continue;
 
-      const e = sigMap.get(sig)!;
+      const e = sigMap.get(sk) as InternalSigEntry;
       if (r.cycle_id)  e.cycles.add(r.cycle_id);
       e.sources.add(src);
     }
   }
 
+  // Construction du résultat indexé par label original (rétrocompatibilité)
   const result = new Map<string, SigEntry[]>();
-  for (const [client, sigMap] of byClient) {
+  for (const [ck, sigMap] of byClient) {
+    const clientLabel = clientLabels.get(ck) || ck;
     const sigReport: SigEntry[] = [];
-    for (const [, e] of sigMap) {
-      const verdict   = classifyVerdictCL(e.keep, e.reject, e.total);
+    for (const [, entry] of sigMap) {
+      const e       = entry as InternalSigEntry;
+      const verdict = classifyVerdictCL(e.keep, e.reject, e.total);
       const readiness = computeReadiness({ cycles: e.cycles, verdict, reject: e.reject, keep: e.keep, total: e.total });
       sigReport.push({
         signal:          e.signal,
@@ -136,7 +167,7 @@ function aggregate(records: ReviewRecord[], rawRecords?: ReviewRecord[]): Map<st
         warn_mixed_sources: e.sources.size > 1,
       });
     }
-    result.set(client, sigReport);
+    result.set(clientLabel, sigReport);
   }
   return result;
 }
@@ -411,3 +442,87 @@ describe('client-learning P4 — cycles depuis rawRecords', () => {
   });
 
 });
+
+// ─── Tests GD-109 : normalisation des clés learning ──────────────────────────
+
+describe('client-learning GD-109 — normalisation client_key + signal_key', () => {
+
+  // SS-CL-N1 : "Nettoyage Hygiene" et "Nettoyage Hygiène" → même bucket client
+  test('SS-CL-N1 — clients avec/sans accent → bucket client fusionné', () => {
+    const records: ReviewRecord[] = [
+      { client: 'Nettoyage Hygiene',  bc_id: '1', decision: 'keep',   matched_signals: ['nettoyage'], cycle_id: 'C1' },
+      { client: 'Nettoyage Hygiène',  bc_id: '2', decision: 'keep',   matched_signals: ['nettoyage'], cycle_id: 'C2' },
+    ];
+    const report = aggregate(records);
+    // Un seul client agrégé (les deux labels normalisés → même clé)
+    expect(report.size).toBe(1);
+    // Le signal agrégé a 2 keeps
+    const sigs = Array.from(report.values())[0]!;
+    const sig  = sigs.find(s => s.signal === 'nettoyage')!;
+    expect(sig).toBeTruthy();
+    expect(sig.keep).toBe(2);
+    expect(sig.total).toBe(2);
+  });
+
+  // SS-CL-N2 : "hygiene" et "hygiène" dans même client → bucket signal fusionné
+  test('SS-CL-N2 — signaux hygiene + hygiène → bucket signal fusionné', () => {
+    const records: ReviewRecord[] = [
+      { client: 'X', bc_id: '1', decision: 'keep',   matched_signals: ['hygiene'],  cycle_id: 'C1' },
+      { client: 'X', bc_id: '2', decision: 'reject',  matched_signals: ['hygiène'], cycle_id: 'C2' },
+    ];
+    const report = aggregate(records);
+    const sigs   = report.get('X')!;
+    // Un seul bucket signal (hygiene + hygiène fusionnés)
+    expect(sigs.length).toBe(1);
+    expect(sigs[0]!.keep).toBe(1);
+    expect(sigs[0]!.reject).toBe(1);
+    expect(sigs[0]!.total).toBe(2);
+  });
+
+  // SS-CL-N3 : "deratisation" et "dératisation" → fusionnés
+  test('SS-CL-N3 — deratisation + dératisation → bucket signal fusionné', () => {
+    const records: ReviewRecord[] = [
+      { client: 'X', bc_id: '1', decision: 'keep', matched_signals: ['deratisation'],  cycle_id: 'C1' },
+      { client: 'X', bc_id: '2', decision: 'keep', matched_signals: ['dératisation'], cycle_id: 'C2' },
+    ];
+    const report = aggregate(records);
+    const sigs   = report.get('X')!;
+    expect(sigs.length).toBe(1);
+    expect(sigs[0]!.total).toBe(2);
+    expect(sigs[0]!.keep).toBe(2);
+    expect(sigs[0]!.cycles.size).toBe(2);
+  });
+
+  // SS-CL-N4 : signaux sémantiquement différents restent distincts
+  test('SS-CL-N4 — nettoyage ≠ hygiene après normalisation', () => {
+    const records: ReviewRecord[] = [
+      { client: 'X', bc_id: '1', decision: 'keep', matched_signals: ['nettoyage'], cycle_id: 'C1' },
+      { client: 'X', bc_id: '2', decision: 'keep', matched_signals: ['hygiene'],   cycle_id: 'C2' },
+    ];
+    const report = aggregate(records);
+    const sigs   = report.get('X')!;
+    // Deux buckets distincts
+    expect(sigs.length).toBe(2);
+  });
+
+  // SS-CL-N5 : scores/décisions non modifiés par la normalisation
+  test('SS-CL-N5 — normalisation ne modifie pas les décisions ou scores', () => {
+    const records: ReviewRecord[] = [
+      { client: 'ClientA', bc_id: '10', decision: 'keep',   matched_signals: ['hygiene'],  cycle_id: 'C1' },
+      { client: 'ClientA', bc_id: '11', decision: 'keep',   matched_signals: ['hygiène'],  cycle_id: 'C2' },
+      { client: 'ClientA', bc_id: '12', decision: 'reject',  matched_signals: ['hygiene'],  cycle_id: 'C3' },
+    ];
+    const report = aggregate(records);
+    const sigs   = report.get('ClientA')!;
+    const sig    = sigs[0]!;
+    // Statistiques préservées exactement
+    expect(sig.keep).toBe(2);
+    expect(sig.reject).toBe(1);
+    expect(sig.ignore).toBe(0);
+    expect(sig.total).toBe(3);
+    expect(sig.cycles.size).toBe(3);
+  });
+
+});
+
+export {};

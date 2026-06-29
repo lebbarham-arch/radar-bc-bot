@@ -28,6 +28,7 @@
 
 var fs   = require('fs');
 var path = require('path');
+var normalizeLearningKey = require('./learning-key-utils').normalizeLearningKey;
 
 var DECISIONS_DIR   = path.join(__dirname, '..', 'data', 'review-decisions');
 var HINTS_DIR       = path.join(__dirname, '..', 'data', 'client-learning');
@@ -81,21 +82,25 @@ function aggregate(records, rawRecords) {
   var byClient = {};
 
   // Phase 1 : stats keep/reject/ignore/total depuis les records dédupliqués
+  // Clé d'agrégation normalisée ; label original (premier vu) conservé.
   records.forEach(function(r) {
-    var client = String(r.client || '(inconnu)').trim();
+    var rawClient = String(r.client || '(inconnu)').trim();
+    var ck        = normalizeLearningKey(rawClient) || rawClient;
 
-    if (!byClient[client]) byClient[client] = {};
+    if (!byClient[ck]) byClient[ck] = { _label: rawClient };
 
     var signals = r.matched_signals;
     if (!Array.isArray(signals) || signals.length === 0) return;
 
     signals.forEach(function(s) {
-      var sig = String(s || '').trim();
-      if (!sig) return;
+      var rawSig = String(s || '').trim();
+      if (!rawSig) return;
+      var sk = normalizeLearningKey(rawSig) || rawSig;
 
-      if (!byClient[client][sig]) {
-        byClient[client][sig] = {
-          signal:  sig,
+      if (!byClient[ck][sk]) {
+        byClient[ck][sk] = {
+          signal:  sk,
+          label:   rawSig,   // label original premier vu
           keep:    0,
           reject:  0,
           ignore:  0,
@@ -105,7 +110,7 @@ function aggregate(records, rawRecords) {
         };
       }
 
-      var e   = byClient[client][sig];
+      var e   = byClient[ck][sk];
       var dec = r.decision || '';
       if (dec === 'keep' || dec === 'reject' || dec === 'ignore') e[dec]++;
       e.total++;
@@ -114,19 +119,22 @@ function aggregate(records, rawRecords) {
 
   // Phase 2 : cycles et sources depuis tous les records bruts (avant dedup)
   (rawRecords || records).forEach(function(r) {
-    var client = String(r.client || '(inconnu)').trim();
-    var src    = (r.review_source || 'operator');
+    var rawClient = String(r.client || '(inconnu)').trim();
+    var ck        = normalizeLearningKey(rawClient) || rawClient;
+    var src       = (r.review_source || 'operator');
 
-    if (!byClient[client]) return;
+    if (!byClient[ck]) return;
 
     var signals = r.matched_signals;
     if (!Array.isArray(signals) || signals.length === 0) return;
 
     signals.forEach(function(s) {
-      var sig = String(s || '').trim();
-      if (!sig || !byClient[client][sig]) return;
+      var rawSig = String(s || '').trim();
+      if (!rawSig) return;
+      var sk = normalizeLearningKey(rawSig) || rawSig;
+      if (!byClient[ck][sk]) return;
 
-      var e = byClient[client][sig];
+      var e = byClient[ck][sk];
       if (r.cycle_id) e.cycles.add(r.cycle_id);
       e.sources.add(src);
     });
@@ -208,10 +216,13 @@ function computeVerdict(keep, reject, total) {
 function buildHints(loaded) {
   var byClient = aggregate(loaded.records, loaded.rawRecords);
 
-  var clients = Object.keys(byClient).sort().map(function(clientName) {
-    var sigMap  = byClient[clientName];
-    var signals = Object.keys(sigMap).sort().map(function(sig) {
-      return computeHint(sigMap[sig]);
+  var clients = Object.keys(byClient).sort().map(function(ck) {
+    var sigMap     = byClient[ck];
+    var clientName = sigMap._label || ck;   // label original pour la sortie JSON
+    var signals    = Object.keys(sigMap).sort().filter(function(sk) {
+      return sk !== '_label';               // exclure la métadonnée interne
+    }).map(function(sk) {
+      return computeHint(sigMap[sk]);
     });
     return {
       client:  clientName,
