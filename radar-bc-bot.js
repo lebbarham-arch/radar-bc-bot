@@ -17,6 +17,7 @@ const _fbl = require("./scripts/feedback-links-builder");
 // GD-080 : fonctions pures feedback extraites pour tests isoles
 const _fbh = require("./scripts/feedback-handler");
 const _fbs = require("./scripts/feedback-signature");  // GD-085 : signature HMAC optionnelle
+const _tgu = require("./scripts/telegram-utils");      // GD-130 : troncature HTML sûre Telegram
 
 puppeteer.use(Stealth());
 
@@ -706,14 +707,13 @@ async function sendTelegram(client, htmlMsg) {
   }
   // will_attempt : token et chat_id garantis présents par getTelegramDeliveryDecision
   const token = _resolveTgToken(client);
-  // Telegram limite les messages à 4096 caractères. On tronque proprement en HTML valide.
-  const TG_MAX = 4096;
-  const TG_SUFFIX = "\n\n<i>[message tronqué — voir la fiche en ligne]</i>";
-  const payload = htmlMsg.length > TG_MAX
-    ? htmlMsg.slice(0, TG_MAX - TG_SUFFIX.length) + TG_SUFFIX
-    : htmlMsg;
-  if (htmlMsg.length > TG_MAX) {
-    log("[Telegram] TRUNCATED chat=" + client.tg_chat_id + " len=" + htmlMsg.length + " -> " + TG_MAX);
+  // GD-130 : réduction sûre du message HTML — jamais de balise ouverte non fermée.
+  // Stratégie séquentielle : retirer articles → aiResume → feedback → strip+brute.
+  const TG_SAFE = _tgu.TG_SAFE;
+  let payload = htmlMsg;
+  if (htmlMsg.length > TG_SAFE) {
+    payload = _tgu.safeTruncateHtml(htmlMsg, TG_SAFE);
+    log("[Telegram] SHORTENED chat=" + client.tg_chat_id + " original_len=" + htmlMsg.length + " short_len=" + payload.length);
   }
   try {
     const r = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
@@ -731,6 +731,31 @@ async function sendTelegram(client, htmlMsg) {
     // détecter les erreurs applicatives (chat introuvable, bot bloqué, token invalide…)
     if (!r.ok || !d || d.ok !== true) {
       const desc = d ? (d.description || JSON.stringify(d)) : "réponse JSON invalide";
+      // GD-130 : fallback plain text si Telegram rejette le HTML pour balises mal formées.
+      // Ne boucle pas — une seule tentative plain text.
+      if (desc && desc.indexOf("parse entities") !== -1) {
+        log("[Telegram] RETRY_PLAIN_TEXT chat=" + client.tg_chat_id);
+        const plain = _tgu.stripHtmlTags(htmlMsg).slice(0, TG_SAFE);
+        try {
+          const r2 = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id:                  client.tg_chat_id,
+              text:                     plain,
+              disable_web_page_preview: false,
+            }),
+          });
+          const d2 = await r2.json().catch(() => null);
+          if (!r2.ok || !d2 || d2.ok !== true) {
+            const desc2 = d2 ? (d2.description || JSON.stringify(d2)) : "réponse invalide";
+            log("[Telegram] FAILED_PLAIN_TEXT chat=" + client.tg_chat_id + " status=" + r2.status + " description=" + desc2);
+            return false;
+          }
+          log("[Telegram] OK_PLAIN_TEXT chat=" + client.tg_chat_id + " message_id=" + (d2.result && d2.result.message_id ? d2.result.message_id : "?"));
+          return true;
+        } catch (e2) { log("[Telegram] erreur réseau RETRY: " + e2.message); return false; }
+      }
       log("[Telegram] FAILED chat=" + client.tg_chat_id + " status=" + r.status + " description=" + desc);
       return false;
     }
