@@ -1,0 +1,284 @@
+{
+  "imported_at": "2026-07-02T00:00:00.000Z",
+  "source_csv": "data/human-review-input/ai-assisted-feedback-validated-gd123.json",
+  "counters": {
+    "total": 15,
+    "keep": 7,
+    "reject": 8,
+    "ignore": 0,
+    "vide": 0,
+    "invalid": 0
+  },
+  "records": [
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "348693",
+      "score": 5,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "hygiene"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat de Produit d'Hygiène",
+      "decision": "reject",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "hors_profil",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Marche annule (vice de procedure : date ouverture plis erronee). De plus, signal hygiene secondaire seul et objet generique. A exclure."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "355736",
+      "score": 5,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "hygiene"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat de produits d'hygiènes hospitalières pour le centre hospitalier régional de Beni mellal",
+      "decision": "reject",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Hygiene hospitaliere = fournitures medicales/sanitaires pour hopital. Pas une prestation de nettoyage de locaux. Hors perimetre prestataire nettoyage."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "357122",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "PRESTATIONS DE NETTOYAGE DES LOCAUX DU CENTRE NATIONAL D'ESTIVAGE BOUZNIKA PLAGE",
+      "decision": "keep",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Prestation de nettoyage de locaux — exactement dans le perimetre du client. Signal primaire nettoyage confirme. Organisme public (jeunesse). A conserver."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356643",
+      "score": 10,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "desinfection"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Désinfection des locaux administratifs de la Direction Générale de l'Hydraulique à Rabat",
+      "decision": "keep",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Prestation de desinfection de locaux administratifs. Desinfection fait partie des ai_inclusions du profil client. Organisme public central Rabat. A conserver."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "357091",
+      "score": 5,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "hygiene"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat de matières et fournitures d'hygiène et de santé destinés au DP smara",
+      "decision": "reject",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Fournitures d'hygiene ET DE SANTE pour ecole = materiel sanitaire/medical. Pas une prestation de nettoyage. Signal hygiene secondaire trompeur ici."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356497",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Réalisation des prestations de nettoyage dans les locaux de la Coordination Régionale de l'Agence de Développement Social à Beni Mellal – Khénifra",
+      "decision": "keep",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Prestation de nettoyage de locaux institutionnels. Signal primaire nettoyage. Organisme public social. Exactement dans le perimetre. A conserver."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356226",
+      "score": 5,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "hygiene"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat de matereil et accessoires medico technique destine au service d'hygiene de milieu — Ministere de la sante, province NOUACEUR",
+      "decision": "reject",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Materiel et accessoires MEDICO-TECHNIQUE. Service d'hygiene de milieu = sante publique/epidemiologie. Pas de nettoyage de locaux. Hors perimetre."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "355441",
+      "score": 5,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "hygiene"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat des produits d'hygiène du milieu destinés à la délégation du ministère de la Santé — province de Midelt",
+      "decision": "reject",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Produits d'hygiene du MILIEU pour ministere de la Sante = sante publique/epidemiologie. Pas pertinent pour prestataire nettoyage commerciale."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "355593",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Réalisation des prestations de nettoyage et d'entretien et d'embellissement des espaces verts dans les locaux de l'agence de développement social",
+      "decision": "keep",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Prestations de nettoyage + entretien + espaces verts — perimetre large compatible avec le profil nettoyage/entretien. Agence publique. Signal primaire. A conserver."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "355415",
+      "score": 5,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "hygiene"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat des matériels d'hygiène de milieu pour les besoins de la délégation du ministère de la santé et de la protection sociale province de Midelt",
+      "decision": "reject",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Meme profil que 355441 (meme organisme, meme objet). Materiels hygiene de milieu = sante publique. Pas nettoyage commercial. A rejeter."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356324",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Nettoyage des locaux administratif de la Faculté des Sciences Juridiques Economiques et Sociales de Tétouan (01/07/2026 au 31/07/2026)",
+      "decision": "keep",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Prestation de nettoyage de locaux administratifs universitaires. Duree courte (1 mois) mais typique des prestations periodiques. Signal primaire nettoyage. A conserver."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356891",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "TRAVAUX DE CURAGE ET NETTOYAGE DES FOSSES BÉTONNES ET DES OUVRAGES HYDRAULIQUES ET D'ENTRETIEN D'UNE PARTIE DE LA RUE NON CLASSÉE",
+      "decision": "reject",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Travaux de genie civil : curage fosses betonnes + ouvrages hydrauliques + voirie. Nettoyage dans ce contexte = genie civil/hydraulique, pas nettoyage de locaux. Hors perimetre."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "355642",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Prestations de nettoyage du bâtiment abritant le siège de la direction régionale de l'Entraide Nationale Souss Massa",
+      "decision": "keep",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Prestation de nettoyage de batiment siege institutionnel. Perimetre clair. Signal primaire. Organisme public. A conserver."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "355959",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Assurer les prestations de nettoyage des locaux administratifs relevant de la chambre de l'artisanat de Casablanca Settat Fondouk Safi",
+      "decision": "reject",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "hors_profil",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Marche annule (Date d'annulation : 25/06/2026 visible dans l'extrait). A rejeter car inactif, independamment de la pertinence du signal."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356074",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Entretien et nettoyage du siège de la direction provinciale Oujda-Angad et ses établissements scolaires",
+      "decision": "keep",
+      "cycle_id": "ai-assisted-validated-gd123",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-02T00:00:00.000Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "GD-123 AI-assisted review (conf=high): Entretien + nettoyage du siege et etablissements scolaires. Perimetre classique pour entreprise nettoyage. Signal primaire. Education nationale. A conserver."
+    }
+  ]
+}
