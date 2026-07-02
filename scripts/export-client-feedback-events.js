@@ -319,7 +319,10 @@ if (!outputPath) {
     console.log('[Supabase] ' + rows.length + ' ligne(s) recues');
   } catch (e) {
     console.error('ERROR Supabase:', e.message);
-    process.exit(1);
+    // GD-121B : process.exitCode + return au lieu de process.exit(1) pour eviter
+    // l'assertion libuv Windows (UV_HANDLE_CLOSING) apres un fetch async.
+    process.exitCode = 1;
+    return;
   }
 
   var result = filterAndTransform(rows, { includeTests: includeTests });
@@ -358,7 +361,8 @@ if (!outputPath) {
 
   if (events.length === 0) {
     console.log('\nAucun evenement a exporter.');
-    process.exit(0);
+    // GD-121B : return naturel — evite l'assertion libuv Windows post-fetch.
+    return;
   }
 
   // -- Dry-run : preview uniquement
@@ -366,7 +370,8 @@ if (!outputPath) {
     console.log('\n--- Preview (5 premiers evenements) ---');
     events.slice(0, 5).forEach(function(e) { console.log(JSON.stringify(e)); });
     console.log('\n[dry-run] Aucun fichier ecrit.');
-    process.exit(0);
+    // GD-121B : return naturel — evite l'assertion libuv Windows post-fetch.
+    return;
   }
 
   // -- Ecriture JSONL
