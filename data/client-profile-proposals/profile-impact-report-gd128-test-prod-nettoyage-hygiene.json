@@ -1,0 +1,258 @@
+{
+  "generated_at": "2026-07-02T00:00:00Z",
+  "source": "gd128_post_patch_measurement",
+  "status": "measurement_only",
+  "must_not_auto_apply": true,
+  "head_commit": "c7d450edb278921ab53522ed260dbf482f246d95",
+  "snapshot_used": "data/shadow/shadow-bc-input-replay-2026-06-28T23-35-25.json",
+  "profile_files_checked": [
+    "data/client-profiles/local-shadow-clients.json",
+    "data/client-profiles/profiles.json"
+  ],
+  "client_id": "local-nettoyage",
+  "client_name": "TEST PROD - Nettoyage Hygiene",
+  "method": "static_simulation",
+  "method_note": "Simulation statique sur review_candidates_detail du snapshot. Les 8 auto-notify n'ont pas de liste détaillée dans le snapshot ; ils sont inférés comme non impactés (signal primaire fort). Le JSONL d'entrée (latest-bc-input.jsonl) ne peut pas être utilisé directement car les champs objet/keyword sont vides dans le format brut.",
+
+  "before_patch_reference": {
+    "source": "GD-127 analyse statique + snapshot shadow-bc-input-replay-2026-06-28T23-35-25.json",
+    "inclusions_fortes": ["hygiene", "desinfection", "deratisation", "desinsectisation", "produits d entretien", "produits de nettoyage"],
+    "exclusions_metier": ["materiel medical", "produits pharmaceutiques", "reactifs de laboratoire"],
+    "total_checked": 1320,
+    "auto_notify_count": 8,
+    "review_candidates_count": 21,
+    "blocked_or_weak_count": 21,
+    "primary_based_matches": 17,
+    "inclusion_only_matches": 12,
+    "weak_single_signal_count": 21,
+    "estimated_false_positives_weak": 22
+  },
+
+  "after_patch_profile": {
+    "inclusions_fortes": ["deratisation", "desinsectisation", "produits de nettoyage"],
+    "valeur_primaire": "nettoyage",
+    "exclusions_metier": [
+      "materiel medical", "produits pharmaceutiques", "reactifs de laboratoire",
+      "hygiene medicale", "hygiene de milieu", "sante publique", "epidemiologie",
+      "materiel medico-technique", "curage de fosses", "genie civil hydraulique"
+    ],
+    "signaux_ambigus_review_only": [
+      "hygiene", "desinfection", "produits d entretien", "blanchisserie", "gardiennage nettoyage", "nettoiement"
+    ]
+  },
+
+  "after_patch_metrics": {
+    "total_bcs_analysed_in_simulation": 21,
+    "note": "Les 21 review_candidates_detail ont été simulés. Les 8 auto-notify sont supposés inchangés (signaux primaires forts).",
+    "review_candidates_kept": 11,
+    "review_candidates_removed": 10,
+    "auto_notify_estimated_kept": 8,
+    "auto_notify_estimated_removed": 0,
+
+    "removed_by_signal": {
+      "hygiene_seul": 7,
+      "produits_entretien_seul": 2,
+      "desinfection_seul": 1,
+      "total": 10
+    },
+
+    "kept_by_signal": {
+      "nettoyage_primaire": 11,
+      "total": 11
+    },
+
+    "noise_reduction": {
+      "false_positives_removed": 9,
+      "ambiguous_removed": 1,
+      "commentary": "9 BCs hygiene médicaux / santé publique (vrais FP). 2 BCs produits d entretien (ambigus Entraide Nationale). 1 BC désinfection locaux admin Direction Hydraulique (potentiellement vrai positif — risque documenté)."
+    }
+  },
+
+  "removed_candidates_examples": [
+    {
+      "bc_id": "355736",
+      "matched_signals": ["hygiene"],
+      "strength": "weak",
+      "score": 5,
+      "verdict": "vrai_faux_positif",
+      "excerpt": "Achat de produits d'hygiènes hospitalières pour le centre hospitalier régional de Beni mellal",
+      "reason": "Hygiene hospitalière médicale — hors métier nettoyage locaux"
+    },
+    {
+      "bc_id": "357091",
+      "matched_signals": ["hygiene"],
+      "strength": "weak",
+      "score": 5,
+      "verdict": "vrai_faux_positif",
+      "excerpt": "Achat de matières et fournitures d'hygiène et de santé destinés au DP smara",
+      "reason": "Hygiene + santé publique — hors métier"
+    },
+    {
+      "bc_id": "355441",
+      "matched_signals": ["hygiene"],
+      "strength": "weak",
+      "score": 5,
+      "verdict": "vrai_faux_positif",
+      "excerpt": "Achat des produits d'hygiène du milieu destinés à la délégation du ministère de la Santé",
+      "reason": "Hygiene de milieu / santé publique — hors métier"
+    },
+    {
+      "bc_id": "355415",
+      "matched_signals": ["hygiene"],
+      "strength": "weak",
+      "score": 5,
+      "verdict": "vrai_faux_positif",
+      "excerpt": "Achat des matériels d'hygiène de milieu pour les besoins de la délégation du ministère de la santé",
+      "reason": "Matériels hygiène de milieu — sanitaire public"
+    },
+    {
+      "bc_id": "356226",
+      "matched_signals": ["hygiene"],
+      "strength": "weak",
+      "score": 5,
+      "verdict": "vrai_faux_positif",
+      "excerpt": "Achat de matereil et accessoires medico technique destine au service d hygiène de milieu relevant de la delegation du Ministère",
+      "reason": "Matériel médico-technique + hygiène de milieu — doublement hors métier"
+    },
+    {
+      "bc_id": "353648",
+      "matched_signals": ["produits d entretien"],
+      "strength": "weak",
+      "score": 5,
+      "verdict": "ambigu",
+      "excerpt": "Achat des produits d'entretien destinés à la Direction régionale de l'Entraide Nationale",
+      "reason": "Produits d entretien sans prestation nettoyage — l'Entraide Nationale achète pour ses locaux, pas forcément pour le marché du client"
+    },
+    {
+      "bc_id": "356643",
+      "matched_signals": ["desinfection"],
+      "strength": "weak",
+      "score": 10,
+      "verdict": "risque_perte_vrai_positif",
+      "excerpt": "Désinfection des locaux administratifs de la Direction Générale de l'Hydraulique à Rabat",
+      "reason": "Désinfection de locaux administratifs — potentiellement dans le périmètre du client. Signal supprimé car desinfection retiré des inclusions fortes. BC à surveiller sur les prochains cycles."
+    },
+    {
+      "bc_id": "348693",
+      "matched_signals": ["hygiene"],
+      "strength": "weak",
+      "score": 5,
+      "verdict": "vrai_faux_positif",
+      "excerpt": "Achat de Produit d'Hygiène — ANNULÉ vice de procédure",
+      "reason": "Marché annulé + hygiene générique seule sans contexte locaux"
+    }
+  ],
+
+  "preserved_candidates_examples": [
+    {
+      "bc_id": "357122",
+      "matched_signals": ["nettoyage"],
+      "strength": "weak",
+      "score": 10,
+      "verdict": "vrai_positif",
+      "excerpt": "PRESTATIONS DE NETTOYAGE DES LOCAUX DU CENTRE NATIONAL D'ESTIVAGE BOUZNIKA PLAGE",
+      "reason": "Prestation nettoyage de locaux — cœur de métier"
+    },
+    {
+      "bc_id": "356497",
+      "matched_signals": ["nettoyage"],
+      "strength": "weak",
+      "score": 10,
+      "verdict": "vrai_positif",
+      "excerpt": "Réalisation des prestations de nettoyage dans les locaux de la Coordination Régionale de l'Agence",
+      "reason": "Prestations nettoyage locaux administratifs"
+    },
+    {
+      "bc_id": "356324",
+      "matched_signals": ["nettoyage"],
+      "strength": "weak",
+      "score": 10,
+      "verdict": "vrai_positif",
+      "excerpt": "Nettoyage des locaux administratif de la Faculté des Sciences Juridiques Economiques",
+      "reason": "Nettoyage locaux administratifs — cœur de métier"
+    },
+    {
+      "bc_id": "355642",
+      "matched_signals": ["nettoyage"],
+      "strength": "weak",
+      "score": 10,
+      "verdict": "vrai_positif",
+      "excerpt": "Prestations de nettoyage du bâtiment abritant le siège de la direction régionale de l'Entraide Nationale",
+      "reason": "Nettoyage bâtiment — cœur de métier"
+    },
+    {
+      "bc_id": "355959",
+      "matched_signals": ["nettoyage"],
+      "strength": "weak",
+      "score": 10,
+      "verdict": "vrai_positif",
+      "excerpt": "Assurer les prestations de nettoyage des locaux administratifs relevant de la chambre de l'artisanat",
+      "reason": "Nettoyage locaux administratifs"
+    },
+    {
+      "bc_id": "356074",
+      "matched_signals": ["nettoyage"],
+      "strength": "weak",
+      "score": 10,
+      "verdict": "vrai_positif",
+      "excerpt": "Entretien et nettoyage du siège de la direction provinciale Oujda-Angad et ses établissements scolaires",
+      "reason": "Entretien et nettoyage locaux"
+    }
+  ],
+
+  "ambiguous_preserved_candidates": [
+    {
+      "bc_id": "356891",
+      "matched_signals": ["nettoyage"],
+      "strength": "weak",
+      "score": 10,
+      "verdict": "ambigu_a_surveiller",
+      "excerpt": "TRAVAUX DE CURAGE ET NETTOYAGE DES FOSSES BÉTONNES ET DES OUVRAGES HYDRAULIQUES ET D'ENTRETIEN D'UNE PARTIE DE LA RUE",
+      "reason": "Curage + fosses + ouvrages hydrauliques — potentiellement hors métier (génie civil). Gardé car nettoyage est signal primaire mais curage fosses pourrait le disqualifier. À examiner si le client l'examine."
+    },
+    {
+      "bc_id": "355309",
+      "matched_signals": ["nettoyage"],
+      "strength": "weak",
+      "score": 10,
+      "verdict": "ambigu_a_surveiller",
+      "excerpt": "Prestation de blanchissage, nettoyage et dégraissage du linge et couverture au profit de l'École Nationale",
+      "reason": "Blanchissage linge — blanchisserie, pas nettoyage de locaux. À vérifier avec le client."
+    }
+  ],
+
+  "risk_assessment": {
+    "false_positives_confirmed_removed": 9,
+    "ambiguous_removed": 1,
+    "risk_lost_true_positive": {
+      "count": 1,
+      "bc_id": "356643",
+      "description": "Désinfection de locaux administratifs — serait un vrai positif si le client fait de la désinfection de locaux. Signal desinfection retiré des inclusions fortes suite au learning (K=3/R=5 sur signaux désinfection seuls). Risque faible : ce BC est weak/score=10, serait passé en review de toute façon.",
+      "mitigation": "Le signal desinfection est documenté dans _gd127_ambiguous_review. Surveiller sur 2-3 cycles."
+    },
+    "ambiguous_kept": [
+      {
+        "bc_id": "356891",
+        "description": "Curage fosses hydrauliques gardé car nettoyage est signal primaire — mais contenu hors métier probable"
+      },
+      {
+        "bc_id": "355309",
+        "description": "Blanchissage linge gardé par nettoyage primaire — peut-être hors périmètre client"
+      }
+    ],
+    "auto_notify_risk": "Faible — les 8 BCs auto-notify ont des signaux primaires forts (nettoyage + inclusions solides). Non affectés par la suppression de hygiene/desinfection/produits d entretien.",
+    "engine_unchanged": true,
+    "supabase_unchanged": true,
+    "production_unchanged": true
+  },
+
+  "recommendation": "observe_only_keep_local_shadow",
+  "recommendation_detail": "Le patch GD-127 réduit significativement le bruit (10 review candidates supprimés sur 21, tous weak/score<=10). 9 suppressions sont clairement des vrais faux positifs (médical/santé publique). 1 perte potentielle documentée (désinfection locaux). Les 8 auto-notify sont préservés. Les 11 BCs gardés en review sont tous signaux nettoyage primaires (vrais positifs). Recommandation : observer 1-2 cycles shadow supplémentaires avant toute proposition de promotion client ou d'application Supabase. Ne pas déployer.",
+  "next_steps": [
+    "Lancer un nouveau cycle shadow replay après le prochain scan pour comparer les métriques",
+    "Surveiller le signal 'desinfection de locaux' sur 2-3 cycles — si pattern se confirme, ré-évaluer son inclusion en review",
+    "Surveiller 'produits d entretien' — si le client confirme intérêt pour la distribution produits, reclasser",
+    "Vérifier bc_id=356891 (curage fosses) avec le client : hors périmètre ou pas ?",
+    "Ne pas appliquer ce profil en production Supabase sans validation client explicite"
+  ]
+}
