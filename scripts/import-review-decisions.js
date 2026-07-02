@@ -125,7 +125,8 @@ for (var _i = 0; _i < args.length; _i++) {
     cycleIdArg = args[++_i];
   } else if (_a === '--review-source' && args[_i + 1] && !args[_i + 1].startsWith('--')) {
     var _src = args[++_i].toLowerCase();
-    if (_src === 'operator' || _src === 'client' || _src === 'system') {
+    // GD-124 : ai_assisted_validated accepte comme source advisory valide
+    if (_src === 'operator' || _src === 'client' || _src === 'system' || _src === 'ai_assisted_validated') {
       reviewSource = _src;
     } else {
       console.warn('WARN: --review-source invalide "' + _src + '" -> "operator" utilise');

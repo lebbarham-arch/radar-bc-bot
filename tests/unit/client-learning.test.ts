@@ -53,12 +53,37 @@ function classifyVerdictCL(keep: number, reject: number, total: number): string 
 
 const POSITIVE_VERDICTS = ['Tres fiable', 'Fiable'];
 
-function computeReadiness(sig: { cycles: Set<string>; verdict: string; reject: number; keep: number; total: number }) {
+// GD-124 : sources consultatives — advisory only, ne peuvent pas déclencher promotion seules
+const AI_ADVISORY_SOURCES_CL = ['ai_assisted_validated'];
+function isAdvisorySourceCL(src: string): boolean {
+  return AI_ADVISORY_SOURCES_CL.indexOf(src) !== -1;
+}
+
+function computeReadiness(sig: {
+  cycles: Set<string>; verdict: string; reject: number; keep: number; total: number;
+  keep_base?: number; reject_base?: number; ignore_base?: number; total_base?: number;
+  cycles_base?: Set<string>; has_advisory_source?: boolean;
+}) {
   const cyclesSz = sig.cycles.size;
   const blockers: string[] = [];
   if (cyclesSz < 2)              blockers.push('insufficient_cycles');
   if (sig.reject > sig.keep)     blockers.push('risky_signal');
   if (sig.total  < 3)            blockers.push('insufficient_data');
+  // GD-124 : si le signal serait READY mais contient des sources advisory,
+  // vérifier que les stats base (hors advisory) suffisent seules.
+  if (blockers.length === 0 && POSITIVE_VERDICTS.includes(sig.verdict) && sig.has_advisory_source) {
+    const kb  = sig.keep_base   ?? 0;
+    const rb  = sig.reject_base ?? 0;
+    const tb  = sig.total_base  ?? 0;
+    const csz = sig.cycles_base ? sig.cycles_base.size : 0;
+    const baseVerdict  = classifyVerdictCL(kb, rb, tb);
+    const baseBlockers: string[] = [];
+    if (csz < 2) baseBlockers.push('insufficient_cycles');
+    if (rb > kb) baseBlockers.push('risky_signal');
+    if (tb < 3)  baseBlockers.push('insufficient_data');
+    const baseReady = baseBlockers.length === 0 && POSITIVE_VERDICTS.includes(baseVerdict);
+    if (!baseReady) blockers.push('blocked_by_ai_assisted_only');
+  }
   const ready = blockers.length === 0 && POSITIVE_VERDICTS.includes(sig.verdict);
   return { ready, blockers };
 }
@@ -83,7 +108,12 @@ function normalizeLearningKey(value: unknown): string {
 interface InternalSigEntry {
   signal: string; label: string;
   keep: number; reject: number; ignore: number;
-  total: number; cycles: Set<string>; sources: Set<string>;
+  total: number;
+  // GD-124 : stats hors sources advisory
+  keep_base: number; reject_base: number; ignore_base: number; total_base: number;
+  cycles: Set<string>; cycles_base: Set<string>;
+  sources: Set<string>;
+  has_advisory_source: boolean;
 }
 
 function aggregate(records: ReviewRecord[], rawRecords?: ReviewRecord[]): Map<string, SigEntry[]> {
@@ -111,13 +141,29 @@ function aggregate(records: ReviewRecord[], rawRecords?: ReviewRecord[]): Map<st
       const sk = normalizeLearningKey(rawSig) || rawSig;
 
       if (!sigMap.has(sk)) {
-        sigMap.set(sk, { signal: sk, label: rawSig, keep: 0, reject: 0, ignore: 0, total: 0, cycles: new Set(), sources: new Set() });
+        sigMap.set(sk, {
+          signal: sk, label: rawSig,
+          keep: 0, reject: 0, ignore: 0, total: 0,
+          // GD-124 : champs base (hors advisory)
+          keep_base: 0, reject_base: 0, ignore_base: 0, total_base: 0,
+          cycles: new Set(), cycles_base: new Set(),
+          sources: new Set(),
+          has_advisory_source: false,
+        });
       }
       const e = sigMap.get(sk) as InternalSigEntry;
       if (r.decision === 'keep' || r.decision === 'reject' || r.decision === 'ignore') {
         (e as unknown as Record<string, unknown>)[r.decision] = ((e as unknown as Record<string, unknown>)[r.decision] as number ?? 0) + 1;
       }
       e.total++;
+      // GD-124 : stats base (hors advisory) depuis les records dédupliqués
+      const src_dedup = r.review_source || 'operator';
+      if (!isAdvisorySourceCL(src_dedup)) {
+        if (r.decision === 'keep') e.keep_base++;
+        else if (r.decision === 'reject') e.reject_base++;
+        else if (r.decision === 'ignore') e.ignore_base++;
+        e.total_base++;
+      }
     }
   }
 
@@ -141,6 +187,12 @@ function aggregate(records: ReviewRecord[], rawRecords?: ReviewRecord[]): Map<st
       const e = sigMap.get(sk) as InternalSigEntry;
       if (r.cycle_id)  e.cycles.add(r.cycle_id);
       e.sources.add(src);
+      // GD-124 : cycles_base et has_advisory_source depuis rawRecords
+      if (isAdvisorySourceCL(src)) {
+        e.has_advisory_source = true;
+      } else {
+        if (r.cycle_id) e.cycles_base.add(r.cycle_id);
+      }
     }
   }
 
@@ -152,7 +204,13 @@ function aggregate(records: ReviewRecord[], rawRecords?: ReviewRecord[]): Map<st
     for (const [, entry] of sigMap) {
       const e       = entry as InternalSigEntry;
       const verdict = classifyVerdictCL(e.keep, e.reject, e.total);
-      const readiness = computeReadiness({ cycles: e.cycles, verdict, reject: e.reject, keep: e.keep, total: e.total });
+      const readiness = computeReadiness({
+        cycles: e.cycles, verdict, reject: e.reject, keep: e.keep, total: e.total,
+        // GD-124 : champs base pour détection blocked_by_ai_assisted_only
+        keep_base: e.keep_base, reject_base: e.reject_base, ignore_base: e.ignore_base,
+        total_base: e.total_base, cycles_base: e.cycles_base,
+        has_advisory_source: e.has_advisory_source,
+      });
       sigReport.push({
         signal:          e.signal,
         keep:            e.keep,
@@ -521,6 +579,102 @@ describe('client-learning GD-109 — normalisation client_key + signal_key', () 
     expect(sig.ignore).toBe(0);
     expect(sig.total).toBe(3);
     expect(sig.cycles.size).toBe(3);
+  });
+
+});
+
+
+// ─── Tests GD-124 : source-awareness (SA) ─────────────────────────────────────
+// Valide que ai_assisted_validated est advisory only et ne peut pas déclencher
+// promotion_ready seul (blocked_by_ai_assisted_only).
+
+describe('client-learning GD-124 — source-awareness', () => {
+
+  // SA-1 : signal READY (operator seul) → reste READY même si advisory présent en plus
+  test('SA-1 — base operator suffit → READY même avec advisory mixte (pas de blocage)', () => {
+    const sig = {
+      cycles: new Set(['C1', 'C2', 'ai-cycle']),
+      verdict: 'Tres fiable',
+      reject: 0, keep: 5, total: 5,
+      keep_base: 3, reject_base: 0, ignore_base: 0, total_base: 3,
+      cycles_base: new Set(['C1', 'C2']),
+      has_advisory_source: true,   // advisory présent, mais base suffit
+    };
+    const { ready, blockers } = computeReadiness(sig);
+    expect(ready).toBe(true);
+    expect(blockers).not.toContain('blocked_by_ai_assisted_only');
+    expect(blockers).toHaveLength(0);
+  });
+
+  // SA-2 : signal READY uniquement via ai_assisted_validated → bloqué
+  test('SA-2 — base vide (advisory only) → blocked_by_ai_assisted_only, ready=false', () => {
+    const sig = {
+      cycles: new Set(['ai-cycle-1', 'ai-cycle-2']),
+      verdict: 'Tres fiable',
+      reject: 0, keep: 5, total: 5,
+      keep_base: 0, reject_base: 0, ignore_base: 0, total_base: 0,  // base vide
+      cycles_base: new Set<string>(),
+      has_advisory_source: true,
+    };
+    const { ready, blockers } = computeReadiness(sig);
+    expect(ready).toBe(false);
+    expect(blockers).toContain('blocked_by_ai_assisted_only');
+  });
+
+  // SA-3 : has_advisory_source=false → la logique GD-124 ne se déclenche pas
+  test('SA-3 — has_advisory_source=false → pas de blocked_by_ai_assisted_only', () => {
+    const sig = {
+      cycles: new Set(['C1', 'C2']),
+      verdict: 'Tres fiable',
+      reject: 0, keep: 3, total: 3,
+      keep_base: 3, reject_base: 0, ignore_base: 0, total_base: 3,
+      cycles_base: new Set(['C1', 'C2']),
+      has_advisory_source: false,
+    };
+    const { ready, blockers } = computeReadiness(sig);
+    expect(ready).toBe(true);
+    expect(blockers).not.toContain('blocked_by_ai_assisted_only');
+  });
+
+  // SA-4 : cycles ai_assisted_validated exclus de cycles_base
+  // Scénario : 3 keeps operator sur 1 seul cycle (C1) + 1 keep advisory sur cycle distinct
+  // → cycles total=2 (C1 + ai-cycle), cycles_base=1 (C1 seul) → base bloquée par insufficient_cycles
+  // → blocked_by_ai_assisted_only attendu
+  test('SA-4 — cycles advisory exclus de cycles_base → bloqué si 1 seul cycle base', () => {
+    const raw: ReviewRecord[] = [
+      { client: 'X', bc_id: '1', decision: 'keep', matched_signals: ['sig'], cycle_id: 'C1', review_source: 'operator' },
+      { client: 'X', bc_id: '2', decision: 'keep', matched_signals: ['sig'], cycle_id: 'C1', review_source: 'operator' },
+      { client: 'X', bc_id: '3', decision: 'keep', matched_signals: ['sig'], cycle_id: 'C1', review_source: 'operator' },
+      { client: 'X', bc_id: '4', decision: 'keep', matched_signals: ['sig'], cycle_id: 'ai-cycle', review_source: 'ai_assisted_validated' },
+    ];
+    const report = aggregate(raw, raw);
+    const sig = report.get('X')![0]!;
+    // cycles total = 2 (C1 + ai-cycle) — suffirait sans GD-124
+    expect(sig.cycles.size).toBe(2);
+    // total = 4 — suffisant
+    expect(sig.total).toBe(4);
+    // Mais cycles_base = 1 (seul C1), donc base bloquée par insufficient_cycles
+    // → blocked_by_ai_assisted_only
+    expect(sig.blockers).toContain('blocked_by_ai_assisted_only');
+    expect(sig.promotion_ready).toBe(false);
+  });
+
+  // SA-7 : source mixte (operator + advisory), base déjà READY → READY sans blocage
+  // Scénario : 3 keeps operator sur 2 cycles (C1, C2) + 2 keeps advisory
+  // → base: kb=3, tb=3, csz=2 → READY → pas de blocked_by_ai_assisted_only
+  test('SA-7 — base operator déjà READY + advisory mixte → READY, pas de blocage', () => {
+    const raw: ReviewRecord[] = [
+      { client: 'X', bc_id: '1', decision: 'keep', matched_signals: ['sig'], cycle_id: 'C1', review_source: 'operator' },
+      { client: 'X', bc_id: '2', decision: 'keep', matched_signals: ['sig'], cycle_id: 'C2', review_source: 'operator' },
+      { client: 'X', bc_id: '3', decision: 'keep', matched_signals: ['sig'], cycle_id: 'C2', review_source: 'operator' },
+      { client: 'X', bc_id: '4', decision: 'keep', matched_signals: ['sig'], cycle_id: 'ai-c1', review_source: 'ai_assisted_validated' },
+      { client: 'X', bc_id: '5', decision: 'keep', matched_signals: ['sig'], cycle_id: 'ai-c2', review_source: 'ai_assisted_validated' },
+    ];
+    const report = aggregate(raw, raw);
+    const sig = report.get('X')![0]!;
+    expect(sig.promotion_ready).toBe(true);
+    expect(sig.blockers).not.toContain('blocked_by_ai_assisted_only');
+    expect(sig.blockers).toHaveLength(0);
   });
 
 });

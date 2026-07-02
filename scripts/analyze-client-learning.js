@@ -94,10 +94,19 @@ function classifyVerdict(keep, reject, total) {
 
 // ─── 3. Calcul promotion_ready + blockers ────────────────────────────────────
 // promotion_ready = cycles >= 2 ET verdict positif (Tres fiable | Fiable)
-// Priorité future source (client > operator > system) non encore appliquée :
-// seulement loggée via warning si sources mixtes.
+//
+// GD-124 : politique sources advisory
+//   - ai_assisted_validated = source consultative uniquement
+//   - Un signal ne peut pas être promotion_ready grâce à ai_assisted_validated seul.
+//   - Si les stats hors sources advisory (base) suffisent → READY inchangé.
+//   - Si le signal devient READY uniquement via ai_assisted_validated → bloqué :
+//     raison = 'blocked_by_ai_assisted_only'.
 
 var POSITIVE_VERDICTS = ['Tres fiable', 'Fiable'];
+
+// GD-124 : sources consultatives — ne peuvent pas déclencher promotion seules.
+var AI_ADVISORY_SOURCES = ['ai_assisted_validated'];
+function isAdvisorySource(src) { return AI_ADVISORY_SOURCES.indexOf(src) !== -1; }
 
 function computeReadiness(sigEntry) {
   var cyclesSz = sigEntry.cycles.size;
@@ -107,6 +116,24 @@ function computeReadiness(sigEntry) {
   if (cyclesSz < 2)                             blockers.push('insufficient_cycles');
   if (sigEntry.reject > sigEntry.keep)          blockers.push('risky_signal');
   if (sigEntry.total < 3)                       blockers.push('insufficient_data');
+
+  // GD-124 : si le signal serait READY (pas de blockers encore) mais dépend
+  // de sources advisory, vérifier si les stats "base" (hors advisory) suffisent.
+  if (blockers.length === 0 && POSITIVE_VERDICTS.indexOf(verdict) !== -1 &&
+      sigEntry.has_advisory_source) {
+    var kb  = sigEntry.keep_base   || 0;
+    var rb  = sigEntry.reject_base || 0;
+    var ib  = sigEntry.ignore_base || 0;
+    var tb  = sigEntry.total_base  || 0;
+    var csz = sigEntry.cycles_base ? sigEntry.cycles_base.size : 0;
+    var baseVerdict  = classifyVerdict(kb, rb, tb);
+    var baseBlockers = [];
+    if (csz < 2)       baseBlockers.push('insufficient_cycles');
+    if (rb > kb)       baseBlockers.push('risky_signal');
+    if (tb < 3)        baseBlockers.push('insufficient_data');
+    var baseReady = baseBlockers.length === 0 && POSITIVE_VERDICTS.indexOf(baseVerdict) !== -1;
+    if (!baseReady) blockers.push('blocked_by_ai_assisted_only');
+  }
 
   var ready = blockers.length === 0 && POSITIVE_VERDICTS.indexOf(verdict) !== -1;
 
@@ -137,21 +164,34 @@ function aggregate(records, rawRecords) {
 
       if (!byClient[ck][sk]) {
         byClient[ck][sk] = {
-          signal:  sk,
-          label:   rawSig,   // label original premier vu
-          keep:    0,
-          reject:  0,
-          ignore:  0,
-          total:   0,
-          cycles:  new Set(),
-          sources: new Set(),
+          signal:             sk,
+          label:              rawSig,   // label original premier vu
+          keep:               0,
+          reject:             0,
+          ignore:             0,
+          total:              0,
+          // GD-124 : stats hors sources advisory (base = operator + client + system)
+          keep_base:          0,
+          reject_base:        0,
+          ignore_base:        0,
+          total_base:         0,
+          cycles:             new Set(),
+          cycles_base:        new Set(),   // GD-124 : cycles hors advisory
+          sources:            new Set(),
+          has_advisory_source: false,
         };
       }
 
-      var e = byClient[ck][sk];
+      var e   = byClient[ck][sk];
       var dec = r.decision || '';
       if (dec === 'keep' || dec === 'reject' || dec === 'ignore') e[dec]++;
       e.total++;
+      // GD-124 : stats base (hors advisory) depuis les records dédupliqués
+      var src_dedup = (r.review_source || 'operator');
+      if (!isAdvisorySource(src_dedup)) {
+        if (dec === 'keep' || dec === 'reject' || dec === 'ignore') e[dec + '_base']++;
+        e.total_base++;
+      }
     });
   });
 
@@ -173,8 +213,14 @@ function aggregate(records, rawRecords) {
       if (!byClient[ck][sk]) return;
 
       var e = byClient[ck][sk];
-      if (r.cycle_id)  e.cycles.add(r.cycle_id);   // null/undefined → pas de cycle
+      if (r.cycle_id) e.cycles.add(r.cycle_id);   // null/undefined → pas de cycle
       e.sources.add(src);
+      // GD-124 : cycles et flag advisory depuis les rawRecords
+      if (isAdvisorySource(src)) {
+        e.has_advisory_source = true;
+      } else {
+        if (r.cycle_id) e.cycles_base.add(r.cycle_id);
+      }
     });
   });
 
@@ -190,7 +236,13 @@ function aggregate(records, rawRecords) {
       if (sig === '_label') return;   // métadonnée interne, pas un signal
       var e       = sigMap[sig];
       var verdict = classifyVerdict(e.keep, e.reject, e.total);
-      var readiness = computeReadiness({ cycles: e.cycles, verdict: verdict, reject: e.reject, keep: e.keep, total: e.total });
+      // GD-124 : passer les stats base pour détection blocked_by_ai_assisted_only
+      var readiness = computeReadiness({
+        cycles: e.cycles, verdict: verdict, reject: e.reject, keep: e.keep, total: e.total,
+        keep_base: e.keep_base, reject_base: e.reject_base, ignore_base: e.ignore_base,
+        total_base: e.total_base, cycles_base: e.cycles_base,
+        has_advisory_source: e.has_advisory_source,
+      });
       var sourcesArr = Array.from(e.sources).sort();
 
       // Warning sources mixtes : priorité future client > operator > system

@@ -21,6 +21,12 @@ interface SigStats {
   total:   number;
   cycles:  Set<string>;
   sources: Set<string>;
+  // GD-124 : champs base (hors sources advisory)
+  keep_base?:   number;
+  reject_base?: number;
+  ignore_base?: number;
+  total_base?:  number;
+  cycles_base?: Set<string>;
 }
 
 interface Hint {
@@ -39,6 +45,9 @@ interface Hint {
   score_adjustment:   number;
   block_auto_notify:  boolean;
   reason:             string;
+  // GD-124
+  advisory_only?:             boolean;
+  human_validation_required?: boolean;
 }
 
 // ─── Mirror : computeVerdict ──────────────────────────────────────────────────
@@ -54,8 +63,14 @@ function computeVerdict(keep: number, reject: number, total: number): string {
   return 'Ambigu';
 }
 
-// ─── Mirror : computeHint ─────────────────────────────────────────────────────
+// ─── Mirror : computeHint (GD-124 — source-aware) ───────────────────────────
 // Aucune règle spécifique à un signal ou un client.
+
+// GD-124 : sources advisory — ne peuvent pas déclencher boost/promotion seules
+const AI_ADVISORY_SOURCES_CLH = ['ai_assisted_validated'];
+function isAdvisorySourceCLH(src: string): boolean {
+  return AI_ADVISORY_SOURCES_CLH.indexOf(src) !== -1;
+}
 
 function computeHint(e: SigStats): Hint {
   const cyclesCount = e.cycles.size;
@@ -91,6 +106,26 @@ function computeHint(e: SigStats): Hint {
     reason    = 'Signal ambigu — maintenir en review humaine';
   }
 
+  // GD-124 : si boost prévu mais uniquement dû à sources advisory, rétrograder.
+  const sourcesArr  = Array.from(e.sources).sort();
+  const hasAdvisory = sourcesArr.some(s => isAdvisorySourceCLH(s));
+  let advisoryOnly  = false;
+  if (hasAdvisory && effect === 'boost') {
+    const kb       = e.keep_base   ?? 0;
+    const rb       = e.reject_base ?? 0;
+    const tb       = e.total_base  ?? 0;
+    const csz      = e.cycles_base ? e.cycles_base.size : 0;
+    const baseRate = tb > 0 ? Math.round(kb / tb * 100) : 0;
+    const baseBoost = csz >= 2 && baseRate >= 80 && tb >= 3;
+    if (!baseBoost) {
+      advisoryOnly = true;
+      effect    = 'keep_review';
+      scoreAdj  = 0;
+      blockAuto = true;
+      reason    = `GD-124: boost bloqué — sources advisory uniquement (base keep_rate=${baseRate}%, base_cycles=${csz}, base_total=${tb}). Validation humaine requise.`;
+    }
+  }
+
   return {
     signal:             e.signal,
     keep:               e.keep,
@@ -100,13 +135,16 @@ function computeHint(e: SigStats): Hint {
     keep_rate:          keepRate,
     reject_rate:        rejectRate,
     cycles_count:       cyclesCount,
-    sources:            Array.from(e.sources).sort(),
+    sources:            sourcesArr,
     verdict:            computeVerdict(e.keep, e.reject, e.total),
-    promotion_ready:    cyclesCount >= 2 && keepRate >= 80 && e.total >= 3,
+    promotion_ready:    cyclesCount >= 2 && keepRate >= 80 && e.total >= 3 && !advisoryOnly,
     recommended_effect: effect,
     score_adjustment:   scoreAdj,
     block_auto_notify:  blockAuto,
     reason,
+    // GD-124
+    advisory_only:             advisoryOnly,
+    human_validation_required: advisoryOnly,
   };
 }
 
@@ -360,6 +398,62 @@ describe('client-learning-hints — application enrichEntry (GD-033)', () => {
     const enriched = enrichEntry(entry);
     expect(enriched.auto_notify_candidate).toBe(false);
     expect(enriched.review_candidate).toBe(true);
+  });
+
+});
+
+// ─── Tests GD-124 : advisory_only dans computeHint (SA-5, SA-6) ───────────────
+// Valide que computeHint détecte advisory_only et rétrograde boost → keep_review.
+
+describe('client-learning-hints GD-124 — advisory_only', () => {
+
+  // SA-5 : hint advisory_only=true quand boost uniquement via ai_assisted_validated
+  // Scénario : 3 keeps total, 2 cycles total — mais base (hors advisory) : 0 keep, 0 cycles
+  test('SA-5 — boost advisory only → advisory_only=true, effect=keep_review, adj=0', () => {
+    const sig: SigStats = {
+      signal: 'nettoyage', keep: 3, reject: 0, ignore: 0, total: 3,
+      cycles: new Set(['ai-c1', 'ai-c2']),
+      sources: new Set(['ai_assisted_validated']),
+      keep_base: 0, reject_base: 0, ignore_base: 0, total_base: 0,
+      cycles_base: new Set<string>(),
+    };
+    const h = computeHint(sig);
+    expect(h.advisory_only).toBe(true);
+    expect(h.recommended_effect).toBe('keep_review');
+    expect(h.score_adjustment).toBe(0);
+    expect(h.block_auto_notify).toBe(true);
+    expect(h.human_validation_required).toBe(true);
+    expect(h.reason).toContain('GD-124');
+  });
+
+  // SA-6 : promotion_ready=false quand advisory_only=true
+  test('SA-6 — advisory_only=true → promotion_ready=false', () => {
+    const sig: SigStats = {
+      signal: 'desinfection', keep: 5, reject: 0, ignore: 0, total: 5,
+      cycles: new Set(['ai-c1', 'ai-c2', 'ai-c3']),
+      sources: new Set(['ai_assisted_validated']),
+      keep_base: 0, reject_base: 0, ignore_base: 0, total_base: 0,
+      cycles_base: new Set<string>(),
+    };
+    const h = computeHint(sig);
+    expect(h.advisory_only).toBe(true);
+    expect(h.promotion_ready).toBe(false);
+  });
+
+  // SA-5b : base operator suffisante → advisory_only=false, boost maintenu
+  test('SA-5b — base operator READY + advisory → advisory_only=false, boost maintenu', () => {
+    const sig: SigStats = {
+      signal: 'hygiene', keep: 5, reject: 0, ignore: 0, total: 5,
+      cycles: new Set(['C1', 'C2', 'ai-c1']),
+      sources: new Set(['operator', 'ai_assisted_validated']),
+      keep_base: 3, reject_base: 0, ignore_base: 0, total_base: 3,
+      cycles_base: new Set(['C1', 'C2']),
+    };
+    const h = computeHint(sig);
+    expect(h.advisory_only).toBe(false);
+    expect(h.recommended_effect).toBe('boost');
+    expect(h.promotion_ready).toBe(true);
+    expect(h.score_adjustment).toBe(5);
   });
 
 });

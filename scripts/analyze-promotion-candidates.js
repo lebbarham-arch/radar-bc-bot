@@ -21,6 +21,10 @@ var normalizeLearningKey = require('./learning-key-utils').normalizeLearningKey;
 
 var DECISIONS_DIR = path.join(__dirname, '..', 'data', 'review-decisions');
 
+// GD-124 : sources consultatives — ne peuvent pas déclencher promotion seules.
+var AI_ADVISORY_SOURCES = ['ai_assisted_validated'];
+function isAdvisorySource(src) { return AI_ADVISORY_SOURCES.indexOf(src) !== -1; }
+
 // ── Normalisation (GD-109 : via learning-key-utils) ──────────────────────────
 
 function normSignal(s) {
@@ -100,6 +104,8 @@ function aggregateBySignal(records, rawRecords) {
           ignore:   0,
           cycles:   new Set(),   // cycle_id distincts (preuves indépendantes)
           sources:  new Set(),   // review_source distincts (operator / client / system)
+          // GD-124 : tracking sources advisory
+          has_advisory_source: false,
           rejectExcerpts: [],
           ignoreExcerpts: [],
           keepExcerpts:   [],
@@ -126,7 +132,10 @@ function aggregateBySignal(records, rawRecords) {
       // cycle_id : null pour anciens records → ne pas incrémenter le compteur cycles
       if (r.cycle_id)  entry.cycles.add(r.cycle_id);
       // review_source : anciens records sans champ → traités comme operator
-      entry.sources.add(r.review_source || 'operator');
+      var src = r.review_source || 'operator';
+      entry.sources.add(src);
+      // GD-124 : noter si source advisory présente
+      if (isAdvisorySource(src)) entry.has_advisory_source = true;
     });
   });
 
@@ -188,6 +197,8 @@ function printSig(sig) {
   var sourcesArr = sig.sources ? Array.from(sig.sources).sort() : [];
   var sourcesStr = sourcesArr.length ? '  sources=' + sourcesArr.join('/') : '';
   var readyStr   = isPromotionReady(sig) ? '' : '  [bloqué: cycles insuffisants]';
+  // GD-124 : avertissement si source advisory présente
+  var advisoryStr = sig.has_advisory_source ? '  ⚠ advisory(ai_assisted)' : '';
   console.log(
     '  ' + pad(sig.signal, 30, true) +
     '  keep=' + sig.keep +
@@ -197,7 +208,8 @@ function printSig(sig) {
     '  (' + pct(sig.keep, total).trim() + ' keep)' +
     cyclesStr +
     sourcesStr +
-    readyStr
+    readyStr +
+    advisoryStr
   );
 }
 
@@ -373,7 +385,9 @@ if (fiables.length) {
     var suffix = ready
       ? '  ✓ promotion_ready (cycles=' + cycles + ')'
       : '  ⚠ bloqué : cycles insuffisants (' + cycles + '/2 requis)';
-    console.log('    • ' + s.signal + suffix);
+    // GD-124 : avertissement source advisory
+    var advSuffix = s.has_advisory_source ? '  [⚠ GD-124: sources mixtes advisory — validation humaine requise avant promotion]' : '';
+    console.log('    • ' + s.signal + suffix + advSuffix);
   });
   console.log('  → Ces signaux peuvent être promus en auto_candidate si score >= 15');
   console.log('    (ex : deux trusted inclusions matchant simultanément).');

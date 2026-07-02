@@ -35,6 +35,10 @@ var HINTS_DIR       = path.join(__dirname, '..', 'data', 'client-learning');
 var HINTS_FILE      = path.join(HINTS_DIR, 'client-learning-hints.json');
 var DRY_RUN         = process.argv.includes('--dry-run');
 
+// GD-124 : sources consultatives — ne peuvent pas déclencher boost/promotion seules.
+var AI_ADVISORY_SOURCES = ['ai_assisted_validated'];
+function isAdvisorySource(src) { return AI_ADVISORY_SOURCES.indexOf(src) !== -1; }
+
 // ─── 1. Lecture + collecte rawRecords + déduplication last-wins ───────────────
 
 function loadDecisions() {
@@ -99,14 +103,20 @@ function aggregate(records, rawRecords) {
 
       if (!byClient[ck][sk]) {
         byClient[ck][sk] = {
-          signal:  sk,
-          label:   rawSig,   // label original premier vu
-          keep:    0,
-          reject:  0,
-          ignore:  0,
-          total:   0,
-          cycles:  new Set(),
-          sources: new Set(),
+          signal:             sk,
+          label:              rawSig,   // label original premier vu
+          keep:               0,
+          reject:             0,
+          ignore:             0,
+          total:              0,
+          // GD-124 : stats hors sources advisory
+          keep_base:          0,
+          reject_base:        0,
+          ignore_base:        0,
+          total_base:         0,
+          cycles:             new Set(),
+          cycles_base:        new Set(),
+          sources:            new Set(),
         };
       }
 
@@ -114,6 +124,12 @@ function aggregate(records, rawRecords) {
       var dec = r.decision || '';
       if (dec === 'keep' || dec === 'reject' || dec === 'ignore') e[dec]++;
       e.total++;
+      // GD-124 : stats base hors advisory depuis records dédupliqués
+      var src_dedup = (r.review_source || 'operator');
+      if (!isAdvisorySource(src_dedup)) {
+        if (dec === 'keep' || dec === 'reject' || dec === 'ignore') e[dec + '_base']++;
+        e.total_base++;
+      }
     });
   });
 
@@ -137,6 +153,8 @@ function aggregate(records, rawRecords) {
       var e = byClient[ck][sk];
       if (r.cycle_id) e.cycles.add(r.cycle_id);
       e.sources.add(src);
+      // GD-124 : cycles_base hors advisory
+      if (!isAdvisorySource(src) && r.cycle_id) e.cycles_base.add(r.cycle_id);
     });
   });
 
@@ -181,6 +199,28 @@ function computeHint(e) {
     reason    = 'Signal ambigu — maintenir en review humaine';
   }
 
+  // GD-124 : si boost prévu mais repose sur sources advisory uniquement,
+  // rétrograder en keep_review avec advisory_only=true.
+  var sourcesArr    = Array.from(e.sources).sort();
+  var hasAdvisory   = sourcesArr.some(function(s) { return isAdvisorySource(s); });
+  var advisoryOnly  = false;
+  if (hasAdvisory && effect === 'boost') {
+    var kb         = e.keep_base   || 0;
+    var rb         = e.reject_base || 0;
+    var tb         = e.total_base  || 0;
+    var csz        = e.cycles_base ? e.cycles_base.size : 0;
+    var baseRate   = tb > 0 ? Math.round(kb / tb * 100) : 0;
+    var baseBoost  = csz >= 2 && baseRate >= 80 && tb >= 3;
+    if (!baseBoost) {
+      // Boost uniquement dû aux sources advisory — rétrograder
+      advisoryOnly = true;
+      effect    = 'keep_review';
+      scoreAdj  = 0;
+      blockAuto = true;
+      reason    = 'GD-124: boost bloque — sources advisory uniquement (base keep_rate=' + baseRate + '%, base_cycles=' + csz + ', base_total=' + tb + '). Validation humaine requise.';
+    }
+  }
+
   return {
     signal:             e.signal,
     keep:               e.keep,
@@ -190,12 +230,15 @@ function computeHint(e) {
     keep_rate:          keepRate,
     reject_rate:        rejectRate,
     cycles_count:       cyclesCount,
-    sources:            Array.from(e.sources).sort(),
+    sources:            sourcesArr,
     verdict:            computeVerdict(e.keep, e.reject, e.total),
-    promotion_ready:    cyclesCount >= 2 && keepRate >= 80 && e.total >= 3,
+    promotion_ready:    cyclesCount >= 2 && keepRate >= 80 && e.total >= 3 && !advisoryOnly,
     recommended_effect: effect,
     score_adjustment:   scoreAdj,
     block_auto_notify:  blockAuto,
+    // GD-124
+    advisory_only:             advisoryOnly,
+    human_validation_required: advisoryOnly,
     reason:             reason,
   };
 }
