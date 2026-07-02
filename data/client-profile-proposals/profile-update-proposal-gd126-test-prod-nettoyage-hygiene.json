@@ -1,0 +1,366 @@
+{
+  "_comment": "GD-126 — Proposition de mise à jour du profil client issue du learning. NE PAS appliquer automatiquement. Validation humaine obligatoire avant toute modification du profil actif.",
+  "client_id": "local-nettoyage",
+  "client_uuid_prod": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+  "client_name": "TEST PROD - Nettoyage Hygiène",
+  "generated_at": "2026-07-02T00:00:00.000Z",
+  "source": "learning_analysis_gd126",
+  "status": "proposal_only",
+  "must_not_auto_apply": true,
+  "learning_basis": {
+    "files_read": 20,
+    "raw_decisions": 198,
+    "dedup_decisions": 129,
+    "review_cycles_observed": 7,
+    "review_sources": ["operator", "ai_assisted_validated"],
+    "ai_proposals_analysed": 21,
+    "ai_validated_high_confidence": 15
+  },
+
+  "evidence_summary": {
+    "signal_nettoyage": {
+      "stats": "K=24 R=2 I=1 tot=27 cyc=7",
+      "verdict": "Tres fiable",
+      "hint": "boost +5",
+      "conclusion": "Signal primaire solide. Inclusion forte confirmée."
+    },
+    "signal_deratisation": {
+      "stats": "K=3 R=0 I=0 tot=3 cyc=5",
+      "verdict": "Tres fiable",
+      "hint": "boost +5",
+      "conclusion": "Signal prestation spécialisée confirmé sur 5 cycles."
+    },
+    "signal_desinsectisation": {
+      "stats": "K=3 R=0 I=0 tot=3 cyc=5",
+      "verdict": "Tres fiable",
+      "hint": "boost +5",
+      "conclusion": "Signal prestation spécialisée confirmé sur 5 cycles."
+    },
+    "signal_produits_de_nettoyage": {
+      "stats": "K=5 R=0 I=0 tot=5 cyc=3",
+      "verdict": "Tres fiable",
+      "hint": "boost +5",
+      "conclusion": "Signal fourniture/prestation confirmé. À inclure si le client distribue ou utilise des produits."
+    },
+    "signal_hygiene": {
+      "stats_seul": "K=0 R=17 I=22 — hygiene seul SANS nettoyage ni desinfection",
+      "stats_avec_contexte": "K=9 R=0 I=1 — hygiene accompagné de nettoyage ou desinfection",
+      "verdict_global": "Ambigu",
+      "hint": "demote_to_review -3",
+      "conclusion": "SIGNAL TROMPEUR. Hygiene générique seul = hors profil dans 100% des cas observés (hygiène médicale, santé publique, épidémiologie). En contexte prestation nettoyage = toujours pertinent. RETIRER des ai_inclusions directes — classer en ambiguous_signals avec condition de co-occurrence."
+    },
+    "signal_desinfection": {
+      "stats_seul": "K=1 R=10 — desinfection seul SANS nettoyage ni hygiene prestation",
+      "stats_avec_contexte": "K=5 R=0 — desinfection accompagné de nettoyage ou contexte locaux",
+      "verdict_global": "Fiable (hint: keep_review car ambigu hors contexte)",
+      "hint": "keep_review adj=0",
+      "conclusion": "Signal conditionnel. Désinfection de locaux administratifs/collectivités = pertinent. Désinfection médicale/hospitalière ou matériel = hors profil. Conserver en review_preferences avec note contexte."
+    },
+    "signal_insecticide": {
+      "stats": "K=0 R=2 I=0 tot=2 cyc=2",
+      "verdict": "Risque",
+      "hint": "keep_review (données insuffisantes)",
+      "conclusion": "Tendance négative. Insecticide seul (produit chimique) ≠ prestation désinsectisation. Exclusion candidate si le client ne fournit pas de produits chimiques seuls."
+    },
+    "signal_nettoiement": {
+      "stats": "K=2 R=0 I=0 tot=2 cyc=3",
+      "verdict": "Tres fiable (mais total < 3)",
+      "hint": "keep_review (données insuffisantes)",
+      "conclusion": "Signal prometteur à surveiller. 0 rejet sur 3 cycles. Inclure en tentative avec monitoring."
+    },
+    "signal_produits_entretien": {
+      "stats": "K=1 R=0 I=0 tot=1 cyc=4",
+      "verdict": "Insuffisant",
+      "hint": "keep_review",
+      "conclusion": "Données insuffisantes. Ambigu entre prestation et fourniture de produits. Maintenir en ambiguous_signals."
+    },
+    "patterns_rejection_ai_analysis": {
+      "bon_signal_mauvais_contexte": {
+        "count": 6,
+        "exemples": [
+          "Hygiène hospitalière = fournitures médicales/sanitaires pour hôpital — hors prestation nettoyage",
+          "Fournitures d'hygiène et de santé pour école = matériel sanitaire/médical",
+          "Matériel et accessoires médico-techniques / hygiène de milieu = santé publique",
+          "Produits d'hygiène du milieu pour Ministère de la Santé = épidémiologie",
+          "Travaux génie civil : curage fossés bétonnés + ouvrages hydrauliques + voirie",
+          "Même profil organisme ministère santé publique"
+        ]
+      },
+      "hors_profil": {
+        "count": 2,
+        "exemples": [
+          "Marché annulé (vice de procédure)",
+          "Marché annulé (date annulation explicite)"
+        ]
+      },
+      "ambigu": {
+        "count": 5,
+        "exemples": [
+          "Achat de produits de nettoyage (fourniture vs prestation)",
+          "Achat de produits d'entretien (fourniture vs prestation)",
+          "Marché mixte gardiennage + nettoyage locaux",
+          "Désinfection hospitalière (surfaces + entretien locaux, double nature)",
+          "Nettoyage de linge / blanchisserie (différent nettoyage de locaux)"
+        ]
+      }
+    }
+  },
+
+  "proposed_profile_patch": {
+
+    "business_profile_update": {
+      "proposed": "Prestation de nettoyage et d'entretien de locaux professionnels, administratifs et établissements publics. Inclut désinfection, dératisation, désinsectisation de locaux. Fourniture de produits d'entretien si activité de distribution.",
+      "current": "Nettoyage, hygiene, desinfection, deratisation, desinsectisation pour locaux professionnels et administrations.",
+      "rationale": "Préciser 'nettoyage de locaux' pour distinguer du nettoyage génie civil / blanchisserie. Retirer 'hygiène' du libellé principal — signal trop générique.",
+      "confidence": "high",
+      "human_validation_required": true
+    },
+
+    "technical_profile_update": {
+      "proposed": "Nettoyage de locaux administratifs, bâtiments scolaires, établissements publics. Entretien de locaux. Désinfection de locaux. Dératisation. Désinsectisation. Produits de nettoyage et d'entretien. Exclus : hygiène médicale, matériel sanitaire, génie civil.",
+      "current": "Produits d entretien, produits de nettoyage, desinfectants, insecticides, prestations de desinfection, deratisation, desinsectisation.",
+      "rationale": "Préciser les contextes acceptés et ceux exclus dans le profil technique.",
+      "confidence": "high",
+      "human_validation_required": true
+    },
+
+    "inclusions_fortes": {
+      "description": "Signaux dont la présence seule est suffisante pour orienter vers le client",
+      "items": [
+        {
+          "signal": "nettoyage de locaux",
+          "variants": ["nettoyage", "nettoyage locaux", "entretien locaux", "nettoyage batiments"],
+          "confidence": "high",
+          "rationale": "Signal primaire : K=24, R=2, 7 cycles. 89% keep rate.",
+          "supporting_signals": ["nettoyage"],
+          "source_counts": { "keep": 24, "reject": 2, "total": 27, "cycles": 7 },
+          "human_validation_required": true
+        },
+        {
+          "signal": "dératisation",
+          "variants": ["deratisation", "dératisation", "traitement nuisibles", "traitement rongeurs"],
+          "confidence": "high",
+          "rationale": "Prestation spécialisée connexe. K=3, R=0, 5 cycles. 100% keep rate.",
+          "supporting_signals": ["deratisation"],
+          "source_counts": { "keep": 3, "reject": 0, "total": 3, "cycles": 5 },
+          "human_validation_required": true
+        },
+        {
+          "signal": "désinsectisation",
+          "variants": ["desinsectisation", "désinsectisation", "traitement insectes", "lutte anti-nuisibles"],
+          "confidence": "high",
+          "rationale": "Prestation spécialisée connexe. K=3, R=0, 5 cycles. 100% keep rate.",
+          "supporting_signals": ["desinsectisation"],
+          "source_counts": { "keep": 3, "reject": 0, "total": 3, "cycles": 5 },
+          "human_validation_required": true
+        },
+        {
+          "signal": "produits de nettoyage",
+          "variants": ["produits de nettoyage", "produits nettoyage", "fournitures nettoyage"],
+          "confidence": "high",
+          "rationale": "K=5, R=0, 3 cycles. À confirmer si le client distribue des produits.",
+          "note": "Vérifier avec le client s'il fait de la fourniture de produits ou uniquement de la prestation.",
+          "supporting_signals": ["produits de nettoyage"],
+          "source_counts": { "keep": 5, "reject": 0, "total": 5, "cycles": 3 },
+          "human_validation_required": true
+        },
+        {
+          "signal": "nettoiement",
+          "variants": ["nettoiement", "entretien voirie", "propreté urbaine"],
+          "confidence": "medium",
+          "rationale": "K=2, R=0, 3 cycles. Données insuffisantes mais tendance positive. À surveiller.",
+          "note": "Données insuffisantes (total=2 < seuil 3). À confirmer sur prochain cycle.",
+          "supporting_signals": ["nettoiement"],
+          "source_counts": { "keep": 2, "reject": 0, "total": 2, "cycles": 3 },
+          "human_validation_required": true
+        }
+      ]
+    },
+
+    "exclusions_candidates": {
+      "description": "Signaux dont la présence seule (sans contexte nettoyage de locaux) doit orienter vers le rejet",
+      "items": [
+        {
+          "signal": "hygiène médicale / santé publique",
+          "variants": [
+            "hygiene de milieu",
+            "hygiene hospitaliere",
+            "hygiene et sante",
+            "sante publique",
+            "epidemiologie",
+            "produits hygiene milieu",
+            "fournitures hygiene et sante"
+          ],
+          "confidence": "high",
+          "rationale": "Pattern dominant des rejets 'bon_signal_mauvais_contexte'. Hygiène générique (seul, sans nettoyage de locaux) rejeté dans 100% des cas observés (R=17, I=22).",
+          "supporting_signals": ["hygiene"],
+          "source_counts": { "keep_seul": 0, "reject_seul": 17, "ignore_seul": 22 },
+          "human_validation_required": true
+        },
+        {
+          "signal": "matériel médico-technique / accessoires médicaux",
+          "variants": [
+            "materiel medico-technique",
+            "accessoires medico-techniques",
+            "produits pharmaceutiques",
+            "reactifs laboratoire",
+            "materiel medical"
+          ],
+          "confidence": "high",
+          "rationale": "Rejets explicites dans les analyses GD-122. Déjà partiellement dans exclusions_metier actuelles.",
+          "note": "Renforcer la couverture avec 'médico-technique' et 'accessoires médicaux'.",
+          "human_validation_required": true
+        },
+        {
+          "signal": "génie civil / hydraulique / voirie",
+          "variants": [
+            "curage fosses",
+            "ouvrages hydrauliques",
+            "genie civil hydraulique",
+            "assainissement fosses",
+            "voirie",
+            "travaux publics hydrauliques"
+          ],
+          "confidence": "high",
+          "rationale": "Rejet explicite GD-122 : 'travaux génie civil, curage fossés bétonnés + hydraulique = nettoyage génie civil, pas prestation d'entretien de locaux'.",
+          "human_validation_required": true
+        },
+        {
+          "signal": "marchés annulés",
+          "variants": [
+            "marche annule",
+            "annulation",
+            "vice de procedure",
+            "date annulation"
+          ],
+          "confidence": "high",
+          "rationale": "Rejets systématiques des marchés annulés (raison: hors_profil). Règle transverse, indépendante du contenu.",
+          "note": "Règle transverse applicable à tous les clients — à traiter au niveau moteur si possible, ou en exclusion de profil.",
+          "human_validation_required": true
+        },
+        {
+          "signal": "insecticide seul (produit chimique)",
+          "variants": ["insecticide", "produit insecticide", "pesticide", "biocide"],
+          "confidence": "medium",
+          "rationale": "K=0, R=2, 2 cycles. Tendance négative. Insecticide = produit chimique seul ≠ prestation de désinsectisation.",
+          "note": "À distinguer de 'désinsectisation' (prestation) et de 'produits utilisés lors d'une prestation'. Confirmer avec le client.",
+          "human_validation_required": true
+        },
+        {
+          "signal": "blanchisserie / nettoyage de linge",
+          "variants": ["blanchisserie", "blanchissage", "nettoyage linge", "laverie", "pressing"],
+          "confidence": "medium",
+          "rationale": "Analyse GD-122 : 'nettoyage de linge = blanchisserie, différent du nettoyage de locaux'. Ambigu si le client a aussi une activité blanchisserie.",
+          "note": "Vérifier avec le client si l'activité blanchisserie est dans son périmètre commercial.",
+          "human_validation_required": true
+        }
+      ]
+    },
+
+    "ambiguous_signals": {
+      "description": "Signaux à maintenir en review humaine — pertinence dépendant du contexte",
+      "items": [
+        {
+          "signal": "hygiène (générique)",
+          "condition_keep": "Co-occurrence avec 'nettoyage', 'entretien locaux', 'désinfection locaux'",
+          "condition_reject": "Seul, ou en contexte médical / santé publique / épidémiologie / scolaire sanitaire",
+          "confidence": "high",
+          "rationale": "Données très claires : hygiène seul = rejet 100% (K=0/39). Hygiène + nettoyage = keep 100% (K=9/10). Signal discriminant selon co-occurrence.",
+          "recommendation": "RETIRER 'hygiene' des ai_inclusions directes. Ajouter comme signal ambigu avec condition explicite.",
+          "human_validation_required": true
+        },
+        {
+          "signal": "désinfection",
+          "condition_keep": "Désinfection de locaux, bâtiments administratifs, établissements. Co-occurrence avec nettoyage ou entretien locaux.",
+          "condition_reject": "Désinfection médicale, stérilisation hospitalière, désinfection de matériel, sans contexte nettoyage locaux.",
+          "confidence": "high",
+          "rationale": "Désinfection seul : K=1, R=10. Désinfection + contexte prestation locaux : K=5, R=0.",
+          "recommendation": "Maintenir en review. Ne pas mettre en inclusion directe. Ajouter la condition de contexte.",
+          "human_validation_required": true
+        },
+        {
+          "signal": "produits d'entretien",
+          "condition_keep": "Si le client distribue ou fournit des produits d'entretien en complément de sa prestation.",
+          "condition_reject": "Si fourniture pure de produits sans prestation de service associée.",
+          "confidence": "low",
+          "rationale": "K=1, R=0, 4 cycles. Données insuffisantes. Ambigu entre fourniture et prestation.",
+          "recommendation": "Clarifier avec le client si la fourniture de produits est dans son périmètre commercial.",
+          "human_validation_required": true
+        },
+        {
+          "signal": "gardiennage + nettoyage (marché mixte)",
+          "condition_keep": "Si la part nettoyage est substantielle et explicite dans le lot ou l'objet du marché.",
+          "condition_reject": "Si gardiennage est la prestation principale et nettoyage est anecdotique.",
+          "confidence": "medium",
+          "rationale": "Analyse GD-122 : marché mixte gardiennage + nettoyage locaux faculté médecine → keep (confidence medium). Pertinent si nettoyage explicite.",
+          "recommendation": "Laisser en review. Ne pas exclure automatiquement.",
+          "human_validation_required": true
+        }
+      ]
+    },
+
+    "review_preferences_update": {
+      "description": "Signaux nécessitant une attention particulière lors de la review humaine",
+      "add": [
+        {
+          "signal": "désinfection",
+          "note": "Toujours vérifier : désinfection de locaux (keep) vs désinfection médicale/matériel (reject). Ne pas auto-notifier."
+        },
+        {
+          "signal": "hygiène",
+          "note": "Vérifier systématiquement le contexte : prestation nettoyage de locaux (keep) vs hygiène médicale/santé publique (reject)."
+        },
+        {
+          "signal": "produits",
+          "note": "Distinguer fourniture de produits vs utilisation dans une prestation de service."
+        }
+      ]
+    },
+
+    "questions_pour_client": [
+      {
+        "question": "Le client distribue-t-il des produits de nettoyage / d'entretien en fourniture directe, ou uniquement dans le cadre de prestations de service ?",
+        "impact": "Détermine si 'produits d'entretien' et 'produits de nettoyage' doivent être en inclusion directe ou en review.",
+        "priority": "high"
+      },
+      {
+        "question": "Le client intervient-il dans le domaine de la blanchisserie / nettoyage de linge, ou uniquement nettoyage de locaux ?",
+        "impact": "Détermine si 'blanchisserie' / 'blanchissage' est une exclusion ou une ambiguïté à surveiller.",
+        "priority": "medium"
+      },
+      {
+        "question": "Le client fait-il de la désinsectisation comme prestation principale, ou uniquement comme service complémentaire au nettoyage ?",
+        "impact": "Confirme si 'insecticide' (produit seul) doit être exclu même quand associé à 'désinsectisation'.",
+        "priority": "medium"
+      },
+      {
+        "question": "Le client cible-t-il les marchés hospitaliers pour le nettoyage de locaux (couloirs, chambres) ou souhaite-t-il les exclure à cause du risque de confusion avec hygiène médicale ?",
+        "impact": "Clarifie si 'établissements de santé' reste dans les organismes cibles ou devient une exclusion.",
+        "priority": "medium"
+      }
+    ],
+
+    "risques_si_applique_trop_vite": [
+      {
+        "risque": "Retrait de 'hygiène' des ai_inclusions sans réévaluation du snapshot",
+        "consequence": "BCs actuellement capturés via 'hygiène + nettoyage' pourraient être sous-scorés si le moteur pondère différemment les co-occurrences.",
+        "mitigation": "Faire un dry-run shadow avant toute activation. Comparer les snapshots avant/après."
+      },
+      {
+        "risque": "Ajout de 'hygiène médicale' en exclusion trop large",
+        "consequence": "Risque d'exclure des marchés hospitaliers de nettoyage de locaux légitimes (nettoyage des couloirs d'un hôpital ≠ fourniture hygiène médicale).",
+        "mitigation": "Exclusion ciblée sur les termes spécifiques ('hygiène de milieu', 'matériel médico-technique'), pas sur 'hôpital' ou 'santé' en général."
+      },
+      {
+        "risque": "Activation prématurée de 'nettoiement' comme inclusion",
+        "consequence": "Données insuffisantes (2 décisions seulement). Risque de faux positifs sur nettoiement voirie/génie civil.",
+        "mitigation": "Attendre un cycle supplémentaire. Maintenir en review jusqu'à total >= 3 et cyc >= 2."
+      },
+      {
+        "risque": "Généralisation de 'marchés annulés = exclusion' au niveau moteur",
+        "consequence": "Si implémenté comme règle globale, impacte tous les clients. Doit rester au niveau profil ou de post-filtrage.",
+        "mitigation": "Ne pas coder en guard moteur. Traiter en enrichissement de profil client ou en post-filtre manuel."
+      }
+    ]
+  }
+}
