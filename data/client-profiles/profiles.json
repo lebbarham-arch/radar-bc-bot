@@ -1,14 +1,15 @@
 {
   "_comment": "Profils clients locaux shadow-only (GD-043). Ne jamais committer de donnees sensibles. Priorite : valeurs Supabase si non vides, sinon fallback ici.",
   "TEST PROD - Nettoyage Hygiene": {
-    "business_profile": "Nettoyage, hygiene, desinfection, deratisation, desinsectisation pour locaux professionnels et administrations.",
-    "technical_profile": "Produits d entretien, produits de nettoyage, desinfectants, insecticides, prestations de desinfection, deratisation, desinsectisation.",
+    "business_profile": "Prestation de nettoyage et d'entretien de locaux professionnels, administratifs et etablissements publics. Inclut deratisation, desinsectisation et desinfection de locaux. Fourniture de produits de nettoyage.",
+    "technical_profile": "Nettoyage de locaux administratifs et etablissements publics. Entretien de locaux. Desinfection de locaux. Deratisation. Desinsectisation. Produits de nettoyage et d'entretien. Exclus : hygiene medicale, materiel sanitaire, genie civil, curage de fosses.",
     "organization_profile": "",
     "profile_label": "Nettoyage Hygiene",
     "secteurs": [
       "nettoyage",
-      "hygiene",
-      "desinfection",
+      "nettoyage de locaux",
+      "entretien de locaux",
+      "desinfection de locaux",
       "deratisation",
       "desinsectisation"
     ],
@@ -32,7 +33,17 @@
       "reactifs de laboratoire",
       "maintenance informatique",
       "gardiennage",
-      "location de vehicules"
+      "location de vehicules",
+      "hygiene medicale",
+      "hygiene de milieu",
+      "sante publique",
+      "epidemiologie",
+      "materiel medico-technique",
+      "accessoires medico-techniques",
+      "curage de fosses",
+      "genie civil hydraulique",
+      "voirie hydraulique",
+      "marche annule"
     ],
     "produits": [
       "produits d entretien",
@@ -46,7 +57,34 @@
       "batiments administratifs",
       "desinfection de locaux",
       "traitement nuisibles"
-    ]
+    ],
+    "ambiguous_signals": [
+      {
+        "signal": "hygiene",
+        "condition_keep": "co-occurrence avec nettoyage ou entretien locaux",
+        "condition_reject": "hygiene seul ou contexte medical/sante publique"
+      },
+      {
+        "signal": "desinfection",
+        "condition_keep": "desinfection de locaux, batiments administratifs, co-occurrence nettoyage",
+        "condition_reject": "desinfection medicale, sterilisation, sans contexte locaux"
+      },
+      {
+        "signal": "nettoiement",
+        "note": "tendance positive (K=2/R=0/3cyc) mais donnees insuffisantes — surveiller"
+      },
+      {
+        "signal": "produits d entretien",
+        "condition_keep": "si le client distribue des produits en complement de prestation",
+        "condition_reject": "fourniture pure de produits sans prestation associee"
+      },
+      {
+        "signal": "blanchisserie",
+        "note": "different du nettoyage de locaux — clarifier avec le client"
+      }
+    ],
+    "_gd127_patch_date": "2026-07-02",
+    "_gd127_source": "learning_analysis_gd126"
   },
   "TEST PROD - Informatique": {
     "business_profile": "Developpement logiciel, infogérance, cybersecurite, infrastructure IT, support informatique et numerique pour collectivites et entreprises.",

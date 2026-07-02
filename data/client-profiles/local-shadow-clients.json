@@ -9,18 +9,32 @@
         "type": "service",
         "radar_type": "bc",
         "ai_inclusions": [
-          "hygiene",
-          "desinfection",
           "deratisation",
           "desinsectisation",
-          "produits d entretien",
           "produits de nettoyage"
         ],
         "ai_exclusions": [
           "materiel medical",
           "produits pharmaceutiques",
-          "reactifs de laboratoire"
-        ]
+          "reactifs de laboratoire",
+          "hygiene medicale",
+          "hygiene de milieu",
+          "sante publique",
+          "epidemiologie",
+          "materiel medico-technique",
+          "curage de fosses",
+          "genie civil hydraulique"
+        ],
+        "_gd127_ambiguous_review": [
+          "hygiene",
+          "desinfection",
+          "produits d entretien",
+          "blanchisserie",
+          "gardiennage nettoyage",
+          "nettoiement"
+        ],
+        "_gd127_patch_date": "2026-07-02",
+        "_gd127_source": "learning_analysis_gd126"
       }
     ]
   },
