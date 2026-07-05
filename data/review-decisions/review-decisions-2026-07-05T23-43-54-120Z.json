@@ -1,0 +1,122 @@
+{
+  "imported_at": "2026-07-05T23:43:54.120Z",
+  "source_csv": "C:\\PROJETS_AI\\projet_claude\\radar-bc-bot-clean-2\\data\\feedback\\review-beta-gd117.csv",
+  "counters": {
+    "total": 6,
+    "keep": 3,
+    "reject": 3,
+    "ignore": 0,
+    "vide": 0,
+    "invalid": 0
+  },
+  "records": [
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "357473",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "keep",
+      "cycle_id": null,
+      "review_source": "client",
+      "reviewed_at": "2026-07-05T23:43:54.116Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Feedback client brut: type=relevant; critere=nettoyage"
+    },
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "356430",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "keep",
+      "cycle_id": null,
+      "review_source": "client",
+      "reviewed_at": "2026-07-05T23:43:54.116Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Feedback client brut: type=relevant; critere=nettoyage"
+    },
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "356428",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "reject",
+      "cycle_id": null,
+      "review_source": "client",
+      "reviewed_at": "2026-07-05T23:43:54.116Z",
+      "human_review_reason": "hors_profil",
+      "human_review_comment": "Feedback client brut: type=irrelevant; critere=nettoyage"
+    },
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "357546",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "reject",
+      "cycle_id": null,
+      "review_source": "client",
+      "reviewed_at": "2026-07-05T23:43:54.116Z",
+      "human_review_reason": "hors_profil",
+      "human_review_comment": "Feedback client brut: type=irrelevant; critere=nettoyage"
+    },
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "357545",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "reject",
+      "cycle_id": null,
+      "review_source": "client",
+      "reviewed_at": "2026-07-05T23:43:54.116Z",
+      "human_review_reason": "hors_profil",
+      "human_review_comment": "Feedback client brut: type=irrelevant; critere=nettoyage"
+    },
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "357531",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "keep",
+      "cycle_id": null,
+      "review_source": "client",
+      "reviewed_at": "2026-07-05T23:43:54.116Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Feedback client brut: type=relevant; critere=nettoyage"
+    }
+  ]
+}
