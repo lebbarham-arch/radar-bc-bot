@@ -553,4 +553,102 @@ describe("LD — loadDetails accumulation + progress", () => {
   });
 });
 
+// ─── DD-* : Déduplication newBCs par bc_id (GD-132) ─────────────────────────
+//
+// Mirror exacte de l'IIFE dans radar-bc-bot.js (bloc GD-132).
+// Entrée  : items = tableau brut (potentiellement avec doublons bc_id)
+//           vusIds = Set des ids déjà connus
+// Sortie  : { deduped: BcItem[], removed: number, logs: string[] }
+
+interface BcRaw { id: string; objet?: string; }
+
+function dedupNewBCsMirror(
+  allBCs:  BcRaw[],
+  vusIds:  Set<string>,
+): { deduped: BcRaw[]; removed: number; logs: string[] } {
+  const logs: string[] = [];
+  const logFn = (msg: string) => logs.push(msg);
+
+  const newBCs: BcRaw[] = (() => {
+    const _raw = allBCs.filter(bc => !vusIds.has(bc.id));
+    const _seen = new Set<string>();
+    const _out: BcRaw[] = [];
+    for (const bc of _raw) {
+      const key = String(bc.id || "");
+      if (!key || !_seen.has(key)) { _seen.add(key); _out.push(bc); }
+    }
+    const _removed = _raw.length - _out.length;
+    if (_removed > 0) {
+      logFn("[DEDUP] nouveaux BC dedup before=" + _raw.length + " after=" + _out.length + " removed=" + _removed);
+    }
+    return _out;
+  })();
+
+  return { deduped: newBCs, removed: allBCs.filter(bc => !vusIds.has(bc.id)).length - newBCs.length, logs };
+}
+
+describe("DD — Déduplication newBCs par bc_id (GD-132)", () => {
+
+  test("DD-1 : liste sans doublon — inchangée, pas de log", () => {
+    const items: BcRaw[] = [{ id: "1" }, { id: "2" }, { id: "3" }];
+    const { deduped, removed, logs } = dedupNewBCsMirror(items, new Set());
+    expect(deduped).toHaveLength(3);
+    expect(removed).toBe(0);
+    expect(logs).toHaveLength(0);
+  });
+
+  test("DD-2 : 2 doublons bc_id=360273 → 1 conservé, 1 supprimé, log émis", () => {
+    const items: BcRaw[] = [{ id: "360273", objet: "A" }, { id: "360273", objet: "B" }];
+    const { deduped, removed, logs } = dedupNewBCsMirror(items, new Set());
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]!.objet).toBe("A"); // premier conservé
+    expect(removed).toBe(1);
+    expect(logs[0]).toContain("[DEDUP] nouveaux BC dedup before=2 after=1 removed=1");
+  });
+
+  test("DD-3 : 3 doublons mêlés à d'autres ids uniques", () => {
+    const items: BcRaw[] = [
+      { id: "1" }, { id: "2" }, { id: "2" }, { id: "3" }, { id: "2" },
+    ];
+    const { deduped, removed, logs } = dedupNewBCsMirror(items, new Set());
+    expect(deduped.map(b => b.id)).toEqual(["1", "2", "3"]);
+    expect(removed).toBe(2);
+    expect(logs[0]).toContain("before=5 after=3 removed=2");
+  });
+
+  test("DD-4 : items déjà dans vusIds filtrés avant dédup", () => {
+    const items: BcRaw[] = [{ id: "100" }, { id: "200" }, { id: "200" }];
+    const vus = new Set(["100"]);
+    const { deduped, removed } = dedupNewBCsMirror(items, vus);
+    // "100" est vus → ignoré ; "200" x2 → garde 1
+    expect(deduped.map(b => b.id)).toEqual(["200"]);
+    expect(removed).toBe(1);
+  });
+
+  test("DD-5 : items avec id vide ou null — conservés sans dédup entre eux", () => {
+    const items: BcRaw[] = [{ id: "" }, { id: "" }, { id: "5" }];
+    const { deduped, removed, logs } = dedupNewBCsMirror(items, new Set());
+    // Les items sans id valide sont tous conservés (sécurité)
+    expect(deduped).toHaveLength(3);
+    expect(removed).toBe(0);
+    expect(logs).toHaveLength(0);
+  });
+
+  test("DD-6 : liste vide — retourne vide sans log", () => {
+    const { deduped, removed, logs } = dedupNewBCsMirror([], new Set());
+    expect(deduped).toHaveLength(0);
+    expect(removed).toBe(0);
+    expect(logs).toHaveLength(0);
+  });
+
+  test("DD-7 : source radar-bc-bot.js contient le bloc GD-132", () => {
+    const src = require("fs").readFileSync(
+      require("path").join(__dirname, "../../radar-bc-bot.js"), "utf8"
+    );
+    expect(src).toContain("GD-132");
+    expect(src).toContain("[DEDUP] nouveaux BC dedup before=");
+  });
+
+});
+
 export {}

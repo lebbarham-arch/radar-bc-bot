@@ -3808,7 +3808,22 @@ async function runGlobalScanBC(source) {
     _lastBcScanOk     = true;
     _lastBcScanReason = allBCs.length + " BC recuperes";
     _lastBcScanAt     = new Date().toISOString();
-    const newBCs  = allBCs.filter(bc => !vusIds.has(bc.id));
+    const newBCs  = (() => {
+      // GD-132 : déduplication par bc_id — garde le premier, log si doublon détecté.
+      // Placée ici : avant writeInputSnapshot, matchClient et markBCVus.
+      const _raw = allBCs.filter(bc => !vusIds.has(bc.id));
+      const _seen = new Set();
+      const _out = [];
+      for (const bc of _raw) {
+        const key = String(bc.id || "");
+        if (!key || !_seen.has(key)) { _seen.add(key); _out.push(bc); }
+      }
+      const _removed = _raw.length - _out.length;
+      if (_removed > 0) {
+        log("[DEDUP] nouveaux BC dedup before=" + _raw.length + " after=" + _out.length + " removed=" + _removed);
+      }
+      return _out;
+    })();
     _sum_portal_total = allBCs.length;
     _sum_known_count  = vusIds.size;
     _sum_new          = newBCs.length;
