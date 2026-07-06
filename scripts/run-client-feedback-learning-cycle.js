@@ -40,6 +40,7 @@ var spawn = require('child_process').spawnSync;
 var ROOT         = path.join(__dirname, '..');
 var NODE         = process.execPath;
 var FEEDBACK_DIR = path.join(ROOT, 'data', 'feedback');
+var _report      = require('./generate-client-learning-report');
 
 // ---------------------------------------------------------------------------
 // parseArgs -- pur, testable directement
@@ -243,6 +244,7 @@ function runCycle(opts) {
     csv_path:         null,
     decisions_path:   null,
     hints_written:    false,
+    report_path:      null,
     steps_ok:         [],
     steps_failed:     [],
   };
@@ -375,6 +377,34 @@ function runCycle(opts) {
   summary.steps_ok.push('build-hints');
   summary.hints_written = r5.stdout.includes('[OK] Hints');
 
+  // Etape 6 (optionnelle) : generer le rapport learning GD-139
+  // Seulement si de nouveaux feedbacks ont ete traites ET hints mis a jour.
+  if (summary.hints_written && summary.new_count > 0 && !opts.dryRun) {
+    console.log('\n[GD-139] Generation du rapport learning client...');
+    try {
+      var reportsDir    = path.join(ROOT, 'data', 'reports');
+      var reportTs      = new Date().toISOString().replace(/[:.]/g, '-');
+      var reportFname   = 'client-learning-report-' + opts.clientId.slice(0, 8) + '-' + reportTs + '.md';
+      var reportOutPath = path.join(reportsDir, reportFname);
+      var reportResult  = _report.runReport(opts.clientId, null, null, {
+        generatedAt: new Date().toISOString(),
+      });
+      if (reportResult.ok) {
+        if (!require('fs').existsSync(reportsDir)) {
+          require('fs').mkdirSync(reportsDir, { recursive: true });
+        }
+        require('fs').writeFileSync(reportOutPath, reportResult.report, 'utf8');
+        summary.report_path = reportOutPath;
+        console.log('[GD-139] Rapport ecrit : ' + reportOutPath);
+        summary.steps_ok.push('generate-report');
+      } else {
+        console.warn('[GD-139] Avertissement rapport : ' + reportResult.error);
+      }
+    } catch (err) {
+      console.warn('[GD-139] Avertissement rapport (non bloquant) : ' + String(err));
+    }
+  }
+
   return { ok: true, summary: summary };
 }
 
@@ -404,6 +434,7 @@ function printSummary(summary) {
   if (summary.csv_path)        console.log('CSV cree           :', summary.csv_path);
   if (summary.decisions_path)  console.log('Review-decisions   :', summary.decisions_path);
   if (summary.hints_written)   console.log('Hints mis a jour   : data/client-learning/client-learning-hints.json');
+  if (summary.report_path)     console.log('Rapport learning   :', summary.report_path);
   console.log('');
   console.log('Etapes OK     :', summary.steps_ok.join(', ') || '(aucune)');
   if (summary.steps_failed.length) {
