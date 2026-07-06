@@ -315,6 +315,9 @@ function _shadowHasAnyKw(text, terms) {
   });
 }
 
+// GD-135 : module pur de lookup/application des hints client-learning (shadow-only)
+var _aclh = require('./apply-client-learning-hints');
+
 // GD-024 / GD-024f : déléguer au module canonique (évite les dérives de copie)
 var _contextGuards    = require('../core/shadow/context-guards.runtime.js');
 var _purchaseIntent   = require('../core/shadow/purchase-intent.runtime.js'); // GD-027
@@ -663,25 +666,20 @@ function _computeShadowComparison(client, items, criteres, radarType) {
         var isStrong2         = cleanResult2.score >= CLEAN_STRONG_THRESHOLD;
         var exclusionHit2     = cleanResult2.blocked;
         var isAutoCandidate2  = isStrong2 && !isWeakSingle2 && !exclusionHit2;
-        // ── Hints client learning (advisory, shadow only — GD-033) ──────────────
-        var hintScoreAdj   = 0;
-        var hintBlockAuto  = false;
-        var hintApplied    = [];
-        if (CLIENT_LEARNING_HINTS && clientName) {
-          var sigHints2 = getClientSignalHints(clientName, cleanSigs2);
-          sigHints2.forEach(function(h) {
-            hintScoreAdj   += (h.score_adjustment || 0);
-            if (h.block_auto_notify) hintBlockAuto = true;
-            hintApplied.push(h.signal + ':' + h.recommended_effect);
-          });
-          if (hintScoreAdj !== 0) {
-            var adjustedScore2 = cleanResult2.score + hintScoreAdj;
-            isStrong2      = adjustedScore2 >= CLEAN_STRONG_THRESHOLD;
-            isWeakSingle2  = cleanSigs2.length === 1 && adjustedScore2 < CLEAN_STRONG_THRESHOLD;
-            isAutoCandidate2 = isStrong2 && !isWeakSingle2 && !exclusionHit2;
-          }
-          if (hintBlockAuto) isAutoCandidate2 = false;
+        // ── Hints client learning (advisory, shadow only — GD-033/GD-135) ──────
+        // GD-135 : lookup par nom OU par client_id UUID (retro-compatible)
+        var _hintEntry2  = _aclh.lookupClientHints(CLIENT_LEARNING_HINTS, clientName, client.id);
+        var _hintResult2 = _aclh.applySignalHints(_hintEntry2, cleanSigs2);
+        var hintScoreAdj  = _hintResult2.scoreAdj;
+        var hintBlockAuto = _hintResult2.blockAuto;
+        var hintApplied   = _hintResult2.applied;
+        if (hintScoreAdj !== 0) {
+          var adjustedScore2 = cleanResult2.score + hintScoreAdj;
+          isStrong2        = adjustedScore2 >= CLEAN_STRONG_THRESHOLD;
+          isWeakSingle2    = cleanSigs2.length === 1 && adjustedScore2 < CLEAN_STRONG_THRESHOLD;
+          isAutoCandidate2 = isStrong2 && !isWeakSingle2 && !exclusionHit2;
         }
+        if (hintBlockAuto) isAutoCandidate2 = false;
         var strengthReason2;
         if (exclusionHit2) {
           strengthReason2 = "exclu (ai_exclusions)";
@@ -717,6 +715,8 @@ function _computeShadowComparison(client, items, criteres, radarType) {
           hint_score_adj:        hintScoreAdj  || undefined,
           hint_block_auto:       hintBlockAuto || undefined,
           hint_applied:          hintApplied.length ? hintApplied.join(',') : undefined,
+          // GD-135 : explication lisible des hints appliques (format rapport shadow)
+          learning_hint:         _hintResult2.explanations.length ? _hintResult2.explanations.join(' | ') : undefined,
         });
       } else {
         cleanOnlyList.push({ bc_id: item.id || "" });
