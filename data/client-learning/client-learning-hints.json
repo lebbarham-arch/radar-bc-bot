@@ -1,33 +1,33 @@
 {
-  "generated_at": "2026-07-05T23:45:50.223Z",
+  "generated_at": "2026-07-06T00:04:49.820Z",
   "source": "review-decisions",
-  "files_read": 21,
-  "raw_total": 204,
-  "dedup_total": 129,
+  "files_read": 22,
+  "raw_total": 214,
+  "dedup_total": 139,
   "clients": [
     {
       "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
       "signals": [
         {
           "signal": "nettoyage",
-          "keep": 3,
-          "reject": 3,
+          "keep": 6,
+          "reject": 10,
           "ignore": 0,
-          "total": 6,
-          "keep_rate": 50,
-          "reject_rate": 50,
-          "cycles_count": 1,
+          "total": 16,
+          "keep_rate": 38,
+          "reject_rate": 63,
+          "cycles_count": 2,
           "sources": [
             "client"
           ],
           "verdict": "Ambigu",
           "promotion_ready": false,
-          "recommended_effect": "insufficient_data",
-          "score_adjustment": 0,
+          "recommended_effect": "demote_to_review",
+          "score_adjustment": -3,
           "block_auto_notify": true,
           "advisory_only": false,
           "human_validation_required": false,
-          "reason": "Cycles insuffisants (1/2 requis) — décision non fiable"
+          "reason": "Signal rejeté/ignoré pour ce client sur plusieurs cycles"
         }
       ]
     },

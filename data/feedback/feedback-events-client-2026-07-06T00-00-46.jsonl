@@ -1,0 +1,10 @@
+{"client_id":"15a96b88-0c98-4de9-9f66-739e3a28dafa","item_id":"360262","radar_type":"bc","critere":"nettoyage","type":"relevant","created_at":"2026-07-05T23:57:40.715+00:00","source":"web_click"}
+{"client_id":"15a96b88-0c98-4de9-9f66-739e3a28dafa","item_id":"360235","radar_type":"bc","critere":"nettoyage","type":"relevant","created_at":"2026-07-05T23:57:48.501+00:00","source":"web_click"}
+{"client_id":"15a96b88-0c98-4de9-9f66-739e3a28dafa","item_id":"359638","radar_type":"bc","critere":"nettoyage","type":"irrelevant","created_at":"2026-07-05T23:58:14.381+00:00","source":"web_click","reason":"wrong_product"}
+{"client_id":"15a96b88-0c98-4de9-9f66-739e3a28dafa","item_id":"360211","radar_type":"bc","critere":"nettoyage","type":"irrelevant","created_at":"2026-07-05T23:58:33.015+00:00","source":"web_click","reason":"wrong_product"}
+{"client_id":"15a96b88-0c98-4de9-9f66-739e3a28dafa","item_id":"360200","radar_type":"bc","critere":"nettoyage","type":"irrelevant","created_at":"2026-07-05T23:58:46.492+00:00","source":"web_click","reason":"not_my_business"}
+{"client_id":"15a96b88-0c98-4de9-9f66-739e3a28dafa","item_id":"360132","radar_type":"bc","critere":"nettoyage","type":"irrelevant","created_at":"2026-07-05T23:58:55.578+00:00","source":"web_click","reason":"not_my_business"}
+{"client_id":"15a96b88-0c98-4de9-9f66-739e3a28dafa","item_id":"359387","radar_type":"bc","critere":"nettoyage","type":"relevant","created_at":"2026-07-05T23:59:05.452+00:00","source":"web_click"}
+{"client_id":"15a96b88-0c98-4de9-9f66-739e3a28dafa","item_id":"359668","radar_type":"bc","critere":"nettoyage","type":"irrelevant","created_at":"2026-07-05T23:59:16.239+00:00","source":"web_click","reason":"not_my_business"}
+{"client_id":"15a96b88-0c98-4de9-9f66-739e3a28dafa","item_id":"359717","radar_type":"bc","critere":"nettoyage","type":"irrelevant","created_at":"2026-07-05T23:59:23.398+00:00","source":"web_click","reason":"not_my_business"}
+{"client_id":"15a96b88-0c98-4de9-9f66-739e3a28dafa","item_id":"360197","radar_type":"bc","critere":"nettoyage","type":"irrelevant","created_at":"2026-07-05T23:59:36.081+00:00","source":"web_click","reason":"not_my_business"}
