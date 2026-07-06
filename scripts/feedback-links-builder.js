@@ -122,7 +122,8 @@ function buildFeedbackReasonLinks(base, clientId, itemId, critereValeur, radarTy
   }
 
   var entries = reasonLinksEnabled ? FEEDBACK_REASON_ENTRIES : FEEDBACK_TYPES_DEFAULT;
-  var lines = ["", "Feedback :"];
+  // GD-134 : afficher le bc_id dans le header feedback pour relier Telegram -> learning
+  var lines = ["", "Feedback pour BC #" + itemId + " :"];
 
   for (var i = 0; i < entries.length; i++) {
     var entry = entries[i];

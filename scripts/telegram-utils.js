@@ -84,8 +84,10 @@ function safeTruncateHtml(html, maxLen) {
 
   // ── Étape 3 : retirer la section feedback ────────────────────────────────
   // Le feedback commence après le lien BC et <i>Radar Marchés Maroc</i>
-  // Format : \n\nFeedback :\n<a href=…>…</a>\n…
-  var fbStart = result.indexOf('\n\nFeedback :');
+  // Format GD-078 : \n\nFeedback :\n<a href=...>...</a>\n...
+  // Format GD-134 : \n\nFeedback pour BC #<id> :\n<a href=...>...</a>\n...
+  // Le prefixe commun '\n\nFeedback ' couvre les deux formats.
+  var fbStart = result.indexOf('\n\nFeedback ');
   if (fbStart !== -1) {
     result = result.slice(0, fbStart);
   }

@@ -60,7 +60,8 @@ function buildMsg(opts: {
       `<a href="${base}&type=watch&r=insufficient_info&nid=n1&sig=${sig}">👀 Infos insuffisantes</a>`,
       `<a href="${base}&type=watch&r=other&nid=n1&sig=${sig}">👀 Autre</a>`,
     ].join('\n');
-    fbSection = '\n\nFeedback :\n' + fbLinks;
+    // GD-134 : le header feedback inclut maintenant le bc_id (item_id=359479 dans cette fixture)
+    fbSection = '\n\nFeedback pour BC #359479 :\n' + fbLinks;
   }
 
   return header + artsSection + aiSection + link + fbSection;
@@ -142,7 +143,8 @@ describe('safeTruncateHtml', () => {
       '📅 Date : <b>01/08/2026</b>\n🔍 Critère : <code>nettoyage</code>\n\n' +
       '💼 <b>Articles :</b>\n' + arts5 + '\n<i>+20 autres articles</i>\n\n' +
       '🔗 <a href="https://exemple.ma/bdc/1">Voir →</a>\n\n' +
-      '<i>Radar Marchés Maroc</i>\n\nFeedback :\n' + fb8;
+      // GD-134 : header feedback avec bc_id
+      '<i>Radar Marchés Maroc</i>\n\nFeedback pour BC #1 :\n' + fb8;
     const result = safeTruncateHtml(html, TG_SAFE);
     expect(result.length).toBeLessThanOrEqual(TG_SAFE);
     expect(hasUnclosedTags(result)).toBe(false);
@@ -168,7 +170,8 @@ describe('safeTruncateHtml', () => {
     }
     // Message court → pas de troncature → feedback présent
     const result = safeTruncateHtml(msg, TG_SAFE);
-    expect(result).toContain('Feedback :');
+    // GD-134 : le header contient maintenant "Feedback pour BC #<id>"
+    expect(result).toContain('Feedback pour BC #');
     expect(result).toContain('✅ Pertinent');
   });
 
@@ -185,7 +188,8 @@ describe('safeTruncateHtml', () => {
       '🔔 <b>NOUVEAU BC</b>\n\n📋 <b>Objet du marché</b>\n🏢 Organisme acheteur\n' +
       '📅 Date limite : <b>01/08/2026</b>\n🔍 Critère : <code>nettoyage</code>\n\n' +
       '🔗 <a href="https://exemple.ma/bdc/1">Voir la fiche →</a>\n\n' +
-      '<i>Radar Marchés Maroc</i>\n\nFeedback :\n' + veryLongFb;
+      // GD-134 : header feedback avec bc_id
+      '<i>Radar Marchés Maroc</i>\n\nFeedback pour BC #1 :\n' + veryLongFb;
     if (html.length <= TG_SAFE) {
       // Message assez court — test non applicable dans cette configuration
       expect(safeTruncateHtml(html, TG_SAFE).length).toBeLessThanOrEqual(TG_SAFE);
@@ -194,7 +198,8 @@ describe('safeTruncateHtml', () => {
     const result = safeTruncateHtml(html, TG_SAFE);
     expect(result.length).toBeLessThanOrEqual(TG_SAFE);
     expect(result).toContain('Voir la fiche →');
-    expect(result).not.toContain('Feedback :');
+    // GD-134 : le marker est maintenant "Feedback pour BC #"
+    expect(result).not.toContain('Feedback pour BC #');
   });
 
   // ─── TG-7 : stripHtmlTags ─────────────────────────────────────────────────

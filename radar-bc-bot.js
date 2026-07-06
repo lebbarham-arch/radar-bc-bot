@@ -1004,7 +1004,10 @@ function buildMessage(item, matchedCriteres, radarType, aiResume) {
     ? "  (+ " + ((item.articles || []).length - 5) + " autres articles)" : "";
 
   return [
-    header, "",
+    header,
+    // GD-134 : identifiant BC visible pour relier Telegram → snapshot → feedback
+    item.id ? "🧾 BC #" + item.id : null,
+    "",
     "📋 " + (item.objet || item.reference || "N/A"),
     "🏢 " + (item.organisme || "N/A") + (item.wilaya ? " — " + item.wilaya : ""),
     item.date_limite ? "📅 Date limite : " + item.date_limite + " ⚠️" : null,
@@ -1044,7 +1047,10 @@ function buildHtmlMessage(item, matchedCriteres, radarType, aiResume) {
 
   const url = item.url;
   return [
-    `🔔 <b>${header}</b>`, "",
+    `🔔 <b>${header}</b>`,
+    // GD-134 : identifiant BC visible pour relier Telegram → snapshot → feedback
+    item.id ? `🧾 <b>BC #${escHtml(String(item.id))}</b>` : null,
+    "",
     `📋 <b>${escHtml(item.objet || item.reference || "N/A")}</b>`,
     `🏢 ${escHtml(item.organisme || "N/A")}${item.wilaya ? " — " + escHtml(item.wilaya) : ""}`,
     item.date_limite ? `📅 Date limite : <b>${escHtml(item.date_limite)}</b> ⚠️` : null,

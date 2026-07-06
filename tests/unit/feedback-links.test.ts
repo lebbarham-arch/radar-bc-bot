@@ -258,5 +258,39 @@ describe('FBL-20 -- FEEDBACK_REASON_ENTRIES (8 entrees enrichies)', () => {
     });
   });
 });
+// ---------------------------------------------------------------------------
+// FBL-21 -- GD-134 : header feedback contient le bc_id
+// ---------------------------------------------------------------------------
+
+describe('FBL-21 -- GD-134 : header "Feedback pour BC #<itemId>"', () => {
+
+  test('FBL-21a: mode plain -> header contient "Feedback pour BC #BC-99999"', () => {
+    const plain = buildFeedbackReasonLinks(BASE, CLIENT, ITEM, CRIT, RADAR, OPTS, 'plain', false);
+    expect(plain).not.toBeNull();
+    const lines = plain!.split('\n');
+    const headerLine = lines.find((l: string) => l.startsWith('Feedback '));
+    expect(headerLine).toBeDefined();
+    expect(headerLine).toContain('Feedback pour BC #' + ITEM);
+  });
+
+  test('FBL-21b: mode html -> header contient "Feedback pour BC #BC-99999"', () => {
+    const html = buildFeedbackReasonLinks(BASE, CLIENT, ITEM, CRIT, RADAR, OPTS, 'html', false);
+    expect(html).not.toBeNull();
+    expect(html).toContain('Feedback pour BC #' + ITEM);
+  });
+
+  test('FBL-21c: flag=true -> header contient aussi le bc_id', () => {
+    const plain = buildFeedbackReasonLinks(BASE, CLIENT, ITEM, CRIT, RADAR, OPTS, 'plain', true);
+    expect(plain).not.toBeNull();
+    expect(plain).toContain('Feedback pour BC #' + ITEM);
+  });
+
+  test('FBL-21d: itemId numerique -> header contient le numero brut', () => {
+    const numericId = '360262';
+    const plain = buildFeedbackReasonLinks(BASE, CLIENT, numericId, CRIT, RADAR, OPTS, 'plain', false);
+    expect(plain).not.toBeNull();
+    expect(plain).toContain('Feedback pour BC #360262');
+  });
+});
 
 export {};
