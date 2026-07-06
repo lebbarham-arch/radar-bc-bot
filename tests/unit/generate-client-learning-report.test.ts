@@ -442,4 +442,138 @@ describe('CLR-30 -- loadReviewDecisions', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// CLR-31..38 -- Deduplication GD-140
+// loadAndDedup + aggregateClientSignalsDedup
+// ---------------------------------------------------------------------------
+
+const {
+  loadAndDedup,
+  aggregateClientSignalsDedup,
+} = require('../../scripts/generate-client-learning-report');
+
+const UUID_REAL = '15a96b88-0c98-4de9-9f66-739e3a28dafa';
+
+describe('CLR-31..35 -- loadAndDedup', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rdedup-'));
+  });
+
+  afterEach(() => {
+    try { fs.rmSync(tmpDir, { recursive: true }); } catch (_) {}
+  });
+
+  test('CLR-31: dossier vide -> records=[] rawRecords=[]', () => {
+    const { records, rawRecords } = loadAndDedup(tmpDir);
+    expect(records).toEqual([]);
+    expect(rawRecords).toEqual([]);
+  });
+
+  test('CLR-32: un fichier, pas de doublon -> records.length = rawRecords.length', () => {
+    const r1 = { client: UUID_REAL, bc_id: '111', matched_signals: ['nettoyage'], decision: 'keep', cycle_id: 'CYC-A', review_source: 'client' };
+    const r2 = { client: UUID_REAL, bc_id: '222', matched_signals: ['nettoyage'], decision: 'reject', cycle_id: 'CYC-A', review_source: 'client' };
+    const dec = { records: [r1, r2] };
+    fs.writeFileSync(path.join(tmpDir, 'review-decisions-2026-01-01.json'), JSON.stringify(dec), 'utf8');
+    const { records, rawRecords, dedupTotal, rawTotal } = loadAndDedup(tmpDir);
+    expect(rawTotal).toBe(2);
+    expect(dedupTotal).toBe(2);
+    expect(records).toHaveLength(2);
+    expect(rawRecords).toHaveLength(2);
+  });
+
+  test('CLR-33: meme client::bc_id dans deux fichiers -> dedup last-wins', () => {
+    // Fichier 1 (avant) : bc_id=111 decision=keep
+    const dec1 = { records: [{ client: UUID_REAL, bc_id: '111', matched_signals: ['nettoyage'], decision: 'keep', review_source: 'client' }] };
+    // Fichier 2 (apres, tri alpha) : bc_id=111 decision=reject (gagne)
+    const dec2 = { records: [{ client: UUID_REAL, bc_id: '111', matched_signals: ['nettoyage'], decision: 'reject', review_source: 'client' }] };
+    fs.writeFileSync(path.join(tmpDir, 'review-decisions-2026-01-01.json'), JSON.stringify(dec1), 'utf8');
+    fs.writeFileSync(path.join(tmpDir, 'review-decisions-2026-01-02.json'), JSON.stringify(dec2), 'utf8');
+    const { records, rawTotal, dedupTotal } = loadAndDedup(tmpDir);
+    expect(rawTotal).toBe(2);
+    expect(dedupTotal).toBe(1);
+    // Le dernier fichier (ordre alpha) gagne -> decision=reject
+    const rec = records.find((r: any) => r.bc_id === '111');
+    expect(rec).toBeDefined();
+    expect(rec!.decision).toBe('reject');
+  });
+
+  test('CLR-34: fichier JSON corrompu ignore, autres lus', () => {
+    fs.writeFileSync(path.join(tmpDir, 'review-decisions-2026-01-01.json'), '{"records": INVALID', 'utf8');
+    const dec2 = { records: [{ client: UUID_REAL, bc_id: '999', matched_signals: ['nettoyage'], decision: 'keep', review_source: 'client' }] };
+    fs.writeFileSync(path.join(tmpDir, 'review-decisions-2026-01-02.json'), JSON.stringify(dec2), 'utf8');
+    const { records } = loadAndDedup(tmpDir);
+    expect(records).toHaveLength(1);
+  });
+
+  test('CLR-35: fichiers non-review-decisions ignores', () => {
+    fs.writeFileSync(path.join(tmpDir, 'other.json'), '{}', 'utf8');
+    const { records } = loadAndDedup(tmpDir);
+    expect(records).toEqual([]);
+  });
+});
+
+describe('CLR-36..38 -- aggregateClientSignalsDedup', () => {
+  test('CLR-36: stats depuis dedup, cycles/sources depuis rawRecords', () => {
+    // dedup: bc_id=111 keep, bc_id=222 reject (bc_id=111 n'apparait qu'une fois)
+    const dedupRecs = [
+      { client: UUID_REAL, bc_id: '111', matched_signals: ['nettoyage'], decision: 'keep',   cycle_id: 'CYC-A', review_source: 'client' },
+      { client: UUID_REAL, bc_id: '222', matched_signals: ['nettoyage'], decision: 'reject',  cycle_id: 'CYC-B', review_source: 'client' },
+    ];
+    // rawRecords: inclut bc_id=111 deux fois (avant dedup)
+    const rawRecs = [
+      { client: UUID_REAL, bc_id: '111', matched_signals: ['nettoyage'], decision: 'keep',   cycle_id: 'CYC-A', review_source: 'client' },
+      { client: UUID_REAL, bc_id: '111', matched_signals: ['nettoyage'], decision: 'keep',   cycle_id: 'CYC-A', review_source: 'client' }, // doublon
+      { client: UUID_REAL, bc_id: '222', matched_signals: ['nettoyage'], decision: 'reject',  cycle_id: 'CYC-B', review_source: 'client' },
+    ];
+    const agg = aggregateClientSignalsDedup(dedupRecs, rawRecs, UUID_REAL);
+    expect(agg['nettoyage']).toBeDefined();
+    expect(agg['nettoyage'].keep).toBe(1);    // depuis dedup (pas 2 x keep)
+    expect(agg['nettoyage'].reject).toBe(1);
+    expect(agg['nettoyage'].total).toBe(2);
+    expect(agg['nettoyage'].cycles_count).toBe(2); // CYC-A + CYC-B depuis rawRecords
+    expect(agg['nettoyage'].sources).toContain('client');
+  });
+
+  test('CLR-37: fixture proche client reel (6 keep, 10 reject, no doublon) -> total=16', () => {
+    const dedupRecs: any[] = [];
+    for (let i = 0; i < 6;  i++) dedupRecs.push({ client: UUID_REAL, bc_id: String(100 + i), matched_signals: ['nettoyage'], decision: 'keep',   cycle_id: 'CYC-A', review_source: 'client' });
+    for (let i = 0; i < 10; i++) dedupRecs.push({ client: UUID_REAL, bc_id: String(200 + i), matched_signals: ['nettoyage'], decision: 'reject', cycle_id: 'CYC-B', review_source: 'client' });
+    const agg = aggregateClientSignalsDedup(dedupRecs, dedupRecs, UUID_REAL);
+    expect(agg['nettoyage'].keep).toBe(6);
+    expect(agg['nettoyage'].reject).toBe(10);
+    expect(agg['nettoyage'].total).toBe(16);
+    expect(agg['nettoyage'].cycles_count).toBe(2); // CYC-A + CYC-B
+  });
+
+  test('CLR-38: doublon bc_id -> count sans dedup=22, avec dedup=16', () => {
+    // Simule la situation reelle : 16 uniques + 3 bc_ids en double (= 22 bruts, 16 dedup)
+    const uniqueRecs: any[] = [];
+    for (let i = 0; i < 6;  i++) uniqueRecs.push({ client: UUID_REAL, bc_id: String(100 + i), matched_signals: ['nettoyage'], decision: 'keep',   review_source: 'client' });
+    for (let i = 0; i < 10; i++) uniqueRecs.push({ client: UUID_REAL, bc_id: String(200 + i), matched_signals: ['nettoyage'], decision: 'reject', review_source: 'client' });
+
+    // rawRecords = uniqueRecs + 6 doublons (3 keep + 3 reject) -> 16 + 6 = 22 bruts
+    const rawRecs = [...uniqueRecs,
+      { client: UUID_REAL, bc_id: '100', matched_signals: ['nettoyage'], decision: 'keep',   review_source: 'client' }, // doublon keep
+      { client: UUID_REAL, bc_id: '101', matched_signals: ['nettoyage'], decision: 'keep',   review_source: 'client' }, // doublon keep
+      { client: UUID_REAL, bc_id: '102', matched_signals: ['nettoyage'], decision: 'keep',   review_source: 'client' }, // doublon keep
+      { client: UUID_REAL, bc_id: '200', matched_signals: ['nettoyage'], decision: 'reject', review_source: 'client' }, // doublon reject
+      { client: UUID_REAL, bc_id: '201', matched_signals: ['nettoyage'], decision: 'reject', review_source: 'client' }, // doublon reject
+      { client: UUID_REAL, bc_id: '202', matched_signals: ['nettoyage'], decision: 'reject', review_source: 'client' }, // doublon reject
+    ];
+    // Sans dedup (ancienne logique) : rawRecs contient 22 decisions -> le bug GD-140
+    let naivTotal = 0;
+    rawRecs.forEach(function(r) { if (r.client === UUID_REAL) naivTotal++; });
+    expect(naivTotal).toBe(22);  // le bug GD-140
+
+    // Avec dedup : uniqueRecs = 16 decisions
+    const agg = aggregateClientSignalsDedup(uniqueRecs, rawRecs, UUID_REAL);
+    expect(agg['nettoyage'].keep).toBe(6);
+    expect(agg['nettoyage'].reject).toBe(10);
+    expect(agg['nettoyage'].total).toBe(16);  // la correction GD-140
+  });
+});
+
+
 export {};
