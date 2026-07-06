@@ -272,4 +272,207 @@ describe('CFL-13..15 -- extractStats', () => {
   });
 });
 
+// --------
+// ---------------------------------------------------------------------------
+// CFL-16..25 -- Idempotency GD-138
+// makeEventKey, readJsonlEvents, loadKnownEventKeys, filterNewEvents
+// ---------------------------------------------------------------------------
+
+const {
+  makeEventKey,
+  readJsonlEvents,
+  loadKnownEventKeys,
+  filterNewEvents,
+} = require('../../scripts/run-client-feedback-learning-cycle');
+
+import * as fs   from 'fs';
+import * as os   from 'os';
+import * as path from 'path';
+
+// ---------------------------------------------------------------------------
+// CFL-16 -- makeEventKey
+// ---------------------------------------------------------------------------
+
+describe('CFL-16 -- makeEventKey', () => {
+  test('CFL-16a: cle stable a partir des 6 champs', () => {
+    const event = {
+      client_id:  'abc-123',
+      item_id:    'item-999',
+      radar_type: 'bc',
+      critere:    'nettoyage',
+      type:       'reject',
+      created_at: '2026-07-05T18:00:00Z',
+    };
+    const key = makeEventKey(event);
+    expect(key).toBe('abc-123|item-999|bc|nettoyage|reject|2026-07-05T18:00:00Z');
+  });
+
+  test('CFL-16b: champs manquants -> chaines vides dans la cle', () => {
+    const key = makeEventKey({ client_id: 'x' });
+    expect(key).toBe('x|||||');
+  });
+
+  test('CFL-16c: deux events identiques -> meme cle', () => {
+    const e1 = { client_id: 'a', item_id: 'b', radar_type: 'bc', critere: 'c', type: 'd', created_at: 'e' };
+    const e2 = { ...e1 };
+    expect(makeEventKey(e1)).toBe(makeEventKey(e2));
+  });
+
+  test('CFL-16d: champ different -> cles differentes', () => {
+    const e1 = { client_id: 'a', item_id: 'b', radar_type: 'bc', critere: 'c', type: 'd', created_at: 'e' };
+    const e2 = { ...e1, critere: 'x' };
+    expect(makeEventKey(e1)).not.toBe(makeEventKey(e2));
+  });
+
+  test('CFL-16e: event vide -> cle avec 5 pipes uniquement', () => {
+    const key = makeEventKey({});
+    expect(key).toBe('|||||');
+    expect((key.match(/\|/g) || []).length).toBe(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CFL-17 -- readJsonlEvents
+// ---------------------------------------------------------------------------
+
+describe('CFL-17 -- readJsonlEvents', () => {
+  let tmpFile: string;
+
+  beforeEach(() => {
+    tmpFile = path.join(os.tmpdir(), 'test-events-' + Date.now() + '.jsonl');
+  });
+
+  afterEach(() => {
+    try { fs.unlinkSync(tmpFile); } catch (_) {}
+  });
+
+  test('CFL-17a: fichier inexistant -> tableau vide', () => {
+    const events = readJsonlEvents('/tmp/inexistant-xyz-' + Date.now() + '.jsonl');
+    expect(events).toEqual([]);
+  });
+
+  test('CFL-17b: fichier JSONL valide -> events parseables', () => {
+    const e1 = { client_id: 'a', item_id: '1', radar_type: 'bc', critere: 'x', type: 'reject', created_at: '2026-01-01' };
+    const e2 = { client_id: 'b', item_id: '2', radar_type: 'bc', critere: 'y', type: 'keep',   created_at: '2026-01-02' };
+    fs.writeFileSync(tmpFile, JSON.stringify(e1) + '\n' + JSON.stringify(e2) + '\n', 'utf8');
+    const events = readJsonlEvents(tmpFile);
+    expect(events).toHaveLength(2);
+    expect(events[0].client_id).toBe('a');
+    expect(events[1].client_id).toBe('b');
+  });
+
+  test('CFL-17c: ligne JSON invalide ignoree, autres parsees', () => {
+    const e1 = { client_id: 'a', item_id: '1', radar_type: 'bc', critere: 'x', type: 'r', created_at: 't' };
+    fs.writeFileSync(tmpFile, JSON.stringify(e1) + '\n' + 'INVALID_JSON\n', 'utf8');
+    const events = readJsonlEvents(tmpFile);
+    expect(events).toHaveLength(1);
+    expect(events[0].client_id).toBe('a');
+  });
+
+  test('CFL-17d: fichier vide -> tableau vide', () => {
+    fs.writeFileSync(tmpFile, '', 'utf8');
+    const events = readJsonlEvents(tmpFile);
+    expect(events).toEqual([]);
+  });
+
+  test('CFL-17e: lignes vides ignorees', () => {
+    const e1 = { client_id: 'z', item_id: '9', radar_type: 'bc', critere: 'q', type: 'k', created_at: 'T' };
+    fs.writeFileSync(tmpFile, '\n\n' + JSON.stringify(e1) + '\n\n', 'utf8');
+    const events = readJsonlEvents(tmpFile);
+    expect(events).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CFL-18 -- loadKnownEventKeys
+// ---------------------------------------------------------------------------
+
+describe('CFL-18 -- loadKnownEventKeys', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'feedback-test-'));
+  });
+
+  afterEach(() => {
+    try { fs.rmSync(tmpDir, { recursive: true }); } catch (_) {}
+  });
+
+  test('CFL-18a: dossier vide -> Set vide', () => {
+    const keys = loadKnownEventKeys(tmpDir, null);
+    expect(keys.size).toBe(0);
+  });
+
+  test('CFL-18b: un fichier JSONL -> cles chargees', () => {
+    const e = { client_id: 'c1', item_id: 'i1', radar_type: 'bc', critere: 'nc', type: 'r', created_at: 'T' };
+    const fpath = path.join(tmpDir, 'feedback-events-client-2026-01-01.jsonl');
+    fs.writeFileSync(fpath, JSON.stringify(e) + '\n', 'utf8');
+    const keys = loadKnownEventKeys(tmpDir, null);
+    expect(keys.size).toBe(1);
+    expect(keys.has(makeEventKey(e))).toBe(true);
+  });
+
+  test('CFL-18c: excludePath exclut le fichier du scan', () => {
+    const e = { client_id: 'c2', item_id: 'i2', radar_type: 'bc', critere: 'nc', type: 'r', created_at: 'T' };
+    const fpath = path.join(tmpDir, 'feedback-events-client-2026-01-02.jsonl');
+    fs.writeFileSync(fpath, JSON.stringify(e) + '\n', 'utf8');
+    const keys = loadKnownEventKeys(tmpDir, fpath);
+    expect(keys.size).toBe(0);
+  });
+
+  test('CFL-18d: fichiers non-JSONL ignores', () => {
+    fs.writeFileSync(path.join(tmpDir, 'other-file.txt'), '{}', 'utf8');
+    fs.writeFileSync(path.join(tmpDir, 'review-decisions.json'), '{}', 'utf8');
+    const keys = loadKnownEventKeys(tmpDir, null);
+    expect(keys.size).toBe(0);
+  });
+
+  test('CFL-18e: deux fichiers JSONL -> union des cles', () => {
+    const e1 = { client_id: 'c1', item_id: 'i1', radar_type: 'bc', critere: 'a', type: 'r', created_at: 'T1' };
+    const e2 = { client_id: 'c2', item_id: 'i2', radar_type: 'bc', critere: 'b', type: 'k', created_at: 'T2' };
+    fs.writeFileSync(path.join(tmpDir, 'feedback-events-client-2026-01-01.jsonl'), JSON.stringify(e1) + '\n', 'utf8');
+    fs.writeFileSync(path.join(tmpDir, 'feedback-events-client-2026-01-02.jsonl'), JSON.stringify(e2) + '\n', 'utf8');
+    const keys = loadKnownEventKeys(tmpDir, null);
+    expect(keys.size).toBe(2);
+    expect(keys.has(makeEventKey(e1))).toBe(true);
+    expect(keys.has(makeEventKey(e2))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CFL-19 -- filterNewEvents
+// ---------------------------------------------------------------------------
+
+describe('CFL-19 -- filterNewEvents', () => {
+  test('CFL-19a: aucun connu -> tous retournes', () => {
+    const events = [
+      { client_id: 'a', item_id: '1', radar_type: 'bc', critere: 'x', type: 'r', created_at: 'T' },
+      { client_id: 'b', item_id: '2', radar_type: 'bc', critere: 'y', type: 'k', created_at: 'T' },
+    ];
+    const fresh = filterNewEvents(events, new Set());
+    expect(fresh).toHaveLength(2);
+  });
+
+  test('CFL-19b: tous connus -> tableau vide', () => {
+    const e = { client_id: 'a', item_id: '1', radar_type: 'bc', critere: 'x', type: 'r', created_at: 'T' };
+    const keys = new Set([makeEventKey(e)]);
+    const fresh = filterNewEvents([e], keys);
+    expect(fresh).toHaveLength(0);
+  });
+
+  test('CFL-19c: mix connus/nouveaux -> seulement les nouveaux', () => {
+    const eOld = { client_id: 'a', item_id: '1', radar_type: 'bc', critere: 'x', type: 'r', created_at: 'T1' };
+    const eNew = { client_id: 'a', item_id: '2', radar_type: 'bc', critere: 'x', type: 'r', created_at: 'T2' };
+    const keys = new Set([makeEventKey(eOld)]);
+    const fresh = filterNewEvents([eOld, eNew], keys);
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0].item_id).toBe('2');
+  });
+
+  test('CFL-19d: events vides -> tableau vide', () => {
+    const fresh = filterNewEvents([], new Set(['key1', 'key2']));
+    expect(fresh).toHaveLength(0);
+  });
+});
+
 export {};
