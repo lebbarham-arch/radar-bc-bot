@@ -1,22 +1,22 @@
 {
-  "generated_at": "2026-07-06T00:04:49.820Z",
+  "generated_at": "2026-07-07T00:23:06.621Z",
   "source": "review-decisions",
-  "files_read": 22,
-  "raw_total": 214,
-  "dedup_total": 139,
+  "files_read": 23,
+  "raw_total": 221,
+  "dedup_total": 146,
   "clients": [
     {
       "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
       "signals": [
         {
           "signal": "nettoyage",
-          "keep": 6,
-          "reject": 10,
+          "keep": 8,
+          "reject": 15,
           "ignore": 0,
-          "total": 16,
-          "keep_rate": 38,
-          "reject_rate": 63,
-          "cycles_count": 2,
+          "total": 23,
+          "keep_rate": 35,
+          "reject_rate": 65,
+          "cycles_count": 3,
           "sources": [
             "client"
           ],

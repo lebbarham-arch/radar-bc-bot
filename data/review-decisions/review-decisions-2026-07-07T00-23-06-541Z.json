@@ -1,0 +1,140 @@
+{
+  "imported_at": "2026-07-07T00:23:06.541Z",
+  "source_csv": "C:\\PROJETS_AI\\projet_claude\\radar-bc-bot-clean-2\\data\\feedback\\review-candidates-feedback-2026-07-07T00-23-06.csv",
+  "counters": {
+    "total": 7,
+    "keep": 2,
+    "reject": 5,
+    "ignore": 0,
+    "vide": 0,
+    "invalid": 0
+  },
+  "records": [
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "360923",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "reject",
+      "cycle_id": "2026-07-07T00-23-06",
+      "review_source": "client",
+      "reviewed_at": "2026-07-07T00:23:06.538Z",
+      "human_review_reason": "hors_profil",
+      "human_review_comment": "Feedback client brut: type=irrelevant; critere=nettoyage; reason=not_my_business"
+    },
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "360787",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "keep",
+      "cycle_id": "2026-07-07T00-23-06",
+      "review_source": "client",
+      "reviewed_at": "2026-07-07T00:23:06.538Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Feedback client brut: type=relevant; critere=nettoyage"
+    },
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "360909",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "keep",
+      "cycle_id": "2026-07-07T00-23-06",
+      "review_source": "client",
+      "reviewed_at": "2026-07-07T00:23:06.538Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Feedback client brut: type=relevant; critere=nettoyage"
+    },
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "360911",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "reject",
+      "cycle_id": "2026-07-07T00-23-06",
+      "review_source": "client",
+      "reviewed_at": "2026-07-07T00:23:06.538Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "Feedback client brut: type=irrelevant; critere=nettoyage; reason=wrong_product"
+    },
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "360901",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "reject",
+      "cycle_id": "2026-07-07T00-23-06",
+      "review_source": "client",
+      "reviewed_at": "2026-07-07T00:23:06.538Z",
+      "human_review_reason": "hors_profil",
+      "human_review_comment": "Feedback client brut: type=irrelevant; critere=nettoyage; reason=not_my_business"
+    },
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "360897",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "reject",
+      "cycle_id": "2026-07-07T00-23-06",
+      "review_source": "client",
+      "reviewed_at": "2026-07-07T00:23:06.538Z",
+      "human_review_reason": "hors_profil",
+      "human_review_comment": "Feedback client brut: type=irrelevant; critere=nettoyage; reason=not_my_business"
+    },
+    {
+      "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "bc_id": "360893",
+      "score": 0,
+      "signal_origin": "inclusion",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "feedback_client",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "",
+      "decision": "reject",
+      "cycle_id": "2026-07-07T00-23-06",
+      "review_source": "client",
+      "reviewed_at": "2026-07-07T00:23:06.538Z",
+      "human_review_reason": "hors_profil",
+      "human_review_comment": "Feedback client brut: type=irrelevant; critere=nettoyage; reason=not_my_business"
+    }
+  ]
+}

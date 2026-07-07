@@ -1,0 +1,8 @@
+﻿client;bc_id;score;signal_origin;matched_signals;strength_reason;weak_single_signal;clean_text_excerpt;human_review_reason;human_review_comment;decision
+15a96b88-0c98-4de9-9f66-739e3a28dafa;360923;;inclusion;nettoyage;feedback_client;;;hors_profil;"Feedback client brut: type=irrelevant; critere=nettoyage; reason=not_my_business";reject
+15a96b88-0c98-4de9-9f66-739e3a28dafa;360787;;inclusion;nettoyage;feedback_client;;;bon_signal_bon_contexte;"Feedback client brut: type=relevant; critere=nettoyage";keep
+15a96b88-0c98-4de9-9f66-739e3a28dafa;360909;;inclusion;nettoyage;feedback_client;;;bon_signal_bon_contexte;"Feedback client brut: type=relevant; critere=nettoyage";keep
+15a96b88-0c98-4de9-9f66-739e3a28dafa;360911;;inclusion;nettoyage;feedback_client;;;bon_signal_mauvais_contexte;"Feedback client brut: type=irrelevant; critere=nettoyage; reason=wrong_product";reject
+15a96b88-0c98-4de9-9f66-739e3a28dafa;360901;;inclusion;nettoyage;feedback_client;;;hors_profil;"Feedback client brut: type=irrelevant; critere=nettoyage; reason=not_my_business";reject
+15a96b88-0c98-4de9-9f66-739e3a28dafa;360897;;inclusion;nettoyage;feedback_client;;;hors_profil;"Feedback client brut: type=irrelevant; critere=nettoyage; reason=not_my_business";reject
+15a96b88-0c98-4de9-9f66-739e3a28dafa;360893;;inclusion;nettoyage;feedback_client;;;hors_profil;"Feedback client brut: type=irrelevant; critere=nettoyage; reason=not_my_business";reject
