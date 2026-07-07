@@ -7,3 +7,6 @@ package-lock.json
 # Local feedback data (GD-083) -- ne jamais committer les evenements feedback client
 data/feedback/
 data/feedback/*.jsonl
+
+# Local deploy scripts may contain secrets
+PUSH_*.bat
