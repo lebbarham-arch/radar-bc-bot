@@ -413,4 +413,175 @@ describe('CLH-10 -- plusieurs signaux correspondants', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// CLH-N* : Tests de resolution d'identite client
+//
+// Couvre la nouvelle logique de lookupClientHints :
+//   Priorite 1 : UUID exact
+//   Priorite 2 : nom exact
+//   Priorite 3 : nom normalise unique (via normalizeLearningKey)
+//   Cas collision : retourne null, pas de choix silencieux
+// ---------------------------------------------------------------------------
+
+/** Fixture multi-clients avec variantes accent/sans-accent et UUID reel */
+const HINTS_DATA_NORM = {
+  clients: [
+    {
+      client: 'TEST PROD - Nettoyage Hygienè',
+      signals: [
+        { signal: 'nettoyage',             recommended_effect: 'boost', score_adjustment:  5, block_auto_notify: false, sources: ['operator'], cycles_count: 7 },
+        { signal: 'produits de nettoyage', recommended_effect: 'boost', score_adjustment:  5, block_auto_notify: false, sources: ['operator'], cycles_count: 3 },
+      ],
+    },
+    {
+      client: 'TEST PROD - Informatique',
+      signals: [
+        { signal: 'informatique', recommended_effect: 'boost', score_adjustment: 5, block_auto_notify: false, sources: ['operator'], cycles_count: 4 },
+      ],
+    },
+    {
+      client: 'TEST PROD - Fournitures Bureau',
+      signals: [
+        { signal: 'papeterie', recommended_effect: 'boost', score_adjustment: 5, block_auto_notify: false, sources: ['operator'], cycles_count: 2 },
+      ],
+    },
+    {
+      client: '15a96b88-0c98-4de9-9f66-739e3a28dafa',
+      signals: [
+        { signal: 'nettoyage', recommended_effect: 'demote_to_review', score_adjustment: -3, block_auto_notify: true, sources: ['client'], cycles_count: 3 },
+      ],
+    },
+  ],
+};
+
+/** Fixture avec collision intentionnelle : deux noms a meme cle normalisee */
+const HINTS_DATA_COLLISION = {
+  clients: [
+    {
+      client: 'Client-Alpha',
+      signals: [{ signal: 'x', recommended_effect: 'boost', score_adjustment: 5, block_auto_notify: false, sources: ['operator'], cycles_count: 2 }],
+    },
+    {
+      client: 'Client Alpha',
+      signals: [{ signal: 'y', recommended_effect: 'boost', score_adjustment: 5, block_auto_notify: false, sources: ['operator'], cycles_count: 2 }],
+    },
+  ],
+};
+
+describe('CLH-N1 -- UUID exact prioritaire sur nom', () => {
+  test('CLH-N1: UUID correct + nom inexistant -> UUID gagne, retourne entree UUID', () => {
+    const found = lookupClientHints(HINTS_DATA_NORM, 'nom-arbitraire-incorrect', '15a96b88-0c98-4de9-9f66-739e3a28dafa');
+    expect(found).not.toBeNull();
+    expect(found!.client).toBe('15a96b88-0c98-4de9-9f66-739e3a28dafa');
+    expect(found!.signals).toHaveLength(1);
+    expect(found!.signals[0].recommended_effect).toBe('demote_to_review');
+  });
+});
+
+describe('CLH-N2 -- nom exact avec accent', () => {
+  test('CLH-N2: nom exact avec accent -> retourne entree avec 2 signaux', () => {
+    const name = 'TEST PROD - Nettoyage Hygienè';
+    const found = lookupClientHints(HINTS_DATA_NORM, name, undefined);
+    expect(found).not.toBeNull();
+    expect(found!.client).toBe(name);
+    expect(found!.signals).toHaveLength(2);
+  });
+});
+
+describe('CLH-N3 -- nom sans accent resolu par normalisation', () => {
+  test('CLH-N3: "TEST PROD - Nettoyage Hygiene" (sans accent) -> retourne entree avec accent', () => {
+    const found = lookupClientHints(HINTS_DATA_NORM, 'TEST PROD - Nettoyage Hygiene', undefined);
+    expect(found).not.toBeNull();
+    expect(found!.signals).toHaveLength(2);
+    const signalNames = (found!.signals as any[]).map((s: any) => s.signal);
+    expect(signalNames).toContain('nettoyage');
+    expect(signalNames).toContain('produits de nettoyage');
+  });
+});
+
+describe('CLH-N4 -- casse et espaces normalises', () => {
+  test('CLH-N4: "test prod  nettoyage hygiene" (lowercase + double espace) -> retourne entree Nettoyage', () => {
+    const found = lookupClientHints(HINTS_DATA_NORM, 'test prod  nettoyage hygiene', undefined);
+    expect(found).not.toBeNull();
+    expect(found!.signals).toHaveLength(2);
+    expect((found!.signals as any[]).map((s: any) => s.signal)).toContain('nettoyage');
+  });
+});
+
+describe('CLH-N5 -- nom arbitraire incorrect', () => {
+  test('CLH-N5: nom entierement inconnu -> null', () => {
+    const found = lookupClientHints(HINTS_DATA_NORM, 'CLIENT INEXISTANT XYZ 999', undefined);
+    expect(found).toBeNull();
+  });
+});
+
+describe('CLH-N6 -- isolation des clients voisins', () => {
+  test('CLH-N6: lookup Nettoyage sans accent ne retourne ni Informatique ni Fournitures Bureau', () => {
+    const found = lookupClientHints(HINTS_DATA_NORM, 'TEST PROD - Nettoyage Hygiene', undefined);
+    expect(found).not.toBeNull();
+    expect(found!.client).not.toContain('Informatique');
+    expect(found!.client).not.toContain('Fournitures');
+    const signalNames = (found!.signals as any[]).map((s: any) => s.signal);
+    expect(signalNames).not.toContain('informatique');
+    expect(signalNames).not.toContain('papeterie');
+  });
+});
+
+describe('CLH-N7 -- collision normalisee : aucun choix silencieux', () => {
+  test('CLH-N7a: deux clients meme cle normalisee, recherche cle normalisee -> null', () => {
+    const found = lookupClientHints(HINTS_DATA_COLLISION, 'client alpha', undefined);
+    expect(found).toBeNull();
+  });
+
+  test('CLH-N7b: nom exact court-circuite la collision (step 2 gagne)', () => {
+    const found = lookupClientHints(HINTS_DATA_COLLISION, 'Client Alpha', undefined);
+    expect(found).not.toBeNull();
+    expect(found!.client).toBe('Client Alpha');
+  });
+});
+
+describe('CLH-N8 -- ajustements inchanges apres resolution par normalisation', () => {
+  test('CLH-N8: scoreAdj et blockAuto identiques via nom exact vs nom normalise', () => {
+    const nameWithAccent = 'TEST PROD - Nettoyage Hygienè';
+    const foundExact = lookupClientHints(HINTS_DATA_NORM, nameWithAccent, undefined);
+    const foundNorm  = lookupClientHints(HINTS_DATA_NORM, 'TEST PROD - Nettoyage Hygiene', undefined);
+
+    expect(foundExact).not.toBeNull();
+    expect(foundNorm).not.toBeNull();
+
+    const r1 = applySignalHints(foundExact!, ['nettoyage']);
+    const r2 = applySignalHints(foundNorm!,  ['nettoyage']);
+
+    expect(r1.scoreAdj).toBe(5);
+    expect(r2.scoreAdj).toBe(5);
+    expect(r1.blockAuto).toBe(r2.blockAuto);
+    expect(r1.applied).toEqual(r2.applied);
+    expect(r1.explanations).toEqual(r2.explanations);
+  });
+});
+
+describe('CLH-N9 -- UUID reel 15a96b88 isole de TEST PROD Nettoyage', () => {
+  test('CLH-N9a: UUID exact -> entree UUID, pas entree TEST PROD Nettoyage', () => {
+    const found = lookupClientHints(HINTS_DATA_NORM, undefined, '15a96b88-0c98-4de9-9f66-739e3a28dafa');
+    expect(found).not.toBeNull();
+    expect(found!.client).toBe('15a96b88-0c98-4de9-9f66-739e3a28dafa');
+  });
+
+  test('CLH-N9b: signal nettoyage via UUID -> demote_to_review adj=-3 (pas boost +5 du TEST PROD)', () => {
+    const found = lookupClientHints(HINTS_DATA_NORM, undefined, '15a96b88-0c98-4de9-9f66-739e3a28dafa');
+    const r = applySignalHints(found!, ['nettoyage']);
+    expect(r.scoreAdj).toBe(-3);
+    expect(r.blockAuto).toBe(true);
+  });
+
+  test('CLH-N9c: UUID lookup n\'active pas les signaux Informatique ou Fournitures', () => {
+    const found = lookupClientHints(HINTS_DATA_NORM, undefined, '15a96b88-0c98-4de9-9f66-739e3a28dafa');
+    const r = applySignalHints(found!, ['informatique', 'papeterie', 'logiciel']);
+    expect(r.scoreAdj).toBe(0);
+    expect(r.blockAuto).toBe(false);
+    expect(r.applied).toHaveLength(0);
+  });
+});
+
 export {};

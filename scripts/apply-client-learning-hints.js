@@ -1,5 +1,6 @@
 // scripts/apply-client-learning-hints.js
 // GD-135 — Application generique des hints client-learning en shadow/local.
+// Resolution d'identite client : UUID > nom exact > nom normalise (unique).
 //
 // Module pur, sans I/O, sans dependances externes, testable directement.
 //
@@ -11,26 +12,73 @@
 
 'use strict';
 
+var normalizeLearningKey = require('./learning-key-utils').normalizeLearningKey;
+
 /**
  * Trouve l'entree hints pour un client donne dans le fichier client-learning-hints.json.
- * Cherche en priorite par nom (clientName), puis par client_id UUID (clientId).
- * Retro-compatible : les clients identifies par nom (TEST PROD - ...) continuent de fonctionner.
- * Le client reel identifie par UUID est maintenant supporte.
+ *
+ * Ordre de resolution de l'identite client :
+ *   1. UUID/client_id exact -- prioritaire si clientId est fourni.
+ *   2. Nom exact -- comparaison stricte sur clientName.
+ *   3. Nom normalise -- normalizeLearningKey() des deux cotes, UNIQUEMENT si
+ *      une seule entree correspond (evite tout choix silencieux en cas de collision).
+ *   4. Collision normalisee (>1 correspondance) -- retourne null avec avertissement.
+ *   5. Aucune correspondance -- retourne null (comportement precedent conserve).
+ *
+ * Garanties :
+ *   - Aucune regle specifique a un domaine ou un client code en dur.
+ *   - Aucun effet de bord : hintsData n'est pas modifie.
+ *   - Retro-compatible : les clients identifies par nom exact continuent de fonctionner.
  *
  * @param {object|null}  hintsData   Contenu parse de client-learning-hints.json
- * @param {string}       clientName  Nom du client (client.nom) — peut etre vide
- * @param {string}       [clientId]  UUID du client (client.id) — optionnel
- * @returns {object|null}            Entree client ou null si absent
+ * @param {string}       clientName  Nom du client -- peut etre vide ou null
+ * @param {string}       [clientId]  UUID du client -- optionnel
+ * @returns {object|null}            Entree client ou null si absent/ambigu
  */
 function lookupClientHints(hintsData, clientName, clientId) {
   if (!hintsData || !Array.isArray(hintsData.clients)) return null;
-  var found = null;
-  hintsData.clients.forEach(function(c) {
-    if (found) return;
-    if (clientName && c.client === clientName) { found = c; return; }
-    if (clientId  && c.client === String(clientId)) { found = c; return; }
-  });
-  return found || null;
+  var clients = hintsData.clients;
+
+  // Priorite 1 : UUID/client_id exact
+  if (clientId) {
+    var idStr = String(clientId);
+    for (var i = 0; i < clients.length; i++) {
+      if (clients[i].client === idStr) return clients[i];
+    }
+  }
+
+  // Priorite 2 : nom exact
+  if (clientName) {
+    for (var j = 0; j < clients.length; j++) {
+      if (clients[j].client === clientName) return clients[j];
+    }
+  }
+
+  // Priorite 3 : nom normalise -- uniquement si resolution non ambigue
+  if (clientName) {
+    var normalizedQuery = normalizeLearningKey(clientName);
+    if (normalizedQuery) {
+      var matches = [];
+      for (var k = 0; k < clients.length; k++) {
+        if (normalizeLearningKey(clients[k].client) === normalizedQuery) {
+          matches.push(clients[k]);
+        }
+      }
+      if (matches.length === 1) return matches[0];
+      if (matches.length > 1) {
+        // Collision : plusieurs clients produisent la meme cle normalisee.
+        // Ne choisir aucun -- evite tout choix silencieux incorrect.
+        console.warn(
+          '[lookupClientHints] Ambiguite : ' + matches.length +
+          ' clients ont la cle normalisee "' + normalizedQuery +
+          '" (recherche : "' + clientName + '"). Aucun hint applique.'
+        );
+        return null;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
