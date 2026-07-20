@@ -1,0 +1,248 @@
+{
+  "imported_at": "2026-07-20T17:44:22.093Z",
+  "source_csv": "/sessions/dazzling-relaxed-wozniak/mnt/projet_claude/radar-bc-bot-clean-2/data/shadow/review-candidates-nettoyage-2026-07-20T16-49-17.csv",
+  "counters": {
+    "total": 13,
+    "keep": 8,
+    "reject": 3,
+    "ignore": 2,
+    "vide": 0,
+    "invalid": 0
+  },
+  "records": [
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "355705",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat de produit de nettoyage au profit de la Commune d’Ait Naamane, Province d’El-Hajeb. DÉTAILS Acheteur public Commune rurale de AIT NAAMANE Date mise en ligne 24/06/2026 14:35 Date limite de récep",
+      "decision": "keep",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat direct de produits de nettoyage."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "357122",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "PRESTATIONS DE NETTOYAGE DES LOCAUX DU CENTRE NATIONAL D’ESTIVAGE BOUZNIKA PLAGE RELEVANT DE LA DIRECTION PROVINCIALE DE DEPARTEMENT DE LA JEUNESSE BENSLIMANE DÉTAILS Acheteur public DELEGUE PROVINCIA",
+      "decision": "keep",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Prestation directe de nettoyage de locaux."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356708",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Hygiène et nettoyage des locaux des hôpitaux relevant du centre hospitalier provincial de Sidi Bennour (HP SIDI BENNOUR ET HP ZEMAMRA DÉTAILS Acheteur public Directeur du Centre Hospitalier Provincial",
+      "decision": "keep",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Nettoyage et hygiène de locaux hospitaliers."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356521",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Achat de produits d'hygiène et de désinfection pour le compte des unités scolaires non couvertes par le marché de nettoyage relevant de la direction provinciale, d’El kelaa des Sraghna, DÉTAILS Achete",
+      "decision": "keep",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Produits d'hygiène et de désinfection correspondant au profil malgré la formulation négative autour du marché de nettoyage."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356497",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Réalisation des prestations de nettoyage dans les locaux de la Coordination Régionale de l’Agence de Développement Social à la Région de Beni Mellal – Khénifra. DÉTAILS Acheteur public COORDINATION RE",
+      "decision": "keep",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Prestation directe de nettoyage de locaux."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "355593",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Réalisation des prestations de nettoyage et d’entretien et d’embellissement des espaces verts dans les locaux de l’agence de développement social. DÉTAILS Acheteur public AGENCE DE DEVELOPPEMENT SOCIA",
+      "decision": "ignore",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "ambigu",
+      "human_review_comment": "Prestation mixte nettoyage et espaces verts ; séparation en lots inconnue."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356324",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Objet de prestation : Nettoyage des locaux administratif de la Faculté des Sciences Juridiques Economiques et Sociales de Tétouan du 01/07/2026 au 31/07/2026 (26 jours) DÉTAILS Acheteur public FACULTE",
+      "decision": "keep",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Nettoyage clairement identifié de locaux administratifs."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356891",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "TRAVAUX DE CURAGE ET NETTOYAGE DES FOSSES BÉTONNES ET DES OUVRAGES HYDRAULIQUES ET D’ENTRETIEN D’UNE PARTIE DE LA RUE NON CLASSÉE RELIANT LA RP1004 A LA RN11 VIA LE DOUAR IKHARDIDEN DÉTAILS Acheteur p",
+      "decision": "reject",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "Nettoyage dans un contexte de curage, ouvrages hydrauliques et voirie."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "354934",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Prestation de gardiennage et de sécurité et de Nettoyage au profit des locaux de la FMPE DÉTAILS Acheteur public FACULTE DE MEDECINE ET DE PHARMACIE D'ERRACHIDIA Date mise en ligne 23/06/2026 13:44 Da",
+      "decision": "ignore",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "ambigu",
+      "human_review_comment": "Marché mixte gardiennage, sécurité et nettoyage ; séparation en lots inconnue."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "355642",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Prestations de nettoyage du bâtiment abritant le siège de la direction régionale de l’Entraide Nationale Souss Massa. DÉTAILS Acheteur public DIRECTION REGIONALE DE L'ENTRAIDE NATIONALE - SOUSS MASSA ",
+      "decision": "keep",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Nettoyage direct d'un bâtiment administratif."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "355309",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Prestation de blanchissage, nettoyage et dégraissage du linge et couverture au profit de l’École Nationale de la Protection Civile. DÉTAILS Acheteur public ECOLE NATIONALE DE LA PROTECTION CIVILE Date",
+      "decision": "reject",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "Nettoyage de linge et couvertures : blanchisserie, pas nettoyage de locaux."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "355959",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Assurer les prestations de nettoyage des locaux administratifs relevant de la chambre de l’artisanat de Casablanca Settat Fondouk Safi. INFORMATIONS LIÉES À L'ANNULATION Date d'annulation : 25/06/2026",
+      "decision": "reject",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "autre",
+      "human_review_comment": "BC annulé le 25 juin 2026 ; opportunité devenue inexploitable."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "356074",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": true,
+      "clean_text_excerpt": "Entretien et nettoyage du siège de la direction provinciale Oujda-Angad et ses établissements scolaires DÉTAILS Acheteur public DIRECTION PROVINCIALE DE L’EDUCATION NATIONALE D’OUJDA ANGAD Date mise e",
+      "decision": "keep",
+      "cycle_id": "shadow-nettoyage-2026-07-20",
+      "review_source": "operator",
+      "reviewed_at": "2026-07-20T17:44:22.090Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Nettoyage direct du siège et des établissements scolaires."
+    }
+  ]
+}

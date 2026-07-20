@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-07-07T00:23:06.621Z",
+  "generated_at": "2026-07-20T17:44:40.629Z",
   "source": "review-decisions",
-  "files_read": 23,
-  "raw_total": 221,
-  "dedup_total": 146,
+  "files_read": 24,
+  "raw_total": 234,
+  "dedup_total": 149,
   "clients": [
     {
       "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
@@ -319,12 +319,12 @@
         },
         {
           "signal": "desinfection",
-          "keep": 5,
+          "keep": 4,
           "reject": 2,
           "ignore": 0,
-          "total": 7,
-          "keep_rate": 71,
-          "reject_rate": 29,
+          "total": 6,
+          "keep_rate": 67,
+          "reject_rate": 33,
           "cycles_count": 7,
           "sources": [
             "ai_assisted_validated",
@@ -362,12 +362,12 @@
         },
         {
           "signal": "hygiene",
-          "keep": 6,
+          "keep": 5,
           "reject": 14,
-          "ignore": 8,
-          "total": 28,
-          "keep_rate": 21,
-          "reject_rate": 50,
+          "ignore": 7,
+          "total": 26,
+          "keep_rate": 19,
+          "reject_rate": 54,
           "cycles_count": 14,
           "sources": [
             "ai_assisted_validated",
@@ -426,13 +426,13 @@
         },
         {
           "signal": "nettoyage",
-          "keep": 24,
-          "reject": 2,
+          "keep": 26,
+          "reject": 3,
           "ignore": 1,
-          "total": 27,
-          "keep_rate": 89,
-          "reject_rate": 7,
-          "cycles_count": 7,
+          "total": 30,
+          "keep_rate": 87,
+          "reject_rate": 10,
+          "cycles_count": 8,
           "sources": [
             "ai_assisted_validated",
             "operator"
@@ -444,7 +444,7 @@
           "block_auto_notify": false,
           "advisory_only": false,
           "human_validation_required": false,
-          "reason": "Signal fiable pour ce client (keep_rate=89%, cycles=7)"
+          "reason": "Signal fiable pour ce client (keep_rate=87%, cycles=8)"
         },
         {
           "signal": "produits d entretien",
