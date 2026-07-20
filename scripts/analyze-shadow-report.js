@@ -25,6 +25,8 @@ var contextualInsights = require("./contextual-review-insights");
 var reviewReasons = require("./review-reasons");
 // GD-039 : Application des hints candidates P8 (shadow-only, human_approved uniquement)
 var applyHintsShadow = require("./apply-review-reason-hints-shadow");
+// GD-141 : Impact des learning hints sur les decisions shadow
+var shadowHintImpact = require("./shadow-hint-impact");
 
 // ── Seuils (identiques au bot) ───────────────────────────────────────────────
 var CLEAN_WEAK_THRESHOLD   = 5;
@@ -312,19 +314,23 @@ function enrichEntry(e) {
     isWeak  ? "signal_secondaire_unique (" + (sigs[0] || "?") + ")" :
               "score=" + (e.clean_score || 0)
   );
-  var isAutoCandidate = isStrong && !isWeak && !exclHit;
-  // GD-033 : respect hint_block_auto (client learning hints) — prioritaire sur recalcul score
-  if (e.hint_block_auto) isAutoCandidate = false;
-  // Si déjà enrichi par nouveau bot, garder les champs mais recalculer candidature avec exclusion_hit
+  // GD-141 : Decision post-hints (authoritative).
+  // Priorite 1 : champs stockes dans le JSON shadow par le replay (post-hints).
+  // Priorite 2 : fallback recalcul depuis effective_score (anciens shadows sans ces champs).
+  // Ne jamais ecraser une decision post-hints stockee par un recalcul baseline.
+  var phDec        = shadowHintImpact.postHintDecision(e);
+  var effectiveAuto   = phDec === "auto";
+  var effectiveReview = phDec === "review";
+
+  // Si deja enrichi par nouveau bot, garder les champs structurels mais appliquer la decision post-hints
   if (e.strength) {
     return Object.assign({}, e, {
       signal_origin:         e.signal_origin || origin,
       primary_signal_count:  primCount,
       inclusion_signal_count: inclCount,
       strength_reason:       e.strength_reason || strengthReason,
-      // Recalculer auto_notify avec !exclusion_hit (correction des anciens rapports)
-      auto_notify_candidate: isAutoCandidate || undefined,
-      review_candidate:      (!isAutoCandidate && (e.clean_score || 0) >= CLEAN_WEAK_THRESHOLD) || undefined,
+      auto_notify_candidate: effectiveAuto   || undefined,
+      review_candidate:      effectiveReview || undefined,
     });
   }
   return Object.assign({}, e, {
@@ -335,8 +341,8 @@ function enrichEntry(e) {
     exclusion_hit:          exclHit || undefined,
     strength_reason:        strengthReason,
     weak_single_signal:     isWeak || undefined,
-    auto_notify_candidate:  isAutoCandidate || undefined,
-    review_candidate:       (!isAutoCandidate && (e.clean_score || 0) >= CLEAN_WEAK_THRESHOLD) || undefined,
+    auto_notify_candidate:  effectiveAuto   || undefined,
+    review_candidate:       effectiveReview || undefined,
   });
 }
 
@@ -618,24 +624,28 @@ clients.forEach(function(rawClient) {
 
   // Clean_only strong → candidats auto
   if (a.auto_notify_cands.length) {
-    console.log("\n  ── AUTO-NOTIFY CANDIDATES (score >= 15) ──────────────");
+    console.log("\n  ── AUTO-NOTIFY CANDIDATES (score effectif >= 15, post-hints) ──────────────");
     a.auto_notify_cands.slice(0, 10).forEach(function(e) {
       var enriched = enrichAutoCandidate(e, report.scan_date);
       var riskLabel = "[" + enriched.signal_risk_tier + "]";
+      var hintAdj   = (typeof e.hint_score_adj === "number" && e.hint_score_adj !== 0) ? e.hint_score_adj : null;
+      var scoreInfo = hintAdj !== null
+        ? "baseline=" + e.clean_score + " effectif=" + ((e.clean_score || 0) + hintAdj) + " adj=" + (hintAdj > 0 ? "+" : "") + hintAdj
+        : "score=" + e.clean_score;
       console.log("    bc_id=" + e.bc_id +
-                  "  score=" + e.clean_score +
+                  "  " + scoreInfo +
                   "  risk=" + riskLabel +
                   "  signaux=" + (e.matched_signals || []).filter(function(s){ return s.indexOf("bloque(") === -1; }).join(", ") +
-                  (enriched.warning ? "  ⚠ " + enriched.warning : "") +
+                  (enriched.warning ? "  \u26a0 " + enriched.warning : "") +
                   (e.objet ? "\n      objet=" + e.objet.slice(0, 80) : ""));
     });
   } else {
-    console.log("\n  ── AUTO-NOTIFY CANDIDATES : aucun (score >= 15 requis)");
+    console.log("\n  ── AUTO-NOTIFY CANDIDATES : aucun (score effectif >= 15 requis, post-hints)");
   }
 
   // Candidats à review
   if (a.review_cands.length) {
-    console.log("\n  ── REVIEW CANDIDATES (5 <= score < 15) ──────────────");
+    console.log("\n  ── REVIEW CANDIDATES (post-hints, 5 <= score effectif < 15) ──────────────");
     a.review_cands.slice(0, 10).forEach(function(e) {
       console.log("    bc_id=" + e.bc_id +
                   "  score=" + e.clean_score +
@@ -1218,6 +1228,83 @@ if (clients.length > 1) {
     });
 
   console.log("");
+})();
+
+// -- GD-141 : IMPACT DES LEARNING HINTS -------------------------------------
+(function() {
+  // Afficher uniquement si au moins un BC a un hint applique
+  var hasHints = clients.some(function(c) {
+    return (c.clean_only || []).some(function(e) {
+      return e.hint_applied || (typeof e.hint_score_adj === "number" && e.hint_score_adj !== 0);
+    });
+  });
+  if (!hasHints) return;
+
+  var impacts    = clients.map(shadowHintImpact.computeHintImpact);
+  var allChanged = [];
+  impacts.forEach(function(imp) {
+    allChanged = allChanged.concat(imp.changed_entries);
+  });
+
+  console.log("\n====================================================");
+  console.log("IMPACT DES LEARNING HINTS");
+  console.log("====================================================\n");
+
+  impacts.forEach(function(imp) {
+    if (imp.total === 0) return;
+    console.log("CLIENT : " + imp.client_name);
+    console.log("  total=" + imp.total +
+                "  sans_hint=" + imp.without_hint +
+                "  avec_hint=" + imp.with_hint);
+    if (imp.with_hint > 0) {
+      console.log("  adj:  positif=" + imp.adj_positive +
+                  "  negatif=" + imp.adj_negative +
+                  "  nul_mais_applique=" + imp.adj_zero_applied +
+                  "  hint_block_auto=" + imp.hint_block_auto_count);
+    }
+    console.log("  baseline : auto=" + imp.baseline_auto +
+                "  review=" + imp.baseline_review +
+                "  none=" + imp.baseline_none);
+    console.log("  post-hints: auto=" + imp.post_auto +
+                "  review=" + imp.post_review +
+                "  none=" + imp.post_none);
+    var totalChanged = imp.changed_entries.length;
+    if (totalChanged > 0) {
+      console.log("  changements (" + totalChanged + ") :" +
+                  (imp.review_to_auto > 0 ? "  review->auto=" + imp.review_to_auto : "") +
+                  (imp.auto_to_review > 0 ? "  auto->review=" + imp.auto_to_review : "") +
+                  (imp.none_to_review > 0 ? "  none->review=" + imp.none_to_review : "") +
+                  (imp.none_to_auto   > 0 ? "  none->auto="   + imp.none_to_auto   : "") +
+                  "  inchanges=" + imp.unchanged);
+    } else {
+      console.log("  aucun changement de decision (hints sans effet sur les seuils)");
+    }
+    console.log("");
+  });
+
+  if (allChanged.length > 0) {
+    console.log("Entrees dont la decision a change (" + allChanged.length + ") :");
+    allChanged.forEach(function(e) {
+      var adjStr = e.hint_score_adj !== 0
+        ? "  adj=" + (e.hint_score_adj > 0 ? "+" : "") + e.hint_score_adj
+        : "";
+      var blkStr = e.hint_block_auto ? "  [hint_block_auto]" : "";
+      console.log(
+        "  client=" + e.client +
+        "  bc_id="  + e.bc_id  +
+        "  baseline=" + e.baseline_score +
+        adjStr +
+        "  effectif=" + e.effective_score +
+        "  " + e.baseline_decision + "->" + e.post_hint_decision +
+        blkStr +
+        (e.hint_applied ? "  hints=" + e.hint_applied : "")
+      );
+      if (e.objet) {
+        console.log("    objet=" + String(e.objet).slice(0, 80));
+      }
+    });
+    console.log("");
+  }
 })();
 
 function pad(n, w) {
