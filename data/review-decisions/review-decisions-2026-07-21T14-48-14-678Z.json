@@ -1,0 +1,753 @@
+{
+  "imported_at": "2026-07-21T14:48:14.678Z",
+  "source_csv": "C:\\PROJETS_AI\\projet_claude\\radar-bc-bot-clean-2\\data\\shadow\\review-hint-impact-2026-07-21T14-22-18.csv",
+  "counters": {
+    "total": 41,
+    "keep": 35,
+    "reject": 6,
+    "ignore": 0,
+    "vide": 0,
+    "invalid": 0
+  },
+  "records": [
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "364669",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Prestation de nettoyage et activités connexes de l’aéroport de Dakhla pour la période allant du 01/08/2026 au 31/10/2026. DÉTAILS Acheteur public ONDA - AEROPORT DAKHLA Date mise en ligne 14/07/2026 1",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Prestation de nettoyage de locaux aeroportuaires."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "367802",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Prestations d'entretien et de nettoyage des locaux administratifs et pédagogiques de l’Ecole Nationale d’Architecture de Rabat pour la période allant du 1er Septembre 2026 jusqu'au 31 Octobre 2026. DÉ",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Entretien et nettoyage de locaux administratifs et pedagogiques."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "367824",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Prestation de blanchissage, nettoyage et dégraissage du linge et couverture au profit de l’École Nationale de la Protection Civile. DÉTAILS Acheteur public ECOLE NATIONALE DE LA PROTECTION CIVILE Date",
+      "decision": "reject",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "Blanchissage et degraissage du linge, pas nettoyage de locaux."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "367638",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Prestations de nettoyage des locaux du centre national de vacances Haouzia relevant de la D.P de la jeunesse à El Jadida. (Suivant l’annexe du bon de commande ci-joint). DÉTAILS Acheteur public Déléga",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Nettoyage des locaux d'un centre de vacances."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "367508",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "PRESTATIONS DE NETTOYAGE ET D’ HYGIENE AU NIVEAU DE L’INSTITUT SUPERIEUR DES PROFESSIONS INFIRMIERES ET TECHNIQUES DE SANTE DE BENI MELLAL (SIEGE BENI MELLAL ET ANNEXE KHENIFRA). DÉTAILS Acheteur publ",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Nettoyage des locaux d'un institut, sans prestation medicale."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "367241",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de produits d’entretien et d’articles d’hygiène destinés au nettoyage et à l’entretien de l’Unité pédagogique de traitement et de Valorisation des Produits de la Pêche Maritime (UPTVPM) de l’Ins",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat de produits d'entretien et d'hygiene pour le nettoyage."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "367232",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de détergents, de fournitures d'entretien et de nettoyage au profit de l'institut Spécialisé de Technologie Appliqué Hôtelière et Touristique de Touaga -Rabat DÉTAILS Acheteur public INSTITUT SP",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat de detergents et fournitures de nettoyage."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "367059",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Désherbage et nettoyage des éspaces vertes au sein de la maison centrale moul bergui. DÉTAILS Acheteur public DIRECTEUR MAISON CENTRALE MOUL BERGUI Date mise en ligne 20/07/2026 12:42 Date limite de r",
+      "decision": "reject",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "Desherbage et entretien d'espaces verts, hors nettoyage de locaux."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "367111",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "achat de produit de nettoyage blanchissage et dégraissage du linge pour l'hôpital psychiatrique ar-razi de Berrechid DÉTAILS Acheteur public Centre Hospitalier Provincial de BERRECHID Date mise en lig",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat de produits de nettoyage, activite couverte malgre l'usage blanchisserie."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "367032",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Réalisation de la prestation de nettoyage dans les locaux de la coordination de l’ADS à la région de Fès et Meknès. DÉTAILS Acheteur public COORDINATION REGIONALE DE L'AGENCE DE DEVELOPPEMENT SOCIAL D",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Prestation de nettoyage de locaux administratifs."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "366389",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Travaux de réparation, de curage, de nettoyage et d’évacuation des éléments solides et liquides du réseau d’assainissement des eaux usées (EU) et des eaux pluviales (EP) au niveau de l’abattoir région",
+      "decision": "reject",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "Travaux de curage, reparation et evacuation de reseau, activite exclue."
+    },
+    {
+      "client": "TEST PROD - Nettoyage Hygiene",
+      "bc_id": "366775",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "nettoyage"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Gardiennage et sécurité et nettoyage relative l’organisation de la foire d’artisanat à Leqliaa, préfecture d’Inezgane Ait Melloul du 23 au 28 juillet 2026. DÉTAILS Acheteur public CHAMBRE DE L'ARTISAN",
+      "decision": "reject",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "Marche groupe avec gardiennage, securite et evenementiel."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "358004",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "ACHAT DE CONSOMMABLES INFORMATIQUES INFORMATIONS LIÉES À L'ANNULATION Date d'annulation : 16/07/2026 Référence annulation / Motif : Discordance entre la date d'ouverture des devis sur l'avis d'achat e",
+      "decision": "reject",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "autre",
+      "human_review_comment": "BC informatique pertinent mais consultation annulee le 16 juillet 2026."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "360812",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de fournitures informatiques au profit de la Direction de la Marine Marchande DÉTAILS Acheteur public DIRECTEUR DE LA MARINE MARCHANDE CASA Date mise en ligne 20/07/2026 20:56 Date limite de réc",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367492",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Fourniture Pour Matériel Technique et informatique Au profit de la Groupement ASSAHEL PV Chefchaouen DÉTAILS Acheteur public GROUPEMENT DES COMMUNE LOCALS ASSAHEL Date mise en ligne 21/07/2026 09:06 D",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367544",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "achat de fournitures informatique au profit de l’ISPITS Errachidia et ses Annexe Ouarzazate et Zagora au titre l’année 2026 DÉTAILS Acheteur public INSTITUT SUPERIEUR DES PROFESSIONS INFIRMIERES ET TE",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367865",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "ACHAT DE FOURNITURES ET D’OUTILLAGE INFORMATIQUES AU PROFIT DES ESSP RELEVANT DE LA DMSPS DE FES DÉTAILS Acheteur public DELEGUE DU MINISTERE DE LA SANTE A LA PREFECTURE DE FES Date mise en ligne 21/0",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367722",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de fournitures pour matériel informatique destine aux services déconcentrés du Haut-Commissariat aux Anciens Résistants et Anciens Membres de l’Armée de Libération dans la région de MARRAKECH-SA",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367881",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de fournitures informatiques au profit de L’Ecole Nationale des Sciences Appliquées d’AL Hoceima. DÉTAILS Acheteur public ECOLE NATIONALE DES SCIENCES APPLIQUEES D'AL-HOCEIMA Date mise en ligne ",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367227",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de fournitures informatiques au profit de la Direction Régionale de l’Environnement de la Région Béni Mellal-Khénifra DÉTAILS Acheteur public DIRECTION REGIONALE DE L'ENVIRONNEMENT DE LA REGION ",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367628",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "ACHAT DE FOURNITURES INFORMATIQUES POUR LE COMPTE DE LA DPEE DE MEKNES. DÉTAILS Acheteur public LE DIRECTEUR PROVINCIAL DE L'EQUIPEMENT ET DU TRANSPORT ET DE LA LOGISTIQUE DE MEKNES Date mise en ligne",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367866",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de fournitures informatiques dans le cadre du budget alloué au laboratoire de Biologie et Santé DÉTAILS Acheteur public FACULTE DES SCIENCES KENITRA Date mise en ligne 21/07/2026 14:08 Date limi",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367721",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de fournitures informatique au profit de l’Institut de Formation des Techniciens Spécialisés en Architecture et en Urbanisme d’Oujda DÉTAILS Acheteur public INSTITUT DE FORMATION DES TECHNICIENS",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367680",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat du matériel informatique destiné à la Préfecture d’Arrondissements de Ben M’Sick. DÉTAILS Acheteur public GOUVERNEUR DE LA PREFECTURE D'ARRONDISSEMENT BEN MSIK Date mise en ligne 21/07/2026 12:0",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367500",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "L’ACQUISITION D'EQUIPEMENTS DE RESEAUX ET DE SECURITE INFORMATIQUE AU PROFIT DE LA SURETE REGIONALE DE DAKHLA. DÉTAILS Acheteur public CHEF DE SURETE REGIONALE DE DAKHLA Date mise en ligne 21/07/2026 ",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "366963",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "FOURNITURES POUR MATERIEL TECHNIQUES ET INFORMATIQUES AU PROFIT DES SERVICES ADMINISTRATIFS (ACHAT DE TONNER) DÉTAILS Acheteur public Commune rurale de BNI SAID Date mise en ligne 20/07/2026 11:24 Dat",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367276",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "ACHAT DE FOURNITURES POUR MATERIEL INFORMATIQUE AU PROFIT DE LA COUR DE CASSATION. DÉTAILS Acheteur public CHEF DU SERVICE DES RESSOURCES HUMAINES ET DES AFFAIRES FINANCIÈRES AUPRÈS DE LA CIRCONSCRIPT",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "366924",
+      "score": 15,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique",
+        "serveurs"
+      ],
+      "strength_reason": "valeur_principale + inclusions (1p+1i)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Frais d’aménagement de la salle des serveurs du département informatique de la Faculté des Sciences d'Oujda. DÉTAILS Acheteur public FACULTE DES SCIENCES OUJDA Date mise en ligne 20/07/2026 11:13 Date",
+      "decision": "reject",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_mauvais_contexte",
+      "human_review_comment": "Amenagement d'une salle des serveurs, relevant principalement de travaux de batiment."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367452",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat du matériel informatique pour les classes de l'enseignement à distance pour les douars de la commune Ait Tamlil DP Azilal. DÉTAILS Acheteur public DIRECTION PROVINCIALE DE L’EDUCATION NATIONALE ",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "365803",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "ACHAT de Matériel Informatique NB: Les soumissionnaires sont tenus de déposer, au siège de l’Agence Urbaine de Taza-Taounate (Avenue Hassan Bahtat, Gare, Taza), les prospectus relatifs à l’ensemble de",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367345",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de fourniture informatique pour la DPETL de Guelmim DÉTAILS Acheteur public DIRECTION PROVINCIALE DE L'EQUIPEMENT DU TRANSPORT ET DE LA LOGISTIQUE DE QUELMIM Date mise en ligne 20/07/2026 17:12 ",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367271",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "ACHAT MATÉRIEL INFORMATIQUE AU PROFIT DE LA DIRECTION RÉGIONALE DE L' ARTISANAT A AGADIR DÉTAILS Acheteur public DELEGUE DE L'ARTISANAT AGADIR-IDA OU TANANE Date mise en ligne 20/07/2026 14:58 Date li",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "366454",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Acquisition du Matériel Informatique au profil de l’administration de la commune de Bni Ftah Province de Taza DÉTAILS Acheteur public COMMUNE BNI FTAH Date mise en ligne 17/07/2026 13:20 Date limite d",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367153",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de fournitures informatiques du au profit de la Direction des Ressources et Système d’Information DÉTAILS Acheteur public DIRECTION DES RESSOURCES ET DES SYSTEMES D'INFORMATION Date mise en lign",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367148",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat des cartes réseau pour matériel informatique de la prison locale Ait Melloul 2 DÉTAILS Acheteur public DIRECTEUR DE LA PRISON LOCALE D'AIT MELLOUL 2 Date mise en ligne 20/07/2026 13:50 Date limi",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "367170",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "ACHAT DE MATÉRIEL INFORMATIQUE DESTINE AUX SERVICES DES POSTE DE COMMANDEMENT, PROVINCE DE TAROUDANNT DÉTAILS Acheteur public GOUVERNEUR DE LA PROVINCE DE TAROUDANNT Date mise en ligne 20/07/2026 13:5",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "366942",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de fourniture pour matériel informatique pour les services de la DAS dans le cadre de l’INDH- province de Nador DÉTAILS Acheteur public GOUVERNEUR DE NADOR Date mise en ligne 20/07/2026 11:12 Da",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "366249",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Travaux de câblage informatique du siège de l’Annexe administrative Alfirdaouss de Ain Aouda DÉTAILS Acheteur public GOUVERNEUR DE SKHIRAT TEMARA Date mise en ligne 17/07/2026 12:23 Date limite de réc",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "365651",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat des toners destinés aux divers matériels informatiques de la Direction Provinciale de l’Équipement du Transport et de la Logistique de Marrakech. DÉTAILS Acheteur public DIRECTEUR PROVINCIAL DE ",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "366483",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de matériel informatique pour le compte du Centre Régional des Métiers de l’Education et de la Formation Beni Mellal – Khénifra. DÉTAILS Acheteur public CENTRE REGIONAL DES METIERS DE L'EDUCATIO",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    },
+    {
+      "client": "TEST PROD - Informatique",
+      "bc_id": "366296",
+      "score": 10,
+      "signal_origin": "primary",
+      "matched_signals": [
+        "informatique"
+      ],
+      "strength_reason": "valeur_principale seule (1p)",
+      "weak_single_signal": false,
+      "clean_text_excerpt": "Achat de matériel informatique dans le cadre du suivi des projets INDH à la Province de TAZA. DÉTAILS Acheteur public GOUVERNEUR DE LA PROVINCE DE TAZA Date mise en ligne 17/07/2026 12:30 Date limite ",
+      "decision": "keep",
+      "cycle_id": "2026-07-21T14-22-18",
+      "review_source": "ai_assisted_validated",
+      "reviewed_at": "2026-07-21T14:48:14.674Z",
+      "human_review_reason": "bon_signal_bon_contexte",
+      "human_review_comment": "Achat ou prestation informatique directement couvert par le profil client."
+    }
+  ]
+}
