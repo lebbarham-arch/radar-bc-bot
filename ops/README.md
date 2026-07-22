@@ -77,6 +77,27 @@ Ne pousse jamais vers GitHub. Ne cree jamais de commit.
 Lit le commit dans last-good-commit.txt, demande confirmation (saisir "oui"),
 git reset --hard, tests, redemarrage, health check.
 
+## feedback-cycle.ps1 - pilote feedback learning
+
+    .\ops\feedback-cycle.ps1
+    .\ops\feedback-cycle.ps1 -DryRun
+    .\ops\feedback-cycle.ps1 -ClientId <uuid>
+    .\ops\feedback-cycle.ps1 -Since 2026-07-01T00:00:00Z
+
+Le pilote liste les clients actifs dans Supabase, puis appelle pour chacun
+l'orchestrateur existant run-client-feedback-learning-cycle.js.
+Il conserve un checkpoint local par client dans :
+
+    data\feedback\feedback-learning-state.json
+
+Le checkpoint n'avance qu'apres un cycle client reussi. En cas d'echec, le
+client sera repris au prochain passage. Le dossier data/feedback est ignore par
+Git : aucun feedback client ni checkpoint n'est versionne.
+
+Ce pilote ne lance aucun scan, n'envoie aucune notification, ne touche pas Fly
+et n'ajoute aucune regle metier. Il reutilise uniquement la chaine generique
+existante : export -> conversion -> import -> learning -> hints shadow.
+
 ## start-bot.bat
 
 Script de lancement utilise par la tache planifiee RadarBC.
