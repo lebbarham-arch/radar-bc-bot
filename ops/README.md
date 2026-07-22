@@ -91,3 +91,33 @@ si Node est installe ailleurs.
 
 Les fichiers .env.*.bak produits par les scripts de rotation Telegram sont
 ignores par .gitignore (regle .env.*.bak). Ils ne sont jamais commites.
+
+## Cycle feedback -> learning
+
+Le pilote multi-clients reutilise l'orchestrateur generique existant :
+
+    .\ops\feedback-cycle.ps1 -DryRun
+    .\ops\feedback-cycle.ps1
+
+Options :
+
+    .\ops\feedback-cycle.ps1 -ClientId <uuid>
+    .\ops\feedback-cycle.ps1 -Since 2026-07-01T00:00:00Z
+    .\ops\feedback-cycle.ps1 -RadarType mp -DryRun
+
+Fonctionnement :
+
+1. Liste les clients actifs depuis Supabase en lecture seule.
+2. Au premier lancement, rapproche les feedbacks Supabase des decisions client
+   deja presentes dans data/review-decisions/.
+3. Cree une archive locale d'idempotence dans data/feedback/ pour que les
+   decisions deja apprises ne soient pas importees une seconde fois.
+4. Delegue chaque client a run-client-feedback-learning-cycle.js.
+5. Met a jour le checkpoint seulement si le cycle du client reussit.
+
+Un changement de decision sur un meme BC reste nouveau et est traite. Une
+repetition de la meme decision deja importee ne recree pas un faux cycle.
+
+Le pilote ne lance aucun scan, n'envoie aucune notification, n'appelle pas Fly
+et n'ecrit pas dans Supabase. Les fichiers de checkpoint et d'archive restent
+locaux dans data/feedback/, deja ignore par Git.
