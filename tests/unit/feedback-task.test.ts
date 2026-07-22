@@ -11,6 +11,7 @@ import path from 'path';
 const taskPath = path.join(process.cwd(), 'ops', 'feedback-task.ps1');
 const source = fs.readFileSync(taskPath, 'utf8');
 const executableSource = source
+  .replace(/<#[\s\S]*?#>/g, '')
   .split(/\r?\n/)
   .filter((line) => !line.trim().startsWith('#'))
   .join('\n');
