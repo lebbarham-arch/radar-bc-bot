@@ -56,9 +56,14 @@ describe('feedback learning autopilot - checkpoint', () => {
     expect(autopilot.normalizeCheckpoint(null, null))
       .toBe('1970-01-01T00:00:00.000Z');
   });
+
+  test('separe les checkpoints bc et mp', () => {
+    expect(autopilot.buildStateKey('client-1', 'bc')).toBe('client-1|bc');
+    expect(autopilot.buildStateKey('client-1', 'mp')).toBe('client-1|mp');
+  });
 });
 
-describe('feedback learning autopilot - requete clients', () => {
+describe('feedback learning autopilot - requetes', () => {
   test('liste tous les clients actifs par defaut', () => {
     const query = decodeURIComponent(autopilot.buildClientsQuery(null));
     expect(query).toContain('actif=eq.true');
@@ -70,6 +75,57 @@ describe('feedback learning autopilot - requete clients', () => {
   test('filtre un client explicite', () => {
     const query = decodeURIComponent(autopilot.buildClientsQuery('client-1'));
     expect(query).toContain('id=eq.client-1');
+  });
+
+  test('feedback query reste read-only et cible web_click', () => {
+    const query = decodeURIComponent(autopilot.buildFeedbackQuery('client-1', 'bc', 0));
+    expect(query).toContain('client_id=eq.client-1');
+    expect(query).toContain('radar_type=eq.bc');
+    expect(query).toContain('source=eq.web_click');
+    expect(query).toContain('select=id,client_id,item_id');
+    expect(query).not.toContain('insert');
+    expect(query).not.toContain('update');
+    expect(query).not.toContain('delete');
+  });
+});
+
+describe('feedback learning autopilot - reconciliation historique', () => {
+  const baseEvent = {
+    client_id: 'client-1',
+    item_id: '368767',
+    radar_type: 'bc',
+    critere: 'nettoyage',
+    source: 'web_click',
+    created_at: '2026-07-22T22:00:00Z',
+  };
+
+  test('mappe les trois types vers les decisions attendues', () => {
+    expect(autopilot.feedbackDecisionKey({ ...baseEvent, type: 'relevant' }))
+      .toBe('client-1|368767|keep');
+    expect(autopilot.feedbackDecisionKey({ ...baseEvent, type: 'irrelevant' }))
+      .toBe('client-1|368767|reject');
+    expect(autopilot.feedbackDecisionKey({ ...baseEvent, type: 'watch' }))
+      .toBe('client-1|368767|ignore');
+  });
+
+  test('selectionne seulement les feedbacks deja importes', () => {
+    const events = [
+      { ...baseEvent, item_id: '100', type: 'relevant' },
+      { ...baseEvent, item_id: '200', type: 'irrelevant' },
+      { ...baseEvent, item_id: '300', type: 'watch' },
+    ];
+    const imported = new Set([
+      'client-1|100|keep',
+      'client-1|300|ignore',
+    ]);
+    const selected = autopilot.selectBootstrapEvents(events, imported);
+    expect(selected.map((e: any) => e.item_id)).toEqual(['100', '300']);
+  });
+
+  test('un changement de decision reste nouveau', () => {
+    const events = [{ ...baseEvent, item_id: '100', type: 'irrelevant' }];
+    const imported = new Set(['client-1|100|keep']);
+    expect(autopilot.selectBootstrapEvents(events, imported)).toHaveLength(0);
   });
 });
 
