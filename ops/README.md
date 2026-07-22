@@ -121,3 +121,33 @@ repetition de la meme decision deja importee ne recree pas un faux cycle.
 Le pilote ne lance aucun scan, n'envoie aucune notification, n'appelle pas Fly
 et n'ecrit pas dans Supabase. Les fichiers de checkpoint et d'archive restent
 locaux dans data/feedback/, deja ignore par Git.
+
+## Tache feedback automatique
+
+Le gestionnaire Windows execute le cycle feedback periodiquement sans toucher
+a la tache RadarBC du scanner :
+
+    .\ops\feedback-task.ps1 install
+    .\ops\feedback-task.ps1 status
+    .\ops\feedback-task.ps1 run
+    .\ops\feedback-task.ps1 remove
+
+La cadence par defaut est de 4 heures. Elle peut etre changee a l'installation :
+
+    .\ops\feedback-task.ps1 install -EveryHours 6
+
+Garanties :
+
+- mutex local anti-chevauchement ;
+- ScheduledTasks configure avec MultipleInstances=IgnoreNew ;
+- premier lancement environ 2 minutes apres installation ;
+- reprise au prochain reveil avec StartWhenAvailable ;
+- temps maximum d'execution : 1 heure ;
+- logs dans data/feedback/task-logs/ ;
+- conservation des 30 derniers logs ;
+- aucun scan, aucune notification, aucun appel Fly ;
+- aucun commit, push ou reset Git automatique.
+
+Le cycle peut modifier les donnees d'apprentissage locales, notamment
+client-learning-hints.json. La consolidation Git de ces donnees reste une action
+separee et controlee.
