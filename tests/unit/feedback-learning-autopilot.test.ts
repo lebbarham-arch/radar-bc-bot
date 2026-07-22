@@ -127,6 +127,26 @@ describe('feedback learning autopilot - reconciliation historique', () => {
     const imported = new Set(['client-1|100|keep']);
     expect(autopilot.selectBootstrapEvents(events, imported)).toHaveLength(0);
   });
+
+  test('historique local conserve uniquement la derniere decision par BC', () => {
+    const keys = autopilot.buildLatestImportedDecisionKeys([
+      {
+        client: 'client-1',
+        bc_id: '100',
+        decision: 'keep',
+        review_source: 'client',
+      },
+      {
+        client: 'client-1',
+        bc_id: '100',
+        decision: 'reject',
+        review_source: 'client',
+      },
+    ], 'client-1', 'Client test');
+
+    expect(keys.has('client-1|100|reject')).toBe(true);
+    expect(keys.has('client-1|100|keep')).toBe(false);
+  });
 });
 
 describe('feedback learning autopilot - delegation unique', () => {
