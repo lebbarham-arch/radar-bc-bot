@@ -15,8 +15,8 @@
  * - Aucun changement scoring, seuil, guard ou regle metier.
  * - Checkpoint local dans data/feedback/ (deja gitignore).
  * - En cas d'echec d'un client, son checkpoint n'avance pas.
- * - Premier lancement : rapproche l'historique Supabase des decisions client
- *   deja importees afin d'eviter de recreer de faux cycles.
+ * - Premier lancement : rapproche l'historique Supabase de la derniere decision
+ *   client deja importee pour chaque BC afin d'eviter de faux cycles.
  *
  * Usage :
  *   node scripts/run-feedback-learning-cycle.js
@@ -173,9 +173,40 @@ function feedbackDecisionKey(event) {
   return String(review.client || '') + '|' + String(review.bc_id || '') + '|' + String(review.decision || '');
 }
 
-function loadImportedClientDecisionKeys(decisionsDir, clientId, clientName) {
+function buildLatestImportedDecisionKeys(records, clientId, clientName) {
+  var latestByBc = Object.create(null);
+
+  (records || []).forEach(function(record) {
+    var source = String(record.review_source || '');
+    var recordClient = String(record.client || '');
+    var bcId = String(record.bc_id || '');
+    var decision = String(record.decision || '');
+
+    if (source !== 'client') return;
+    if (recordClient !== String(clientId) && recordClient !== String(clientName || '')) return;
+    if (!bcId || !decision) return;
+
+    // Les fichiers et records sont fournis dans l'ordre chronologique.
+    // Le dernier record rencontre pour un BC est donc la decision courante.
+    latestByBc[bcId] = {
+      client: recordClient,
+      bc_id: bcId,
+      decision: decision,
+    };
+  });
+
   var keys = new Set();
-  if (!fs.existsSync(decisionsDir)) return keys;
+  Object.keys(latestByBc).forEach(function(bcId) {
+    var record = latestByBc[bcId];
+    keys.add(record.client + '|' + record.bc_id + '|' + record.decision);
+    keys.add(String(clientId) + '|' + record.bc_id + '|' + record.decision);
+  });
+  return keys;
+}
+
+function loadImportedClientDecisionKeys(decisionsDir, clientId, clientName) {
+  var orderedRecords = [];
+  if (!fs.existsSync(decisionsDir)) return new Set();
 
   fs.readdirSync(decisionsDir)
     .filter(function(name) { return /^review-decisions-.*\.json$/.test(name); })
@@ -184,21 +215,13 @@ function loadImportedClientDecisionKeys(decisionsDir, clientId, clientName) {
       try {
         var data = JSON.parse(fs.readFileSync(path.join(decisionsDir, name), 'utf8'));
         var records = Array.isArray(data.records) ? data.records : [];
-        records.forEach(function(record) {
-          var source = String(record.review_source || '');
-          var recordClient = String(record.client || '');
-          if (source !== 'client') return;
-          if (recordClient !== String(clientId) && recordClient !== String(clientName || '')) return;
-          var key = recordClient + '|' + String(record.bc_id || '') + '|' + String(record.decision || '');
-          keys.add(key);
-          keys.add(String(clientId) + '|' + String(record.bc_id || '') + '|' + String(record.decision || ''));
-        });
+        records.forEach(function(record) { orderedRecords.push(record); });
       } catch (_e) {
         // Un fichier invalide est ignore ; l'orchestrateur reste la source de verite.
       }
     });
 
-  return keys;
+  return buildLatestImportedDecisionKeys(orderedRecords, clientId, clientName);
 }
 
 function selectBootstrapEvents(events, importedKeys) {
@@ -368,6 +391,7 @@ module.exports = {
   buildClientsQuery: buildClientsQuery,
   buildFeedbackQuery: buildFeedbackQuery,
   feedbackDecisionKey: feedbackDecisionKey,
+  buildLatestImportedDecisionKeys: buildLatestImportedDecisionKeys,
   loadImportedClientDecisionKeys: loadImportedClientDecisionKeys,
   selectBootstrapEvents: selectBootstrapEvents,
   sanitizeFilePart: sanitizeFilePart,
