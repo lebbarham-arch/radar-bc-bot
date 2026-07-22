@@ -1,22 +1,22 @@
 {
-  "generated_at": "2026-07-20T17:44:40.629Z",
+  "generated_at": "2026-07-22T23:01:05.014Z",
   "source": "review-decisions",
-  "files_read": 24,
-  "raw_total": 234,
-  "dedup_total": 149,
+  "files_read": 26,
+  "raw_total": 280,
+  "dedup_total": 194,
   "clients": [
     {
       "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
       "signals": [
         {
           "signal": "nettoyage",
-          "keep": 8,
+          "keep": 12,
           "reject": 15,
           "ignore": 0,
-          "total": 23,
-          "keep_rate": 35,
-          "reject_rate": 65,
-          "cycles_count": 3,
+          "total": 27,
+          "keep_rate": 44,
+          "reject_rate": 56,
+          "cycles_count": 4,
           "sources": [
             "client"
           ],
@@ -188,14 +188,15 @@
         },
         {
           "signal": "informatique",
-          "keep": 33,
-          "reject": 1,
+          "keep": 60,
+          "reject": 3,
           "ignore": 3,
-          "total": 37,
-          "keep_rate": 89,
-          "reject_rate": 3,
-          "cycles_count": 4,
+          "total": 66,
+          "keep_rate": 91,
+          "reject_rate": 5,
+          "cycles_count": 5,
           "sources": [
+            "ai_assisted_validated",
             "operator"
           ],
           "verdict": "Tres fiable",
@@ -205,7 +206,7 @@
           "block_auto_notify": false,
           "advisory_only": false,
           "human_validation_required": false,
-          "reason": "Signal fiable pour ce client (keep_rate=89%, cycles=4)"
+          "reason": "Signal fiable pour ce client (keep_rate=91%, cycles=5)"
         },
         {
           "signal": "logiciel",
@@ -273,13 +274,14 @@
         {
           "signal": "serveurs",
           "keep": 1,
-          "reject": 0,
+          "reject": 1,
           "ignore": 1,
-          "total": 2,
-          "keep_rate": 50,
-          "reject_rate": 0,
-          "cycles_count": 2,
+          "total": 3,
+          "keep_rate": 33,
+          "reject_rate": 33,
+          "cycles_count": 3,
           "sources": [
+            "ai_assisted_validated",
             "operator"
           ],
           "verdict": "Ambigu",
@@ -289,7 +291,7 @@
           "block_auto_notify": true,
           "advisory_only": false,
           "human_validation_required": false,
-          "reason": "Données insuffisantes (2 décisions, minimum 3)"
+          "reason": "Signal ambigu — maintenir en review humaine"
         }
       ]
     },
@@ -426,13 +428,13 @@
         },
         {
           "signal": "nettoyage",
-          "keep": 26,
-          "reject": 3,
+          "keep": 34,
+          "reject": 7,
           "ignore": 1,
-          "total": 30,
-          "keep_rate": 87,
-          "reject_rate": 10,
-          "cycles_count": 8,
+          "total": 42,
+          "keep_rate": 81,
+          "reject_rate": 17,
+          "cycles_count": 9,
           "sources": [
             "ai_assisted_validated",
             "operator"
@@ -444,7 +446,7 @@
           "block_auto_notify": false,
           "advisory_only": false,
           "human_validation_required": false,
-          "reason": "Signal fiable pour ce client (keep_rate=87%, cycles=8)"
+          "reason": "Signal fiable pour ce client (keep_rate=81%, cycles=9)"
         },
         {
           "signal": "produits d entretien",
