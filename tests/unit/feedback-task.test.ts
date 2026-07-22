@@ -1,12 +1,14 @@
 /*
- * Tests statiques du gestionnaire de tache Windows feedback -> learning.
+ * Tests statiques et Windows du gestionnaire de tache feedback -> learning.
  * Aucun appel ScheduledTasks, Supabase, scan, notification ou Git.
  */
 
 'use strict';
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import { spawnSync } from 'child_process';
 
 const taskPath = path.join(process.cwd(), 'ops', 'feedback-task.ps1');
 const source = fs.readFileSync(taskPath, 'utf8');
@@ -52,6 +54,85 @@ describe('feedback-task - execution sure', () => {
     expect(source).toContain('data\\feedback\\task-logs');
     expect(source).toContain('feedback-task-*.log');
     expect(source).toContain('Select-Object -Skip 30');
+  });
+
+  test('hints generes archives hors fichier versionne', () => {
+    expect(source).toContain('data\\feedback\\pending-learning');
+    expect(source).toContain('client-learning-hints-latest.json');
+    expect(source).toContain('ConvertFrom-Json | Out-Null');
+  });
+
+  test('fichier hints versionne restaure dans finally', () => {
+    expect(source).toContain('[System.IO.File]::ReadAllBytes($trackedHints)');
+    expect(source).toContain('[System.IO.File]::WriteAllBytes($trackedHints, $hintsBackup)');
+    expect(source).toContain('elseif (-not $hintsExisted -and (Test-Path $trackedHints))');
+  });
+
+  test('Windows reel: archive les nouveaux hints et restaure le fichier initial', () => {
+    const probe = spawnSync('powershell.exe', ['-NoProfile', '-Command', 'exit 0'], {
+      timeout: 5000,
+      stdio: 'pipe',
+    });
+    if (probe.status !== 0) {
+      console.log('  [SKIP] powershell.exe indisponible');
+      return;
+    }
+
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-feedback-task-'));
+    try {
+      const opsDir = path.join(tmp, 'ops');
+      const hintsDir = path.join(tmp, 'data', 'client-learning');
+      fs.mkdirSync(opsDir, { recursive: true });
+      fs.mkdirSync(hintsDir, { recursive: true });
+
+      const copiedTask = path.join(opsDir, 'feedback-task.ps1');
+      const fakeCycle = path.join(opsDir, 'feedback-cycle.ps1');
+      const trackedHints = path.join(hintsDir, 'client-learning-hints.json');
+      const initialJson = '{"generated_at":"initial","clients":[]}\n';
+      const changedJson = '{"generated_at":"changed","clients":[{"client":"demo","signals":[]}]}';
+
+      fs.copyFileSync(taskPath, copiedTask);
+      fs.writeFileSync(trackedHints, initialJson, 'utf8');
+      fs.writeFileSync(fakeCycle, [
+        '$repo = Split-Path $PSScriptRoot -Parent',
+        '$hints = Join-Path $repo "data\\client-learning\\client-learning-hints.json"',
+        `'${changedJson}' | Set-Content -Path $hints -Encoding UTF8`,
+        'exit 0',
+      ].join('\r\n'), 'ascii');
+
+      const result = spawnSync('powershell.exe', [
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', copiedTask,
+        'run',
+      ], {
+        cwd: tmp,
+        timeout: 30000,
+        encoding: 'utf8',
+      });
+
+      if (result.status !== 0) {
+        throw new Error(
+          'feedback-task.ps1 exit=' + result.status +
+          '\nSTDOUT:\n' + (result.stdout || '') +
+          '\nSTDERR:\n' + (result.stderr || '')
+        );
+      }
+
+      expect(fs.readFileSync(trackedHints, 'utf8')).toBe(initialJson);
+
+      const pendingLatest = path.join(
+        tmp,
+        'data',
+        'feedback',
+        'pending-learning',
+        'client-learning-hints-latest.json'
+      );
+      expect(fs.existsSync(pendingLatest)).toBe(true);
+      expect(fs.readFileSync(pendingLatest, 'utf8')).toContain('"generated_at":"changed"');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 
