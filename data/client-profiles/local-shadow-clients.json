@@ -34,7 +34,13 @@
           "nettoiement"
         ],
         "_gd127_patch_date": "2026-07-02",
-        "_gd127_source": "learning_analysis_gd126"
+        "_gd127_source": "learning_analysis_gd126",
+        "review_if_contains": [
+          "prestation de blanchissage",
+          "desherbage",
+          "curage",
+          "gardiennage"
+        ]
       }
     ]
   },

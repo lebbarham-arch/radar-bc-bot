@@ -658,7 +658,8 @@ function _computeShadowComparison(client, items, criteres, radarType) {
       if (wantDetail) {
         var cleanResult2      = _shadowScoreClean(item, criteres);
         guardImpactAll = guardImpactAll.concat(cleanResult2.guardBlockedList || []); // GD-024g
-        var cleanTextExcerpt2 = buildCleanMatchText(item).slice(0, 200);
+        var cleanText2Full    = buildCleanMatchText(item); // GD-142 : texte complet pour garde-fou profil
+        var cleanTextExcerpt2 = cleanText2Full.slice(0, 200);
         var cleanSigs2        = cleanResult2.signals.filter(function(s) { return s.indexOf("bloque(") === -1; });
         var primCount2        = cleanResult2.primarySignals.length;
         var inclCount2        = cleanResult2.inclusionSignals.length;
@@ -680,9 +681,33 @@ function _computeShadowComparison(client, items, criteres, radarType) {
           isAutoCandidate2 = isStrong2 && !isWeakSingle2 && !exclusionHit2;
         }
         if (hintBlockAuto) isAutoCandidate2 = false;
+        // ── Garde-fou profil : review_if_contains uniquement (GD-142) ──────────────
+        // Seul review_if_contains produit un blocage executoire (profile_review_blocked).
+        // _gd127_ambiguous_review est conserve comme metadonnee consultative (profile_ambiguous_hits)
+        // mais ne bloque jamais l'auto — c'est une liste historique trop large.
+        // Les termes restent dans le profil client, jamais dans le code moteur.
+        var _prtBlocking = [];
+        criteres.forEach(function(cr) {
+          (cr.review_if_contains || []).forEach(function(t) {
+            if (t && _prtBlocking.indexOf(t) === -1) _prtBlocking.push(t);
+          });
+        });
+        var profileReviewHits    = _prtBlocking.filter(function(t) { return hasAnyKw(cleanText2Full, [t]); });
+        var profileReviewBlocked = profileReviewHits.length > 0;
+        if (profileReviewBlocked) isAutoCandidate2 = false;
+        // _gd127_ambiguous_review : information consultative uniquement, pas de blocage
+        var _prtAdvisory = [];
+        criteres.forEach(function(cr) {
+          (cr._gd127_ambiguous_review || []).forEach(function(t) {
+            if (t && _prtAdvisory.indexOf(t) === -1) _prtAdvisory.push(t);
+          });
+        });
+        var profileAmbiguousHits = _prtAdvisory.filter(function(t) { return hasAnyKw(cleanText2Full, [t]); });
         var strengthReason2;
         if (exclusionHit2) {
           strengthReason2 = "exclu (ai_exclusions)";
+        } else if (profileReviewBlocked) {
+          strengthReason2 = "bloque_profil (" + profileReviewHits.join(', ') + ")";
         } else if (primCount2 > 0 && inclCount2 > 0) {
           strengthReason2 = "valeur_principale + inclusions (" + primCount2 + "p+" + inclCount2 + "i)";
         } else if (primCount2 > 0) {
@@ -717,6 +742,10 @@ function _computeShadowComparison(client, items, criteres, radarType) {
           hint_applied:          hintApplied.length ? hintApplied.join(',') : undefined,
           // GD-135 : explication lisible des hints appliques (format rapport shadow)
           learning_hint:         _hintResult2.explanations.length ? _hintResult2.explanations.join(' | ') : undefined,
+          // GD-142 : garde-fou profil
+          profile_review_blocked:  profileReviewBlocked || undefined,
+          profile_review_hits:     profileReviewHits.length ? profileReviewHits : undefined,
+          profile_ambiguous_hits:  profileAmbiguousHits.length ? profileAmbiguousHits : undefined,
         });
       } else {
         cleanOnlyList.push({ bc_id: item.id || "" });
