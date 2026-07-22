@@ -53,6 +53,18 @@ describe('feedback-task - execution sure', () => {
     expect(source).toContain('feedback-task-*.log');
     expect(source).toContain('Select-Object -Skip 30');
   });
+
+  test('hints generes archives hors fichier versionne', () => {
+    expect(source).toContain('data\\feedback\\pending-learning');
+    expect(source).toContain('client-learning-hints-latest.json');
+    expect(source).toContain('ConvertFrom-Json | Out-Null');
+  });
+
+  test('fichier hints versionne restaure dans finally', () => {
+    expect(source).toContain('[System.IO.File]::ReadAllBytes($trackedHints)');
+    expect(source).toContain('[System.IO.File]::WriteAllBytes($trackedHints, $hintsBackup)');
+    expect(source).toContain('elseif (-not $hintsExisted -and (Test-Path $trackedHints))');
+  });
 });
 
 describe('feedback-task - interdictions', () => {
