@@ -10,11 +10,13 @@
  * d'import, d'analyse ou de construction des hints.
  *
  * Securite :
- * - SELECT Supabase uniquement pour lister les clients actifs.
+ * - SELECT Supabase uniquement pour lister les clients et lire les feedbacks.
  * - Aucun scan, aucune notification, aucun appel Fly.
  * - Aucun changement scoring, seuil, guard ou regle metier.
  * - Checkpoint local dans data/feedback/ (deja gitignore).
  * - En cas d'echec d'un client, son checkpoint n'avance pas.
+ * - Premier lancement : rapproche l'historique Supabase des decisions client
+ *   deja importees afin d'eviter de recreer de faux cycles.
  *
  * Usage :
  *   node scripts/run-feedback-learning-cycle.js
@@ -29,10 +31,16 @@ var fs = require('fs');
 var path = require('path');
 var spawnSync = require('child_process').spawnSync;
 
+var exporter = require('./export-client-feedback-events');
+var converter = require('./convert-feedback-events-to-review-csv');
+
 var ROOT = path.resolve(__dirname, '..');
-var STATE_FILE = path.join(ROOT, 'data', 'feedback', 'feedback-learning-state.json');
+var FEEDBACK_DIR = path.join(ROOT, 'data', 'feedback');
+var DECISIONS_DIR = path.join(ROOT, 'data', 'review-decisions');
+var STATE_FILE = path.join(FEEDBACK_DIR, 'feedback-learning-state.json');
 var ORCHESTRATOR = path.join(__dirname, 'run-client-feedback-learning-cycle.js');
 var DEFAULT_SINCE = '1970-01-01T00:00:00.000Z';
+var FEEDBACK_PAGE_SIZE = 500;
 
 function isValidIso(value) {
   return typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Date.parse(value));
@@ -74,13 +82,17 @@ function normalizeCheckpoint(value, fallback) {
   return new Date(raw).toISOString();
 }
 
+function buildStateKey(clientId, radarType) {
+  return String(clientId || '') + '|' + String(radarType || 'bc');
+}
+
 function loadState(filePath) {
-  if (!fs.existsSync(filePath)) return { version: 1, clients: {} };
+  if (!fs.existsSync(filePath)) return { version: 2, streams: {} };
   try {
     var parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    if (!parsed || typeof parsed !== 'object') return { version: 1, clients: {} };
-    if (!parsed.clients || typeof parsed.clients !== 'object') parsed.clients = {};
-    parsed.version = 1;
+    if (!parsed || typeof parsed !== 'object') return { version: 2, streams: {} };
+    if (!parsed.streams || typeof parsed.streams !== 'object') parsed.streams = {};
+    parsed.version = 2;
     return parsed;
   } catch (e) {
     throw new Error('Checkpoint invalide: ' + e.message);
@@ -104,8 +116,7 @@ function buildClientsQuery(clientId) {
   return params.join('&');
 }
 
-async function fetchActiveClients(sbUrl, sbKey, clientId) {
-  var url = sbUrl.replace(/\/$/, '') + '/rest/v1/clients?' + buildClientsQuery(clientId);
+async function fetchJson(url, sbKey) {
   var res = await fetch(url, {
     method: 'GET',
     headers: {
@@ -119,8 +130,122 @@ async function fetchActiveClients(sbUrl, sbKey, clientId) {
   try { data = text ? JSON.parse(text) : null; }
   catch (_e) { throw new Error('Supabase reponse non-JSON: ' + text.slice(0, 200)); }
   if (!res.ok) throw new Error('Supabase HTTP ' + res.status + ': ' + text.slice(0, 200));
+  return data;
+}
+
+async function fetchActiveClients(sbUrl, sbKey, clientId) {
+  var url = sbUrl.replace(/\/$/, '') + '/rest/v1/clients?' + buildClientsQuery(clientId);
+  var data = await fetchJson(url, sbKey);
   if (!Array.isArray(data)) throw new Error('Supabase clients: reponse inattendue');
   return data;
+}
+
+function buildFeedbackQuery(clientId, radarType, offset) {
+  return [
+    'client_id=eq.' + encodeURIComponent(clientId),
+    'radar_type=eq.' + encodeURIComponent(radarType),
+    'source=eq.web_click',
+    'order=created_at.asc',
+    'limit=' + FEEDBACK_PAGE_SIZE,
+    'offset=' + offset,
+    'select=id,client_id,item_id,radar_type,critere,type,source,raw_payload,created_at',
+  ].join('&');
+}
+
+async function fetchAllClientFeedback(sbUrl, sbKey, clientId, radarType) {
+  var rows = [];
+  var offset = 0;
+  while (true) {
+    var url = sbUrl.replace(/\/$/, '') + '/rest/v1/client_feedback_events?' +
+      buildFeedbackQuery(clientId, radarType, offset);
+    var chunk = await fetchJson(url, sbKey);
+    if (!Array.isArray(chunk)) throw new Error('Supabase feedbacks: reponse inattendue');
+    rows = rows.concat(chunk);
+    if (chunk.length < FEEDBACK_PAGE_SIZE) break;
+    offset += FEEDBACK_PAGE_SIZE;
+  }
+  return rows;
+}
+
+function feedbackDecisionKey(event) {
+  var review = converter.convertFeedbackEvent(event);
+  if (!review) return null;
+  return String(review.client || '') + '|' + String(review.bc_id || '') + '|' + String(review.decision || '');
+}
+
+function loadImportedClientDecisionKeys(decisionsDir, clientId, clientName) {
+  var keys = new Set();
+  if (!fs.existsSync(decisionsDir)) return keys;
+
+  fs.readdirSync(decisionsDir)
+    .filter(function(name) { return /^review-decisions-.*\.json$/.test(name); })
+    .sort()
+    .forEach(function(name) {
+      try {
+        var data = JSON.parse(fs.readFileSync(path.join(decisionsDir, name), 'utf8'));
+        var records = Array.isArray(data.records) ? data.records : [];
+        records.forEach(function(record) {
+          var source = String(record.review_source || '');
+          var recordClient = String(record.client || '');
+          if (source !== 'client') return;
+          if (recordClient !== String(clientId) && recordClient !== String(clientName || '')) return;
+          var key = recordClient + '|' + String(record.bc_id || '') + '|' + String(record.decision || '');
+          keys.add(key);
+          keys.add(String(clientId) + '|' + String(record.bc_id || '') + '|' + String(record.decision || ''));
+        });
+      } catch (_e) {
+        // Un fichier invalide est ignore ; l'orchestrateur reste la source de verite.
+      }
+    });
+
+  return keys;
+}
+
+function selectBootstrapEvents(events, importedKeys) {
+  return (events || []).filter(function(event) {
+    var key = feedbackDecisionKey(event);
+    return key && importedKeys.has(key);
+  });
+}
+
+function sanitizeFilePart(value) {
+  return String(value || 'client')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'client';
+}
+
+function writeBootstrapArchive(clientId, radarType, events) {
+  if (!events.length) return null;
+  fs.mkdirSync(FEEDBACK_DIR, { recursive: true });
+  var filePath = path.join(
+    FEEDBACK_DIR,
+    'feedback-events-client-bootstrap-' + sanitizeFilePart(clientId) + '-' + radarType + '.jsonl'
+  );
+  var tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, exporter.buildJsonlContent(events), 'utf8');
+  fs.renameSync(tmp, filePath);
+  return filePath;
+}
+
+async function reconcileImportedHistory(sbUrl, sbKey, client, radarType, dryRun) {
+  var importedKeys = loadImportedClientDecisionKeys(DECISIONS_DIR, client.id, client.nom || '');
+  if (!importedKeys.size) {
+    return { supabase: 0, real: 0, alreadyImported: 0, archivePath: null };
+  }
+
+  var rawRows = await fetchAllClientFeedback(sbUrl, sbKey, client.id, radarType);
+  var transformed = exporter.filterAndTransform(rawRows, { includeTests: false });
+  var alreadyImported = selectBootstrapEvents(transformed.events, importedKeys);
+  var archivePath = dryRun ? null : writeBootstrapArchive(client.id, radarType, alreadyImported);
+
+  return {
+    supabase: rawRows.length,
+    real: transformed.events.length,
+    alreadyImported: alreadyImported.length,
+    archivePath: archivePath,
+  };
 }
 
 function buildChildArgs(clientId, since, radarType, dryRun) {
@@ -178,13 +303,27 @@ async function main(argv) {
 
   for (var i = 0; i < clients.length; i++) {
     var client = clients[i];
-    var saved = state.clients[client.id] && state.clients[client.id].since;
+    var streamKey = buildStateKey(client.id, opts.radarType);
+    var savedEntry = state.streams[streamKey];
+    var saved = savedEntry && savedEntry.since;
     var since = normalizeCheckpoint(opts.since || saved, DEFAULT_SINCE);
 
     console.log('');
     console.log('[CLIENT] ' + (client.nom || client.id));
     console.log('  client-id : ' + client.id);
     console.log('  since     : ' + since);
+
+    if (!savedEntry && !opts.since) {
+      console.log('  bootstrap : rapprochement historique en cours...');
+      var bootstrap = await reconcileImportedHistory(sbUrl, sbKey, client, opts.radarType, opts.dryRun);
+      console.log('  historique Supabase : ' + bootstrap.supabase);
+      console.log('  feedbacks reels      : ' + bootstrap.real);
+      console.log('  deja importes        : ' + bootstrap.alreadyImported);
+      if (bootstrap.archivePath) console.log('  archive idempotence  : ' + bootstrap.archivePath);
+      if (opts.dryRun && bootstrap.alreadyImported) {
+        console.log('  dry-run              : archive non ecrite');
+      }
+    }
 
     var result = runClientCycle(client.id, since, opts.radarType, opts.dryRun);
     if (!result.ok) {
@@ -195,7 +334,8 @@ async function main(argv) {
 
     okCount++;
     if (!opts.dryRun) {
-      state.clients[client.id] = {
+      state.streams[streamKey] = {
+        client_id: client.id,
         client_name: client.nom || '',
         since: runStartedAt,
         updated_at: new Date().toISOString(),
@@ -223,8 +363,14 @@ async function main(argv) {
 module.exports = {
   parseArgs: parseArgs,
   normalizeCheckpoint: normalizeCheckpoint,
+  buildStateKey: buildStateKey,
   loadState: loadState,
   buildClientsQuery: buildClientsQuery,
+  buildFeedbackQuery: buildFeedbackQuery,
+  feedbackDecisionKey: feedbackDecisionKey,
+  loadImportedClientDecisionKeys: loadImportedClientDecisionKeys,
+  selectBootstrapEvents: selectBootstrapEvents,
+  sanitizeFilePart: sanitizeFilePart,
   buildChildArgs: buildChildArgs,
   runClientCycle: runClientCycle,
 };
