@@ -32,6 +32,11 @@ describe('feedback-task - commandes et cadence', () => {
     expect(source).toContain('(Get-Date).AddMinutes(2)');
     expect(source).toContain('-StartWhenAvailable');
   });
+
+  test('enregistre le chemin du script courant avec PSCommandPath', () => {
+    expect(source).toContain('$scriptPath = $PSCommandPath');
+    expect(source).not.toContain('$scriptPath = $MyInvocation.MyCommand.Path');
+  });
 });
 
 describe('feedback-task - execution sure', () => {
