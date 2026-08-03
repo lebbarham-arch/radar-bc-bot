@@ -72,14 +72,22 @@ function normalizeSignal(value) {
     .trim();
 }
 
+var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** true si la valeur est un UUID canonique. */
+function isUuid(value) {
+  if (value === undefined || value === null) return false;
+  return UUID_RE.test(String(value).trim());
+}
+
 /**
- * Identite client : comparaison exacte apres trim.
- * Aucun repli sur le nom, aucune normalisation d'accents ou de casse :
- * un client_id est un identifiant opaque.
+ * Identite client : UUID canonique uniquement.
+ * Une valeur qui n'est pas un UUID retourne "" et ne peut donc jamais
+ * servir de cle de lookup. Aucun repli sur le nom ni sur les alias.
  */
 function normalizeClientId(value) {
-  if (value === undefined || value === null) return "";
-  return String(value).trim();
+  if (!isUuid(value)) return "";
+  return String(value).trim().toLowerCase();
 }
 
 /* ------------------------------------------------------------------ */
@@ -115,7 +123,10 @@ function buildIndex(parsed) {
     var entry = clients[i];
     if (!entry || typeof entry !== "object") continue;
 
-    var clientKey = normalizeClientId(entry.client);
+    /* client_id est prioritaire ; `client` n'est accepte que s'il porte
+       lui-meme un UUID (compatibilite avec les fichiers anterieurs).
+       client_name et aliases ne sont jamais indexes. */
+    var clientKey = normalizeClientId(entry.client_id) || normalizeClientId(entry.client);
     if (!clientKey) continue;
 
     var signals = entry.signals;
@@ -311,6 +322,7 @@ module.exports = {
   MIN_TOTAL: MIN_TOTAL,
   MIN_CYCLES: MIN_CYCLES,
   EFFECT_DEMOTE_TO_REVIEW: EFFECT_DEMOTE_TO_REVIEW,
+  isUuid: isUuid,
   isRuntimeLearningEnabled: isRuntimeLearningEnabled,
   normalizeSignal: normalizeSignal,
   normalizeClientId: normalizeClientId,

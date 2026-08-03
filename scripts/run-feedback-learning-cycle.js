@@ -271,19 +271,22 @@ async function reconcileImportedHistory(sbUrl, sbKey, client, radarType, dryRun)
   };
 }
 
-function buildChildArgs(clientId, since, radarType, dryRun) {
+function buildChildArgs(clientId, since, radarType, dryRun, clientName) {
   var args = [
     ORCHESTRATOR,
     '--client-id', clientId,
     '--since', since,
     '--radar-type', radarType,
   ];
+  // Le nom est deja connu du client actif : aucune relecture Supabase.
+  // Metadonnee d'affichage uniquement, jamais un identifiant.
+  if (clientName) args.push('--client-name', clientName);
   if (dryRun) args.push('--dry-run');
   return args;
 }
 
-function runClientCycle(clientId, since, radarType, dryRun) {
-  var result = spawnSync(process.execPath, buildChildArgs(clientId, since, radarType, dryRun), {
+function runClientCycle(clientId, since, radarType, dryRun, clientName) {
+  var result = spawnSync(process.execPath, buildChildArgs(clientId, since, radarType, dryRun, clientName), {
     cwd: ROOT,
     encoding: 'utf8',
     env: process.env,
@@ -348,7 +351,7 @@ async function main(argv) {
       }
     }
 
-    var result = runClientCycle(client.id, since, opts.radarType, opts.dryRun);
+    var result = runClientCycle(client.id, since, opts.radarType, opts.dryRun, client.nom || '');
     if (!result.ok) {
       failed.push({ client_id: client.id, client_name: client.nom || '', code: result.code });
       console.error('[AUTOPILOT] Echec client=' + client.id + ' code=' + result.code + ' checkpoint inchange');

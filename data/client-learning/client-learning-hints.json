@@ -1,24 +1,96 @@
 {
-  "generated_at": "2026-07-22T23:01:05.014Z",
+  "generated_at": "2026-08-03T20:12:46.874Z",
   "source": "review-decisions",
-  "files_read": 26,
-  "raw_total": 280,
-  "dedup_total": 194,
+  "files_read": 27,
+  "raw_total": 281,
+  "dedup_total": 191,
   "clients": [
     {
       "client": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "client_id": "15a96b88-0c98-4de9-9f66-739e3a28dafa",
+      "client_name": "TEST PROD - Nettoyage Hygiène",
+      "aliases": [
+        "TEST PROD - Nettoyage Hygiene",
+        "TEST PROD - Nettoyage Hygiène"
+      ],
       "signals": [
         {
-          "signal": "nettoyage",
-          "keep": 12,
-          "reject": 15,
+          "signal": "deratisation",
+          "keep": 2,
+          "reject": 0,
           "ignore": 0,
-          "total": 27,
-          "keep_rate": 44,
-          "reject_rate": 56,
-          "cycles_count": 4,
+          "total": 2,
+          "keep_rate": 100,
+          "reject_rate": 0,
+          "cycles_count": 5,
           "sources": [
-            "client"
+            "operator"
+          ],
+          "verdict": "Tres fiable",
+          "promotion_ready": false,
+          "recommended_effect": "keep_review",
+          "score_adjustment": 0,
+          "block_auto_notify": true,
+          "advisory_only": false,
+          "human_validation_required": false,
+          "reason": "Données insuffisantes (2 décisions, minimum 3)"
+        },
+        {
+          "signal": "desinfection",
+          "keep": 4,
+          "reject": 3,
+          "ignore": 0,
+          "total": 7,
+          "keep_rate": 57,
+          "reject_rate": 43,
+          "cycles_count": 8,
+          "sources": [
+            "ai_assisted_validated",
+            "client",
+            "operator"
+          ],
+          "verdict": "Ambigu",
+          "promotion_ready": false,
+          "recommended_effect": "keep_review",
+          "score_adjustment": 0,
+          "block_auto_notify": true,
+          "advisory_only": false,
+          "human_validation_required": false,
+          "reason": "Signal ambigu — maintenir en review humaine"
+        },
+        {
+          "signal": "desinsectisation",
+          "keep": 2,
+          "reject": 0,
+          "ignore": 0,
+          "total": 2,
+          "keep_rate": 100,
+          "reject_rate": 0,
+          "cycles_count": 5,
+          "sources": [
+            "operator"
+          ],
+          "verdict": "Tres fiable",
+          "promotion_ready": false,
+          "recommended_effect": "keep_review",
+          "score_adjustment": 0,
+          "block_auto_notify": true,
+          "advisory_only": false,
+          "human_validation_required": false,
+          "reason": "Données insuffisantes (2 décisions, minimum 3)"
+        },
+        {
+          "signal": "hygiene",
+          "keep": 5,
+          "reject": 14,
+          "ignore": 4,
+          "total": 23,
+          "keep_rate": 22,
+          "reject_rate": 61,
+          "cycles_count": 14,
+          "sources": [
+            "ai_assisted_validated",
+            "operator"
           ],
           "verdict": "Ambigu",
           "promotion_ready": false,
@@ -28,11 +100,126 @@
           "advisory_only": false,
           "human_validation_required": false,
           "reason": "Signal rejeté/ignoré pour ce client sur plusieurs cycles"
+        },
+        {
+          "signal": "insecticide",
+          "keep": 0,
+          "reject": 2,
+          "ignore": 0,
+          "total": 2,
+          "keep_rate": 0,
+          "reject_rate": 100,
+          "cycles_count": 2,
+          "sources": [
+            "operator"
+          ],
+          "verdict": "Risque",
+          "promotion_ready": false,
+          "recommended_effect": "keep_review",
+          "score_adjustment": 0,
+          "block_auto_notify": true,
+          "advisory_only": false,
+          "human_validation_required": false,
+          "reason": "Données insuffisantes (2 décisions, minimum 3)"
+        },
+        {
+          "signal": "nettoiement",
+          "keep": 2,
+          "reject": 0,
+          "ignore": 0,
+          "total": 2,
+          "keep_rate": 100,
+          "reject_rate": 0,
+          "cycles_count": 3,
+          "sources": [
+            "operator"
+          ],
+          "verdict": "Tres fiable",
+          "promotion_ready": false,
+          "recommended_effect": "keep_review",
+          "score_adjustment": 0,
+          "block_auto_notify": true,
+          "advisory_only": false,
+          "human_validation_required": false,
+          "reason": "Données insuffisantes (2 décisions, minimum 3)"
+        },
+        {
+          "signal": "nettoyage",
+          "keep": 46,
+          "reject": 22,
+          "ignore": 1,
+          "total": 69,
+          "keep_rate": 67,
+          "reject_rate": 32,
+          "cycles_count": 13,
+          "sources": [
+            "ai_assisted_validated",
+            "client",
+            "operator"
+          ],
+          "verdict": "Fiable",
+          "promotion_ready": false,
+          "recommended_effect": "keep_review",
+          "score_adjustment": 0,
+          "block_auto_notify": true,
+          "advisory_only": false,
+          "human_validation_required": false,
+          "reason": "Signal ambigu — maintenir en review humaine"
+        },
+        {
+          "signal": "produits d entretien",
+          "keep": 1,
+          "reject": 0,
+          "ignore": 0,
+          "total": 1,
+          "keep_rate": 100,
+          "reject_rate": 0,
+          "cycles_count": 4,
+          "sources": [
+            "operator"
+          ],
+          "verdict": "Insuffisant",
+          "promotion_ready": false,
+          "recommended_effect": "keep_review",
+          "score_adjustment": 0,
+          "block_auto_notify": true,
+          "advisory_only": false,
+          "human_validation_required": false,
+          "reason": "Données insuffisantes (1 décisions, minimum 3)"
+        },
+        {
+          "signal": "produits de nettoyage",
+          "keep": 5,
+          "reject": 0,
+          "ignore": 0,
+          "total": 5,
+          "keep_rate": 100,
+          "reject_rate": 0,
+          "cycles_count": 3,
+          "sources": [
+            "operator"
+          ],
+          "verdict": "Tres fiable",
+          "promotion_ready": true,
+          "recommended_effect": "boost",
+          "score_adjustment": 5,
+          "block_auto_notify": false,
+          "advisory_only": false,
+          "human_validation_required": false,
+          "reason": "Signal fiable pour ce client (keep_rate=100%, cycles=3)"
         }
       ]
-    },
+    }
+  ],
+  "unresolved_clients": [
     {
-      "client": "TEST PROD - Fournitures Bureau",
+      "client_key": "test prod fournitures bureau",
+      "client_name": "TEST PROD - Fournitures Bureau",
+      "aliases": [
+        "TEST PROD - Fournitures Bureau"
+      ],
+      "reason": "aucune preuve reliant ce nom a un UUID",
+      "executable": false,
       "signals": [
         {
           "signal": "cartouches",
@@ -163,7 +350,13 @@
       ]
     },
     {
-      "client": "TEST PROD - Informatique",
+      "client_key": "test prod informatique",
+      "client_name": "TEST PROD - Informatique",
+      "aliases": [
+        "TEST PROD - Informatique"
+      ],
+      "reason": "aucune preuve reliant ce nom a un UUID",
+      "executable": false,
       "signals": [
         {
           "signal": "developpement",
@@ -294,203 +487,7 @@
           "reason": "Signal ambigu — maintenir en review humaine"
         }
       ]
-    },
-    {
-      "client": "TEST PROD - Nettoyage Hygiène",
-      "signals": [
-        {
-          "signal": "deratisation",
-          "keep": 3,
-          "reject": 0,
-          "ignore": 0,
-          "total": 3,
-          "keep_rate": 100,
-          "reject_rate": 0,
-          "cycles_count": 5,
-          "sources": [
-            "operator"
-          ],
-          "verdict": "Tres fiable",
-          "promotion_ready": true,
-          "recommended_effect": "boost",
-          "score_adjustment": 5,
-          "block_auto_notify": false,
-          "advisory_only": false,
-          "human_validation_required": false,
-          "reason": "Signal fiable pour ce client (keep_rate=100%, cycles=5)"
-        },
-        {
-          "signal": "desinfection",
-          "keep": 4,
-          "reject": 2,
-          "ignore": 0,
-          "total": 6,
-          "keep_rate": 67,
-          "reject_rate": 33,
-          "cycles_count": 7,
-          "sources": [
-            "ai_assisted_validated",
-            "operator"
-          ],
-          "verdict": "Fiable",
-          "promotion_ready": false,
-          "recommended_effect": "keep_review",
-          "score_adjustment": 0,
-          "block_auto_notify": true,
-          "advisory_only": false,
-          "human_validation_required": false,
-          "reason": "Signal ambigu — maintenir en review humaine"
-        },
-        {
-          "signal": "desinsectisation",
-          "keep": 3,
-          "reject": 0,
-          "ignore": 0,
-          "total": 3,
-          "keep_rate": 100,
-          "reject_rate": 0,
-          "cycles_count": 5,
-          "sources": [
-            "operator"
-          ],
-          "verdict": "Tres fiable",
-          "promotion_ready": true,
-          "recommended_effect": "boost",
-          "score_adjustment": 5,
-          "block_auto_notify": false,
-          "advisory_only": false,
-          "human_validation_required": false,
-          "reason": "Signal fiable pour ce client (keep_rate=100%, cycles=5)"
-        },
-        {
-          "signal": "hygiene",
-          "keep": 5,
-          "reject": 14,
-          "ignore": 7,
-          "total": 26,
-          "keep_rate": 19,
-          "reject_rate": 54,
-          "cycles_count": 14,
-          "sources": [
-            "ai_assisted_validated",
-            "operator"
-          ],
-          "verdict": "Ambigu",
-          "promotion_ready": false,
-          "recommended_effect": "demote_to_review",
-          "score_adjustment": -3,
-          "block_auto_notify": true,
-          "advisory_only": false,
-          "human_validation_required": false,
-          "reason": "Signal rejeté/ignoré pour ce client sur plusieurs cycles"
-        },
-        {
-          "signal": "insecticide",
-          "keep": 0,
-          "reject": 2,
-          "ignore": 0,
-          "total": 2,
-          "keep_rate": 0,
-          "reject_rate": 100,
-          "cycles_count": 2,
-          "sources": [
-            "operator"
-          ],
-          "verdict": "Risque",
-          "promotion_ready": false,
-          "recommended_effect": "keep_review",
-          "score_adjustment": 0,
-          "block_auto_notify": true,
-          "advisory_only": false,
-          "human_validation_required": false,
-          "reason": "Données insuffisantes (2 décisions, minimum 3)"
-        },
-        {
-          "signal": "nettoiement",
-          "keep": 2,
-          "reject": 0,
-          "ignore": 0,
-          "total": 2,
-          "keep_rate": 100,
-          "reject_rate": 0,
-          "cycles_count": 3,
-          "sources": [
-            "operator"
-          ],
-          "verdict": "Tres fiable",
-          "promotion_ready": false,
-          "recommended_effect": "keep_review",
-          "score_adjustment": 0,
-          "block_auto_notify": true,
-          "advisory_only": false,
-          "human_validation_required": false,
-          "reason": "Données insuffisantes (2 décisions, minimum 3)"
-        },
-        {
-          "signal": "nettoyage",
-          "keep": 34,
-          "reject": 7,
-          "ignore": 1,
-          "total": 42,
-          "keep_rate": 81,
-          "reject_rate": 17,
-          "cycles_count": 9,
-          "sources": [
-            "ai_assisted_validated",
-            "operator"
-          ],
-          "verdict": "Tres fiable",
-          "promotion_ready": true,
-          "recommended_effect": "boost",
-          "score_adjustment": 5,
-          "block_auto_notify": false,
-          "advisory_only": false,
-          "human_validation_required": false,
-          "reason": "Signal fiable pour ce client (keep_rate=81%, cycles=9)"
-        },
-        {
-          "signal": "produits d entretien",
-          "keep": 1,
-          "reject": 0,
-          "ignore": 0,
-          "total": 1,
-          "keep_rate": 100,
-          "reject_rate": 0,
-          "cycles_count": 4,
-          "sources": [
-            "operator"
-          ],
-          "verdict": "Insuffisant",
-          "promotion_ready": false,
-          "recommended_effect": "keep_review",
-          "score_adjustment": 0,
-          "block_auto_notify": true,
-          "advisory_only": false,
-          "human_validation_required": false,
-          "reason": "Données insuffisantes (1 décisions, minimum 3)"
-        },
-        {
-          "signal": "produits de nettoyage",
-          "keep": 5,
-          "reject": 0,
-          "ignore": 0,
-          "total": 5,
-          "keep_rate": 100,
-          "reject_rate": 0,
-          "cycles_count": 3,
-          "sources": [
-            "operator"
-          ],
-          "verdict": "Tres fiable",
-          "promotion_ready": true,
-          "recommended_effect": "boost",
-          "score_adjustment": 5,
-          "block_auto_notify": false,
-          "advisory_only": false,
-          "human_validation_required": false,
-          "reason": "Signal fiable pour ce client (keep_rate=100%, cycles=3)"
-        }
-      ]
     }
-  ]
+  ],
+  "identity_collisions": []
 }

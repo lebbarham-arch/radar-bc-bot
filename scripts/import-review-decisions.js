@@ -160,6 +160,8 @@ if (rows.length < 2) {
 var header = rows[0];
 var COL = {
   client:             header.indexOf('client'),
+  client_id:          header.indexOf('client_id'),
+  client_name:        header.indexOf('client_name'),
   bc_id:              header.indexOf('bc_id'),
   score:              header.indexOf('score'),
   signal_origin:      header.indexOf('signal_origin'),
@@ -250,6 +252,9 @@ rows.slice(1).forEach(function(row) {
 
   var rec = {
     client:             row[COL.client]             || '',
+    // Identifiant et libelle propages separement (jamais confondus).
+    client_id:          COL.client_id   >= 0 ? (row[COL.client_id]   || '') : '',
+    client_name:        COL.client_name >= 0 ? (row[COL.client_name] || '') : '',
     bc_id:              row[COL.bc_id]              || '',
     score:              Number(row[COL.score])       || 0,
     signal_origin:      row[COL.signal_origin]       || '',

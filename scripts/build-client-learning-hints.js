@@ -29,10 +29,12 @@
 var fs   = require('fs');
 var path = require('path');
 var normalizeLearningKey = require('./learning-key-utils').normalizeLearningKey;
+var _identity = require('./client-identity-utils');
 
 var DECISIONS_DIR   = path.join(__dirname, '..', 'data', 'review-decisions');
 var HINTS_DIR       = path.join(__dirname, '..', 'data', 'client-learning');
 var HINTS_FILE      = path.join(HINTS_DIR, 'client-learning-hints.json');
+var STATE_FILE      = _identity.DEFAULT_STATE_FILE;
 var DRY_RUN         = process.argv.includes('--dry-run');
 
 // GD-124 : sources consultatives — ne peuvent pas déclencher boost/promotion seules.
@@ -54,7 +56,6 @@ function loadDecisions() {
 
   var rawRecords = [];
   var rawTotal   = 0;
-  var map        = {};   // client::bc_id → record (last-wins)
 
   files.forEach(function(fname) {
     var fpath = path.join(DECISIONS_DIR, fname);
@@ -62,19 +63,32 @@ function loadDecisions() {
       var data    = JSON.parse(fs.readFileSync(fpath, 'utf8'));
       var records = data.records || [];
       rawTotal += records.length;
-      records.forEach(function(r) {
-        rawRecords.push(r);
-        var key = String(r.client || '') + '::' + String(r.bc_id || '');
-        map[key] = r;
-      });
+      records.forEach(function(r) { rawRecords.push(r); });
     } catch (e) {
       console.warn('[WARN] ' + fname + ' ignoré : ' + e.message);
     }
   });
 
+  // Registre d'identite : preuves internes aux decisions (UUID + nom presents
+  // sur un meme enregistrement) completees par l'etat du cycle feedback.
+  // Aucune autre source, aucun acces reseau.
+  var registry = _identity.buildIdentityRegistry(
+    _identity.collectEvidenceFromRecords(rawRecords)
+      .concat(_identity.readEvidenceFromCycleState(STATE_FILE))
+  );
+
+  // Deduplication last-wins sur la cle canonique + bc_id : deux decisions
+  // portant le meme BC sous l'UUID et sous le nom resolu ne comptent qu'une fois.
+  var map = {};
+  rawRecords.forEach(function(r) {
+    var id = _identity.resolveClientIdentity(r, registry);
+    map[id.key + '::' + String(r.bc_id || '')] = r;
+  });
+
   return {
     files:      files,
     rawTotal:   rawTotal,
+    registry:   registry,
     records:    Object.values(map),   // dédupliqués (last-wins)
     rawRecords: rawRecords,           // tous les records avant dedup
   };
@@ -82,16 +96,31 @@ function loadDecisions() {
 
 // ─── 2. Agrégation par client → signal ───────────────────────────────────────
 
-function aggregate(records, rawRecords) {
+function aggregate(records, rawRecords, registry) {
   var byClient = {};
+  var reg      = registry || { byNameKey: {}, displayName: {}, aliasesByUuid: {} };
 
-  // Phase 1 : stats keep/reject/ignore/total depuis les records dédupliqués
-  // Clé d'agrégation normalisée ; label original (premier vu) conservé.
+  // Phase 1 : stats keep/reject/ignore/total depuis les records dédupliqués.
+  // Clé d'agrégation = identité canonique (UUID si résolu, sinon clé de nom).
   records.forEach(function(r) {
-    var rawClient = String(r.client || '(inconnu)').trim();
-    var ck        = normalizeLearningKey(rawClient) || rawClient;
+    var id = _identity.resolveClientIdentity(r, reg);
+    var ck = id.key;
 
-    if (!byClient[ck]) byClient[ck] = { _label: rawClient };
+    if (!byClient[ck]) {
+      byClient[ck] = {
+        _label:     id.client_name || id.client_id || ck,
+        _client_id: id.client_id,
+        _resolved:  id.resolved,
+        _via:       id.via,
+        _warning:   id.warning,
+        _aliases:   [],
+      };
+    }
+    // Les libellés effectivement consolidés sous cette identité.
+    var rawId = _identity.extractRawIdentity(r);
+    if (rawId.name && byClient[ck]._aliases.indexOf(rawId.name) === -1) {
+      byClient[ck]._aliases.push(rawId.name);
+    }
 
     var signals = r.matched_signals;
     if (!Array.isArray(signals) || signals.length === 0) return;
@@ -135,9 +164,8 @@ function aggregate(records, rawRecords) {
 
   // Phase 2 : cycles et sources depuis tous les records bruts (avant dedup)
   (rawRecords || records).forEach(function(r) {
-    var rawClient = String(r.client || '(inconnu)').trim();
-    var ck        = normalizeLearningKey(rawClient) || rawClient;
-    var src       = (r.review_source || 'operator');
+    var ck  = _identity.resolveClientIdentity(r, reg).key;
+    var src = (r.review_source || 'operator');
 
     if (!byClient[ck]) return;
 
@@ -256,21 +284,46 @@ function computeVerdict(keep, reject, total) {
 
 // ─── 4. Construction du JSON hints ───────────────────────────────────────────
 
-function buildHints(loaded) {
-  var byClient = aggregate(loaded.records, loaded.rawRecords);
+var META_KEYS = ['_label', '_client_id', '_resolved', '_via', '_warning', '_aliases'];
 
-  var clients = Object.keys(byClient).sort().map(function(ck) {
-    var sigMap     = byClient[ck];
-    var clientName = sigMap._label || ck;   // label original pour la sortie JSON
-    var signals    = Object.keys(sigMap).sort().filter(function(sk) {
-      return sk !== '_label';               // exclure la métadonnée interne
+function buildHints(loaded) {
+  var registry = loaded.registry || { byNameKey: {}, displayName: {}, aliasesByUuid: {}, collisions: [] };
+  var byClient = aggregate(loaded.records, loaded.rawRecords, registry);
+
+  var resolved   = [];
+  var unresolved = [];
+
+  Object.keys(byClient).sort().forEach(function(ck) {
+    var sigMap  = byClient[ck];
+    var signals = Object.keys(sigMap).sort().filter(function(sk) {
+      return META_KEYS.indexOf(sk) === -1;
     }).map(function(sk) {
       return computeHint(sigMap[sk]);
     });
-    return {
-      client:  clientName,
-      signals: signals,
-    };
+
+    var aliases = (sigMap._aliases || []).slice().sort();
+
+    if (sigMap._client_id) {
+      // Identite resolue : `client` porte l'UUID canonique pour que le runtime
+      // le consomme directement. Le libelle reste en metadonnee d'affichage.
+      resolved.push({
+        client:      sigMap._client_id,
+        client_id:   sigMap._client_id,
+        client_name: sigMap._label || '',
+        aliases:     aliases,
+        signals:     signals,
+      });
+    } else {
+      // Aucun UUID resolvable : entree non executoire, isolee du runtime.
+      unresolved.push({
+        client_key:  ck,
+        client_name: sigMap._label || '',
+        aliases:     aliases,
+        reason:      sigMap._warning || 'identite non resolue',
+        executable:  false,
+        signals:     signals,
+      });
+    }
   });
 
   return {
@@ -279,7 +332,9 @@ function buildHints(loaded) {
     files_read:     loaded.files.length,
     raw_total:      loaded.rawTotal,
     dedup_total:    loaded.records.length,
-    clients:        clients,
+    clients:        resolved,
+    unresolved_clients: unresolved,
+    identity_collisions: (registry.collisions || []).slice(),
   };
 }
 

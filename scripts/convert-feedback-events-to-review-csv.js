@@ -55,6 +55,8 @@ var FEEDBACK_TYPE_MAP = {
 // ---------------------------------------------------------------------------
 var CSV_HEADER = [
   'client',
+  'client_id',
+  'client_name',
   'bc_id',
   'score',
   'signal_origin',
@@ -141,7 +143,11 @@ function convertFeedbackEvent(event) {
   var human_review_comment = comment_parts.join('; ');
 
   return {
+    // `client` reste l'UUID pour compatibilite runtime ; client_id et
+    // client_name sont propages separement (identifiant vs libelle).
     client:              client_id,
+    client_id:           client_id,
+    client_name:         (event.client_name || '').trim(),
     bc_id:               item_id,
     score:               '',               // inconnu depuis feedback brut
     signal_origin:       'inclusion',      // valeur neutre par defaut
