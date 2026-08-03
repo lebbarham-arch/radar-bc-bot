@@ -146,8 +146,13 @@ Garanties :
 - logs dans data/feedback/task-logs/ ;
 - conservation des 30 derniers logs ;
 - aucun scan, aucune notification, aucun appel Fly ;
-- aucun commit, push ou reset Git automatique.
+- aucun commit, push ou reset Git automatique ;
+- le fichier versionne data/client-learning/client-learning-hints.json est
+  toujours restaure apres le cycle, meme en cas d'echec.
 
-Le cycle peut modifier les donnees d'apprentissage locales, notamment
-client-learning-hints.json. La consolidation Git de ces donnees reste une action
-separee et controlee.
+Quand de nouveaux hints sont generes, une copie valide est conservee dans :
+
+    data/feedback/pending-learning/client-learning-hints-latest.json
+
+Les 30 dernieres versions datees sont aussi conservees dans ce dossier ignore
+par Git. Leur consolidation dans main reste une action separee et controlee.

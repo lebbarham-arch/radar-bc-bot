@@ -16,6 +16,7 @@
     - Aucun appel Fly.
     - Aucun commit ni push Git.
     - Un mutex bloque les executions simultanees.
+    - Le fichier de hints versionne est toujours restaure apres execution.
 #>
 
 param(
@@ -34,6 +35,8 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path $PSScriptRoot -Parent
 $cycleScript = Join-Path $PSScriptRoot "feedback-cycle.ps1"
 $logDir = Join-Path $repo "data\feedback\task-logs"
+$pendingHintsDir = Join-Path $repo "data\feedback\pending-learning"
+$trackedHints = Join-Path $repo "data\client-learning\client-learning-hints.json"
 $mutexName = "Local\RadarBCFeedbackLearning"
 
 function Write-Info {
@@ -55,6 +58,14 @@ function Invoke-FeedbackTaskRun {
 
     $mutex = New-Object System.Threading.Mutex($false, $mutexName)
     $lockTaken = $false
+    $hintsExisted = Test-Path $trackedHints
+    $hintsBackup = $null
+    $hintsBeforeHash = ""
+
+    if ($hintsExisted) {
+        $hintsBackup = [System.IO.File]::ReadAllBytes($trackedHints)
+        $hintsBeforeHash = (Get-FileHash -Path $trackedHints -Algorithm SHA256).Hash
+    }
 
     try {
         $lockTaken = $mutex.WaitOne(0)
@@ -85,6 +96,33 @@ function Invoke-FeedbackTaskRun {
             throw "Cycle feedback echoue (code $exitCode). Voir $logFile"
         }
 
+        if (Test-Path $trackedHints) {
+            $hintsAfterHash = (Get-FileHash -Path $trackedHints -Algorithm SHA256).Hash
+            $hintsChanged = (-not $hintsExisted) -or ($hintsAfterHash -ne $hintsBeforeHash)
+
+            if ($hintsChanged) {
+                Get-Content $trackedHints -Raw -Encoding UTF8 |
+                    ConvertFrom-Json | Out-Null
+
+                New-Item -ItemType Directory -Path $pendingHintsDir -Force | Out-Null
+                $pendingFile = Join-Path $pendingHintsDir "client-learning-hints-$timestamp.json"
+                $pendingLatest = Join-Path $pendingHintsDir "client-learning-hints-latest.json"
+
+                Copy-Item $trackedHints $pendingFile -Force
+                Copy-Item $trackedHints $pendingLatest -Force
+
+                $pendingMessage = "Hints learning sauvegardes localement : $pendingFile"
+                Write-Info $pendingMessage
+                Add-Content -Path $logFile -Value "[INFO] $pendingMessage" -Encoding UTF8
+
+                Get-ChildItem -Path $pendingHintsDir -Filter "client-learning-hints-*.json" -File |
+                    Where-Object { $_.Name -ne "client-learning-hints-latest.json" } |
+                    Sort-Object LastWriteTime -Descending |
+                    Select-Object -Skip 30 |
+                    Remove-Item -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         Get-ChildItem -Path $logDir -Filter "feedback-task-*.log" -File |
             Sort-Object LastWriteTime -Descending |
             Select-Object -Skip 30 |
@@ -93,6 +131,13 @@ function Invoke-FeedbackTaskRun {
         Write-Ok "Cycle feedback termine."
     }
     finally {
+        if ($hintsExisted -and $null -ne $hintsBackup) {
+            [System.IO.File]::WriteAllBytes($trackedHints, $hintsBackup)
+        }
+        elseif (-not $hintsExisted -and (Test-Path $trackedHints)) {
+            Remove-Item $trackedHints -Force
+        }
+
         if ($lockTaken) {
             $mutex.ReleaseMutex()
         }
@@ -157,6 +202,7 @@ function Show-FeedbackTaskStatus {
     Write-Host "LastTaskResult : $($info.LastTaskResult)"
     Write-Host "NextRunTime    : $($info.NextRunTime)"
     Write-Host "Logs           : $logDir"
+    Write-Host "Pending hints  : $pendingHintsDir"
 }
 
 function Remove-FeedbackTask {
