@@ -5,9 +5,22 @@
  * Ambiguous cases are held for review by returning "block":
  * the production pipeline already snapshots blocked decisions and does not
  * deliver them to Telegram.
+ *
+ * Client learning overlay (feature-flagged, disabled by default):
+ * once the core gate has produced its decision, an optional client learning
+ * hint may only harden "allow" into "block". It can never turn "block" into
+ * "allow" and can never force a delivery.
  */
 
 "use strict";
+
+var _clientLearning = null;
+try {
+  _clientLearning = require("../learning/client-learning-runtime.js");
+} catch (e) {
+  /* Fail-open : l'absence du module learning ne doit jamais casser le gate. */
+  _clientLearning = null;
+}
 
 var BLOCK_LABELS = new Set([
   "eau", "maintenance", "materiel", "travaux",
@@ -176,7 +189,7 @@ function reviewBlock(reason, signals) {
   };
 }
 
-function checkNotificationQuality(input) {
+function _checkNotificationQualityCore(input) {
   var signals = [];
   var valeur = input.critere_valeur || "";
   var objet = cleanBusinessText(input.objet || "");
@@ -298,7 +311,60 @@ function checkNotificationQuality(input) {
   return { decision: "allow", reason: "Aucun signal bloquant", signals: [] };
 }
 
+/**
+ * Overlay learning client.
+ *
+ * Ordre d'evaluation impose :
+ *   1. le gate metier actuel decide ;
+ *   2. une decision "block" est conservee telle quelle ;
+ *   3. une decision "allow" peut etre durcie en "block" par un hint client
+ *      satisfaisant integralement la politique stricte du loader.
+ *
+ * Aucune transition block -> allow n'est possible ici.
+ * Le resultat porte learning_applied = true uniquement lors d'un durcissement
+ * reel, afin que l'appelant puisse journaliser l'evenement.
+ */
+function checkNotificationQuality(input) {
+  var base = _checkNotificationQualityCore(input);
+
+  if (!base || base.decision !== "allow") return base;
+  if (!_clientLearning) return base;
+
+  var verdict;
+  try {
+    verdict = _clientLearning.evaluateLearningDecision({
+      gateDecision:   base.decision,
+      clientId:       input ? input.client_id : null,
+      critereValeur:  input ? input.critere_valeur : null,
+      env:            process.env,
+    });
+  } catch (e) {
+    /* Fail-open strict : le learning ne fait jamais echouer un scan. */
+    return base;
+  }
+
+  if (!verdict || verdict.decision !== "block") return base;
+
+  var signals = (base.signals || []).slice();
+  signals.push("apprentissage client : demote_to_review");
+
+  return {
+    decision:         "block",
+    reason:           verdict.reason,
+    signals:          signals,
+    learning_applied: true,
+    learning: {
+      client_id:    verdict.client_id,
+      signal:       verdict.signal,
+      effect:       verdict.effect,
+      total:        verdict.total,
+      cycles_count: verdict.cycles_count,
+    },
+  };
+}
+
 module.exports = {
   checkNotificationQuality: checkNotificationQuality,
+  checkNotificationQualityCore: _checkNotificationQualityCore,
   cleanBusinessText: cleanBusinessText,
 };

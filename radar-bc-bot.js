@@ -976,7 +976,17 @@ function _runQualityGate(input) {
     return { decision: "allow", reason: "quality gate unavailable", signals: [] };
   }
   try {
-    return gate.checkNotificationQuality(input);
+    const result = gate.checkNotificationQuality(input);
+    // Journalise uniquement un durcissement reel allow -> block par le learning.
+    if (result && result.learning_applied === true && result.learning) {
+      log("[LEARNING] BLOQUE" +
+          " client_id=" + result.learning.client_id +
+          " critere=" + result.learning.signal +
+          " effect=" + result.learning.effect +
+          " total=" + result.learning.total +
+          " cycles=" + result.learning.cycles_count);
+    }
+    return result;
   } catch (e) {
     log("[GATE] erreur: " + e.message);
     return { decision: "allow", reason: "quality gate error: " + e.message, signals: [] };
@@ -3630,6 +3640,7 @@ async function matchClient(client, itemsToCheck, label, radarType, snapshotRows,
       matched_terms:  matched.map(function(c) { return c.valeur; }),
       radar_type:     radarType,
       is_cancelled:   false,
+      client_id:      client.id || null,
     });
     if (_qg.decision === "block") {
       log("[GATE] BLOQUE client=" + client.nom + " item=" + item.id +
@@ -4957,6 +4968,7 @@ const _httpServer = http.createServer(async (req, res) => {
             matched_terms:  matchedCriteres.map(function(c) { return c.valeur; }),
             radar_type:     "bc",
             is_cancelled:   false,
+            client_id:      client.id || null,
           });
           qualityGate = { decision: _qg.decision, reason: _qg.reason || null };
         }
