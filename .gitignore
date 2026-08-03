@@ -16,3 +16,6 @@ PUSH_*.bat
 
 # Sauvegardes .env temporaires (contiennent des secrets)
 .env.*.bak
+
+# Rapports d audit de consolidation d identite (generes, non versionnes)
+data/reports/client-identity-consolidation-*

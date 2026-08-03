@@ -48,12 +48,17 @@ var _report      = require('./generate-client-learning-report');
 
 function parseArgs(argv) {
   var clientId  = null;
+  var clientName = '';
   var since     = null;
   var radarType = 'bc';
   var dryRun    = false;
 
   for (var i = 0; i < argv.length; i++) {
     var a = argv[i];
+    if (a === '--client-name' && argv[i + 1] && !argv[i + 1].startsWith('--')) {
+      clientName = argv[++i];
+      continue;
+    }
     if (a === '--client-id' && argv[i + 1] && !argv[i + 1].startsWith('--')) {
       clientId = argv[++i];
     } else if (a === '--since' && argv[i + 1] && !argv[i + 1].startsWith('--')) {
@@ -66,15 +71,15 @@ function parseArgs(argv) {
   }
 
   if (!clientId) {
-    return { clientId: null, since: since, radarType: radarType, dryRun: dryRun,
+    return { clientId: null, clientName: clientName, since: since, radarType: radarType, dryRun: dryRun,
       error: 'Argument manquant : --client-id <uuid> est obligatoire' };
   }
   if (!since) {
-    return { clientId: clientId, since: null, radarType: radarType, dryRun: dryRun,
+    return { clientId: clientId, clientName: clientName, since: null, radarType: radarType, dryRun: dryRun,
       error: 'Argument manquant : --since <iso> est obligatoire' };
   }
 
-  return { clientId: clientId, since: since, radarType: radarType, dryRun: dryRun, error: null };
+  return { clientId: clientId, clientName: clientName, since: since, radarType: radarType, dryRun: dryRun, error: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -88,8 +93,12 @@ function buildSteps(opts) {
     {
       name:        'export-feedback',
       script:      path.join(ROOT, 'scripts', 'export-client-feedback-events.js'),
+      // --client-name n'est transmis qu'a l'etape export : metadonnee
+      // d'affichage, absente des etapes suivantes.
       args:        ['--client-id', opts.clientId, '--since', opts.since,
-                    '--radar-type', opts.radarType].concat(dr),
+                    '--radar-type', opts.radarType]
+                     .concat(opts.clientName ? ['--client-name', opts.clientName] : [])
+                     .concat(dr),
       placeholder: 'JSONL_PATH',
     },
     {

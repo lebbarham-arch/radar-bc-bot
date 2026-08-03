@@ -11,6 +11,8 @@
 //
 // Options :
 //   --client-id <uuid>   (OBLIGATOIRE) UUID client Supabase
+//   --client-name <nom>  (facultatif) libelle d'affichage du client.
+//                        Metadonnee uniquement : jamais utilise comme identifiant.
 //   --since <iso>        (OBLIGATOIRE) Date ISO minimale created_at (ex: 2026-06-29T15:35:00Z)
 //   --radar-type <type>  "bc" | "mp"  (defaut: "bc")
 //   --output <path>      Chemin de sortie JSONL (defaut: data/feedback/feedback-events-client-<ts>.jsonl)
@@ -106,6 +108,8 @@ function extractCritere(row) {
 function filterAndTransform(rows, opts) {
   opts = opts || {};
   var includeTests = opts.includeTests === true;
+  // Libelle d'affichage fourni par le cycle. Jamais un identifiant.
+  var clientName   = String(opts.clientName == null ? '' : opts.clientName).trim();
 
   var stats = {
     total_fetched:          rows.length,
@@ -144,6 +148,9 @@ function filterAndTransform(rows, opts) {
     // Champ obligatoire : item_id (pas bc_id)
     var event = {
       client_id:  String(row.client_id || '').trim(),
+      // Priorite : nom explicite du cycle, sinon nom deja porte par la ligne,
+      // sinon chaine vide. Le nom n'est jamais recopie dans client_id.
+      client_name: clientName || String(row.client_name || '').trim(),
       item_id:    itemId,
       radar_type: String(row.radar_type || 'bc').trim(),
       critere:    critere,
@@ -246,6 +253,7 @@ if (require.main !== module) return;
 // -- Parsing des arguments
 var args       = process.argv.slice(2);
 var clientId   = null;
+var clientName = '';
 var since      = null;
 var radarType  = 'bc';
 var outputPath = null;
@@ -258,6 +266,7 @@ for (var _i = 0; _i < args.length; _i++) {
   if (_a === '--dry-run')     { dryRun = true; continue; }
   if (_a === '--include-tests') { includeTests = true; continue; }
   if (_a === '--client-id'   && args[_i + 1]) { clientId  = args[++_i]; continue; }
+  if (_a === '--client-name' && args[_i + 1]) { clientName = args[++_i]; continue; }
   if (_a === '--since'       && args[_i + 1]) { since     = args[++_i]; continue; }
   if (_a === '--radar-type'  && args[_i + 1]) { radarType = args[++_i]; continue; }
   if (_a === '--output'      && args[_i + 1]) { outputPath = args[++_i]; continue; }
@@ -325,7 +334,7 @@ if (!outputPath) {
     return;
   }
 
-  var result = filterAndTransform(rows, { includeTests: includeTests });
+  var result = filterAndTransform(rows, { includeTests: includeTests, clientName: clientName });
   var stats  = result.stats;
   var events = result.events;
 
