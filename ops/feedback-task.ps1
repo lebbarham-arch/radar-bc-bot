@@ -36,6 +36,8 @@ $repo = Split-Path $PSScriptRoot -Parent
 $cycleScript = Join-Path $PSScriptRoot "feedback-cycle.ps1"
 $logDir = Join-Path $repo "data\feedback\task-logs"
 $pendingHintsDir = Join-Path $repo "data\feedback\pending-learning"
+$runtimeHintsDir = Join-Path $repo "data\feedback\runtime-learning"
+$runtimeHintsFile = Join-Path $runtimeHintsDir "client-learning-hints.json"
 $trackedHints = Join-Path $repo "data\client-learning\client-learning-hints.json"
 $mutexName = "Local\RadarBCFeedbackLearning"
 
@@ -47,6 +49,61 @@ function Write-Info {
 function Write-Ok {
     param([string]$Message)
     Write-Host "[OK] $Message" -ForegroundColor Green
+}
+
+function Remove-Utf8Bom {
+    param([string]$Text)
+
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    if ([int]$Text[0] -eq 0xFEFF) { return $Text.Substring(1) }
+    return $Text
+}
+
+function Test-RuntimeArtifactValid {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) { return $false }
+
+    try {
+        $raw = Remove-Utf8Bom ([System.IO.File]::ReadAllText($Path))
+        if ([string]::IsNullOrWhiteSpace($raw)) { return $false }
+        $raw | ConvertFrom-Json | Out-Null
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Publish-RuntimeLearningArtifact {
+    param([string]$SourcePath)
+
+    # Contrat : ne remplace l'artifact runtime qu'apres avoir lu, nettoye et
+    # valide integralement la source. Toute anomalie laisse le dernier artifact
+    # valide intact et retourne $false sans lever d'exception.
+    try {
+        if (-not (Test-Path $SourcePath)) { return $false }
+
+        $raw = Remove-Utf8Bom ([System.IO.File]::ReadAllText($SourcePath))
+        if ([string]::IsNullOrWhiteSpace($raw)) { return $false }
+
+        # Validation avant toute ecriture.
+        $raw | ConvertFrom-Json | Out-Null
+
+        New-Item -ItemType Directory -Path $runtimeHintsDir -Force | Out-Null
+        $runtimeTemp = $runtimeHintsFile + ".tmp"
+
+        # UTF-8 strict sans BOM : JSON.parse(readFileSync(f, "utf8")) doit
+        # reussir directement cote Node.
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($runtimeTemp, $raw, $utf8NoBom)
+
+        Move-Item -Path $runtimeTemp -Destination $runtimeHintsFile -Force
+        return $true
+    }
+    catch {
+        return $false
+    }
 }
 
 function Invoke-FeedbackTaskRun {
@@ -120,7 +177,30 @@ function Invoke-FeedbackTaskRun {
                     Sort-Object LastWriteTime -Descending |
                     Select-Object -Skip 30 |
                     Remove-Item -Force -ErrorAction SilentlyContinue
+
+                # De nouveaux hints ont ete generes : on publie ces hints.
+                if (Publish-RuntimeLearningArtifact $trackedHints) {
+                    $runtimeMessage = "Artifact runtime learning publie : $runtimeHintsFile"
+                    Write-Info $runtimeMessage
+                    Add-Content -Path $logFile -Value "[INFO] $runtimeMessage" -Encoding UTF8
+                }
+                else {
+                    $runtimeMessage = "Artifact runtime learning inchange : source invalide"
+                    Write-Info $runtimeMessage
+                    Add-Content -Path $logFile -Value "[INFO] $runtimeMessage" -Encoding UTF8
+                }
             }
+            elseif (-not (Test-RuntimeArtifactValid $runtimeHintsFile)) {
+                # Aucun nouveau feedback et aucun artifact runtime exploitable :
+                # on initialise depuis le fichier stable actuel.
+                if (Publish-RuntimeLearningArtifact $trackedHints) {
+                    $runtimeMessage = "Artifact runtime learning initialise : $runtimeHintsFile"
+                    Write-Info $runtimeMessage
+                    Add-Content -Path $logFile -Value "[INFO] $runtimeMessage" -Encoding UTF8
+                }
+            }
+            # Sinon : aucun nouveau feedback et artifact runtime deja valide,
+            # on ne le reecrit pas.
         }
 
         Get-ChildItem -Path $logDir -Filter "feedback-task-*.log" -File |
@@ -131,6 +211,13 @@ function Invoke-FeedbackTaskRun {
         Write-Ok "Cycle feedback termine."
     }
     finally {
+        # Un temporaire residuel signifie un cycle interrompu : on le supprime
+        # sans toucher au dernier artifact runtime valide.
+        $residualTemp = $runtimeHintsFile + ".tmp"
+        if (Test-Path $residualTemp) {
+            Remove-Item $residualTemp -Force -ErrorAction SilentlyContinue
+        }
+
         if ($hintsExisted -and $null -ne $hintsBackup) {
             [System.IO.File]::WriteAllBytes($trackedHints, $hintsBackup)
         }

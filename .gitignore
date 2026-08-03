@@ -8,6 +8,9 @@ package-lock.json
 data/feedback/
 data/feedback/*.jsonl
 
+# Artifact runtime learning : consomme par le bot, jamais versionne
+data/feedback/runtime-learning/
+
 # Local deploy scripts may contain secrets
 PUSH_*.bat
 
