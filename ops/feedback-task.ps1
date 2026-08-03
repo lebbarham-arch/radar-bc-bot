@@ -150,7 +150,7 @@ function Install-FeedbackTask {
         throw "Le module ScheduledTasks est indisponible."
     }
 
-    $scriptPath = $MyInvocation.MyCommand.Path
+    $scriptPath = $PSCommandPath
     $powershellExe = Join-Path $PSHOME "powershell.exe"
 
     if (-not (Test-Path $powershellExe)) {
