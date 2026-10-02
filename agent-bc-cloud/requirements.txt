@@ -1,0 +1,4 @@
+playwright==1.63.0
+keyring>=25,<26
+tzdata>=2025.1
+pypdf>=6,<7
