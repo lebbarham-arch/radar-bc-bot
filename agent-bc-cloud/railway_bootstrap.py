@@ -35,6 +35,8 @@ def preflight():
     print('CLOUD_PREFLIGHT', json.dumps(results), flush=True)
 
 def main():
+    from selftest import run as verify_chain
+    verify_chain()
     preflight()
     if os.environ.get('BC_RUNTIME_READY') != '1':
         print('WAITING_CONFIGURATION: portal and Gmail secrets not configured; no draft writes.', flush=True)

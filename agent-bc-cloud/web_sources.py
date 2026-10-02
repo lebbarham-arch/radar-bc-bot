@@ -83,7 +83,8 @@ class WebSource(MerchantPage):
                 break
             self.search_count += 1
             found, leads = [], []
-            for terms in (article['designation']+' prix Maroc', article['designation']+' fournisseur Maroc devis'):
+            technical = article.get('specification', '')[:180]
+            for terms in (article['designation']+' '+technical+' prix Maroc', article['designation']+' '+technical+' fournisseur Maroc devis'):
                 url = self.origin+'/search?q='+quote_plus(terms)
                 try:
                     self.open(url)
@@ -104,6 +105,22 @@ class WebSource(MerchantPage):
                     emails = self.page.locator('a[href^="mailto:"]').evaluate_all(
                         'els=>els.filter(e=>e.getClientRects().length).map(e=>e.getAttribute("href").slice(7).split("?")[0])')
                     lead['published_emails'] = sorted(set(emails))
+                    relevant = any(word in canonical(body) for word in canonical(article['designation']).split() if len(word)>3)
+                    lead['commercial_context'] = relevant and any(word in canonical(body) for word in ('produit','catalogue','devis','distributeur','fabricant','prix'))
+                    lead['morocco'] = urlparse(lead['url']).hostname.endswith('.ma') or any(word in canonical(body) for word in ('maroc','rabat','casablanca','temara','sale'))
+                    if lead['commercial_context'] and lead['morocco'] and not emails:
+                        contact_links = self.page.locator('a[href]').evaluate_all('els=>els.filter(e=>e.getClientRects().length && /contact/i.test(e.innerText)).map(e=>e.href)')
+                        for contact_url in contact_links[:2]:
+                            if urlparse(contact_url).hostname != urlparse(lead['url']).hostname:
+                                continue
+                            self.seller_page(contact_url)
+                            emails = self.page.locator('a[href^="mailto:"]').evaluate_all('els=>els.filter(e=>e.getClientRects().length).map(e=>e.getAttribute("href").slice(7).split("?")[0])')
+                            if emails:
+                                lead['published_emails'] = sorted(set(emails))
+                                lead['contact_url'] = contact_url
+                                break
+                        # Revenir à la fiche produit pour relever son prix.
+                        body = self.seller_page(lead['url'])
                     blocks = self.page.locator('script[type="application/ld+json"]').all_text_contents()
                     h1 = self.page.locator('h1:visible')
                     if h1.count() != 1 or canonical(h1.inner_text()) != canonical(article['designation']):

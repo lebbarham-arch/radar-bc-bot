@@ -20,6 +20,7 @@ from company import load_profile, fill_company, PORTAL_SELECTORS
 from sourcing import PublicSources
 from workflow import Workflow, filling_policy
 from mail_bridge import receive as receive_supplier_prices, publish as publish_supplier_need
+from supplier_followup import connected as connect_followup, needs_consultation
 from portal_form import collect_rows, parse_rows, fill_prices, validate_quote
 
 ROOT = Path(__file__).resolve().parent
@@ -459,6 +460,10 @@ def download_attachment(page, bc_id):
 
 def run():
     DATA.mkdir(exist_ok=True)
+    durable = os.environ.get('BC_STATE_CHECKPOINT', '0') == '1'
+    if durable:
+        from cloud_state import restore, backup
+        print('État durable :', restore(DATA), flush=True)
     config = json.loads((ROOT / 'config.json').read_text(encoding='utf-8-sig'))
     prices = Prices(DATA / 'prix.sqlite')
     prices.import_csv(ROOT / 'prix_confirmes.csv')
@@ -470,6 +475,17 @@ def run():
     except Exception as exc:
         mail_status = {'status': 'liaison Gmail bloquée', 'error_type': type(exc).__name__}
     print('Gmail :', mail_status['status'], flush=True)
+    followup = None
+    if os.environ.get('BC_SUPPLIER_AUTOMATION', '0') == '1':
+        try:
+            followup = connect_followup(DATA)
+            if durable:
+                followup.checkpoint = lambda: backup(DATA)
+            received = followup.receive_connected(prices)
+            print('Suivi fournisseurs :', received['imported_rows'], 'prix importés ;', len(received['issues']), 'précisions requises', flush=True)
+            print('Relances fournisseurs :', followup.remind(), flush=True)
+        except Exception as exc:
+            print('Suivi fournisseurs bloqué :', type(exc).__name__, flush=True)
     print('Agent BC — contrôle de session BC, pilote 0.5.0-cloud', flush=True)
     report = {'started_at': datetime.now().isoformat(), 'version': '0.5.0-cloud-pilote',
               'signed_or_submitted': False, 'results': [], 'status': 'en cours', 'gmail': mail_status,
@@ -507,6 +523,12 @@ def run():
                     public = sources.quote(bc['articles']) if not bc['extraction_errors'] else []
                     prices.record_public(public)
                     quote = prices.quote(bc['articles'], public)
+                    quote['needs_confirmation'] = any(line.get('source', {}).get('quantity_confirmed') is False for line in quote['lines'])
+                    if followup and needs_consultation(quote) and not bc['extraction_errors']:
+                        try:
+                            quote['consultations'] = followup.consult(bc, quote, sources.events)
+                        except Exception as exc:
+                            quote['consultations'] = {'status': 'bloqué', 'error_type': type(exc).__name__}
                     if bc['extraction_errors']:
                         quote['complete'] = False
                         for key in ('sale_ht', 'sale_vat', 'sale_ttc', 'purchase_ttc'):
@@ -546,6 +568,13 @@ def run():
         report['status'] = 'bloqué'
         report['reason'] = 'Erreur technique : ' + type(exc).__name__
     report['finished_at'] = datetime.now().isoformat()
+    if durable:
+        try:
+            backup(DATA)
+            print('Checkpoint de suivi sauvegardé.', flush=True)
+        except Exception as exc:
+            report['status'] = 'bloqué'
+            report['reason'] = 'Checkpoint de suivi non sauvegardé : '+type(exc).__name__
     report['eligible_count'] = sum('bc' in r for r in report['results'])
     report['article_count'] = sum(len(r.get('bc', {}).get('articles', [])) for r in report['results'])
     report['saved_drafts'] = sum(r.get('status') == 'brouillon enregistré et prix revérifiés' for r in report['results'])

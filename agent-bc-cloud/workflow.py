@@ -22,7 +22,7 @@ def filling_policy(bc, quote, now=None):
     known = [line for line in quote.get('lines', []) if line.get('status') == 'chiffré']
     if not known:
         return 'aucun prix disponible'
-    if quote.get('complete'):
+    if quote.get('complete') and not quote.get('needs_confirmation'):
         return 'complet'
     if deadline - now <= timedelta(hours=24):
         return 'partiel à H-24'

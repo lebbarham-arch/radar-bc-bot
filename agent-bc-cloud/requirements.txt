@@ -2,3 +2,5 @@ playwright==1.63.0
 keyring>=25,<26
 tzdata>=2025.1
 pypdf>=6,<7
+reportlab>=4,<5
+cryptography>=44,<47
