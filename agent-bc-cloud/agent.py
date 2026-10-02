@@ -360,7 +360,7 @@ def inspect_form():
     result = {'version': '0.5.0-cloud-pilote', 'read_only': False, 'saved': False, 'bc_id': '387737'}
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True, chromium_sandbox=sys.platform != 'win32')
+            browser = pw.chromium.launch(headless=True, chromium_sandbox=False)
             page = browser.new_page(locale='fr-FR')
             page.set_default_timeout(15000)
             login(page, config)
@@ -479,7 +479,7 @@ def run():
     from playwright.sync_api import sync_playwright
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True, chromium_sandbox=sys.platform != 'win32')
+            browser = pw.chromium.launch(headless=True, chromium_sandbox=False)
             context = browser.new_context(locale='fr-FR')
             page = context.new_page()
             page.set_default_timeout(15000)
