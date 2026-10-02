@@ -21,7 +21,7 @@ def preflight():
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True, chromium_sandbox=True)
+            browser = pw.chromium.launch(headless=True, chromium_sandbox=False)
             page = browser.new_page()
             page.set_content('<title>BC cloud preflight</title>')
             results.append({'chromium': page.title() == 'BC cloud preflight'})
