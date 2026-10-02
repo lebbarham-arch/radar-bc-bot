@@ -27,7 +27,7 @@ def preflight():
             results.append({'chromium': page.title() == 'BC cloud preflight'})
             browser.close()
     except Exception as exc:
-        results.append({'chromium': False, 'error_type': type(exc).__name__})
+        results.append({'chromium': False, 'error_type': type(exc).__name__, 'details': str(exc)[:6000]})
     DATA.mkdir(exist_ok=True)
     (DATA / 'preflight.json').write_text(json.dumps(results))
     print('CLOUD_PREFLIGHT', json.dumps(results), flush=True)
