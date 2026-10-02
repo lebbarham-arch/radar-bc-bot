@@ -25,6 +25,8 @@ def preflight():
             page = browser.new_page()
             page.set_content('<title>BC cloud preflight</title>')
             results.append({'chromium': page.title() == 'BC cloud preflight'})
+            response = page.goto('https://www.marchespublics.gov.ma/bdc/entreprise/consultation/show/386926', wait_until='domcontentloaded', timeout=30000)
+            results.append({'portal_browser_http': response.status if response else None, 'portal_title': page.title()})
             browser.close()
     except Exception as exc:
         results.append({'chromium': False, 'error_type': type(exc).__name__, 'details': str(exc)[:6000]})
