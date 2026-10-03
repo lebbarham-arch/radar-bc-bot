@@ -78,7 +78,10 @@ def fill_prices(page, quote, previous=None, preserve_existing=False):
         expected = amount(previous_protected) if previous_protected is not None else (
             amount(prior['unit_sale_ht']) if prior and prior.get('status') == 'chiffré' else Decimal(0))
         actual = amount(existing) if existing else Decimal(0)
-        if preserve_existing and actual > 0 and (
+        authorized = quote['lines'][index].get('user_authorized_price', False)
+        if authorized:
+            expected = actual
+        if preserve_existing and not authorized and actual > 0 and (
                 actual != expected or previous_protected is not None or
                 quote['lines'][index].get('status') != 'chiffré'):
             # Unknown provenance, manual edit, or older price whose source is

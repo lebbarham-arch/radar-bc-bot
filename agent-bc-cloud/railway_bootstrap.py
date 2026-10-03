@@ -37,6 +37,12 @@ def preflight():
 def main():
     from selftest import run as verify_chain
     verify_chain()
+    import unittest
+    suite = unittest.defaultTestLoader.discover(str(ROOT / 'tests'), pattern='test_article_cards.py')
+    result = unittest.TextTestRunner().run(suite)
+    if not result.wasSuccessful() or result.skipped:
+        raise RuntimeError('Article extraction browser regression tests failed')
+    print('BC_ARTICLE_READER_SELFTEST_OK: 25 collapsed panels, units and ambiguous fields verified', flush=True)
     preflight()
     if os.environ.get('BC_RUNTIME_READY') != '1':
         print('WAITING_CONFIGURATION: portal and Gmail secrets not configured; no draft writes.', flush=True)

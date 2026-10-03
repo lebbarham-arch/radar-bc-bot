@@ -17,12 +17,13 @@ from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 from pricing import Prices, amount
 from parsing import extract_articles
+from user_quotes import user_quote
 from company import load_profile, fill_company, PORTAL_SELECTORS
 from sourcing import PublicSources
 from workflow import Workflow, filling_policy, prioritize_urls
 from mail_bridge import receive as receive_supplier_prices, publish as publish_supplier_need
 from supplier_followup import connected as connect_followup, needs_consultation
-from portal_form import collect_rows, parse_rows, fill_prices, validate_quote, saved_prices_match
+from portal_form import collect_rows, parse_rows, fill_prices, validate_quote, saved_prices_match, compact
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / 'donnees'
@@ -202,6 +203,45 @@ def labeled(text, label):
     return ''
 
 
+def collect_article_cards(page):
+    """Read semantic fields even while Bootstrap panels are collapsed/animating."""
+    cards = page.locator('[id^="article-"][id$="-heading"]').evaluate_all(r"""els=>els.map(h=>{
+        const button=h.querySelector('button[aria-controls]');
+        const panel=button && document.getElementById(button.getAttribute('aria-controls'));
+        const title=(button || h).textContent.trim();
+        const fields={};
+        if(panel){
+            for(const label of panel.querySelectorAll('span')){
+                const name=label.textContent.trim();
+                if(['Unité de mesure','Quantité','TVA (%)'].includes(name)){
+                    const value=label.nextElementSibling;
+                    if(name in fields) fields[name]=null;
+                    else fields[name]=value ? value.textContent.trim() : null;
+                }
+            }
+        }
+        const spec=panel && [...panel.querySelectorAll('span.text-black')];
+        return {title, fields, specification:spec && spec.length===1 ? spec[0].textContent.trim() : null};
+    })""")
+    articles, errors = [], []
+    for index, card in enumerate(cards, 1):
+        title = re.match(r'^#\s*(\d+)\s*(.+)$', card['title'], re.S)
+        fields = card['fields']
+        try:
+            if not title or int(title[1]) != index or not card['specification']:
+                raise ValueError('titre ou spécification absent')
+            if not all(fields.get(k) for k in ('Unité de mesure', 'Quantité', 'TVA (%)')):
+                raise ValueError('champ absent ou ambigu')
+            qty, vat = amount(fields['Quantité']), amount(fields['TVA (%)'].rstrip(' %'))
+            if qty <= 0 or vat > 100:
+                raise ValueError('quantité ou TVA invalide')
+            articles.append({'designation': title[2].strip(), 'specification': card['specification'],
+                             'unit': fields['Unité de mesure'], 'quantity': str(qty), 'vat': str(vat)})
+        except (ValueError, ArithmeticError):
+            errors.append({'article_index': index, 'reason': 'bloc article incomplet ou ambigu'})
+    return articles, errors, len(cards)
+
+
 def read_bc(page, url, config):
     page.goto(check_url(url), wait_until='domcontentloaded')
     challenge(page)
@@ -223,14 +263,22 @@ def read_bc(page, url, config):
     category = labeled(text, 'Nature de prestation')
     relevant = any(norm(k) in norm(object_text + ' ' + category) for k in config['keywords'])
     excluded = 'animaux' in norm(category) or 'animale' in norm(object_text)
-    articles, extraction_errors = extract_articles(text)
+    articles, extraction_errors, expected_count = collect_article_cards(page)
+    if not expected_count:
+        articles, extraction_errors = extract_articles(text)
     rows = collect_rows(page)
     if rows:
         try:
-            articles = parse_rows(rows)
+            table_articles = parse_rows(rows)
+            if expected_count and len(table_articles) != expected_count:
+                raise RuntimeError('Nombre de lignes du devis différent des articles')
+            if expected_count and not extraction_errors and any(any(compact(actual[k]) != compact(expected[k]) for k in ('designation', 'specification', 'unit')) or any(amount(actual[k]) != amount(expected[k]) for k in ('quantity', 'vat')) for actual, expected in zip(table_articles, articles)):
+                raise RuntimeError('Articles du devis différents des blocs de consultation')
+            articles = table_articles
             extraction_errors = []
         except RuntimeError as exc:
             extraction_errors = [{'reason': str(exc)}]
+    print('BC_EXTRACTION', url.rsplit('/', 1)[-1], json.dumps({'expected': expected_count, 'extracted': len(articles), 'errors': extraction_errors}, ensure_ascii=False), flush=True)
     return {'id': url.rsplit('/', 1)[-1], 'url': url, 'object': object_text,
             'location': location, 'deadline': deadline,
             'eligible': region and relevant and not expired and not excluded,
@@ -479,7 +527,7 @@ def finish_pricing(page, bc, quote, config, ledger, workflow):
     policy = filling_policy(bc, quote)
     quote['allow_partial'] = policy == 'partiel à H-24'
     workflow.record(public_bc, quote, policy)
-    if (not quote.get('complete') or quote.get('needs_confirmation')) and not bc['extraction_errors']:
+    if (not quote.get('complete') or quote.get('needs_confirmation')) and not bc['extraction_errors'] and not quote.get('user_override'):
         try:
             quote['supplier_followup'] = publish_supplier_need(bc, quote, DATA)
             print('Suivi Gmail BC', bc['id'], ':', quote['supplier_followup'], flush=True)
@@ -569,12 +617,13 @@ def run():
                     workflow.record({k: v for k, v in bc.items() if k != 'text'}, prices.quote(bc['articles']), 'recherche des prix')
                     print('  Recherche des prix publics...', flush=True)
                     stage = 'recherche et comparaison des prix'
-                    public = sources.quote(bc['articles']) if not bc['extraction_errors'] else []
+                    override = user_quote(ROOT, bc)
+                    public = sources.quote(bc['articles']) if not bc['extraction_errors'] and override is None else []
                     prices.record_public(public)
-                    quote = prices.quote(bc['articles'], public)
+                    quote = override if override is not None else prices.quote(bc['articles'], public)
                     print('  Couverture des sources :', sum(l.get('status') == 'chiffré' for l in quote['lines']), '/', len(bc['articles']), flush=True)
                     quote['needs_confirmation'] = any(line.get('source', {}).get('quantity_confirmed') is False for line in quote['lines'])
-                    if followup and needs_consultation(quote) and not bc['extraction_errors']:
+                    if followup and override is None and needs_consultation(quote) and not bc['extraction_errors']:
                         try:
                             quote['consultations'] = followup.consult(bc, quote, sources.events)
                         except Exception as exc:
@@ -623,7 +672,7 @@ def run():
     report['eligible_count'] = sum('bc' in r for r in report['results'])
     report['article_count'] = sum(len(r.get('bc', {}).get('articles', [])) for r in report['results'])
     report['saved_drafts'] = sum(r.get('status') == 'brouillon enregistré et prix revérifiés' for r in report['results'])
-    report['blocked_count'] = sum(r.get('status') == 'traitement interrompu' or bool(r.get('quote', {}).get('draft_error')) or bool(r.get('quote', {}).get('followup_error')) for r in report['results'])
+    report['blocked_count'] = sum(r.get('status') == 'traitement interrompu' or bool(r.get('bc', {}).get('extraction_errors')) or bool(r.get('quote', {}).get('draft_error')) or bool(r.get('quote', {}).get('followup_error')) for r in report['results'])
     if report['status'] == 'terminé' and report['blocked_count']:
         report['status'] = 'terminé avec blocages'
     print('BC bloqués :', report['blocked_count'], flush=True)
