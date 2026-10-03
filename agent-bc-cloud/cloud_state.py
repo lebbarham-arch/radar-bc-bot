@@ -29,6 +29,13 @@ def settings():
     return config['account'],password,Fernet(key)
 
 def backup(folder):
+    # Independent workers must not publish an older snapshot after a newer one.
+    import fcntl
+    with (Path(folder)/'checkpoint.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        return _backup(folder)
+
+def _backup(folder):
     folder=Path(folder);account,password,cipher=settings();data=io.BytesIO()
     with tempfile.TemporaryDirectory() as temp:
         with zipfile.ZipFile(data,'w',zipfile.ZIP_DEFLATED) as archive:

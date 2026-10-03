@@ -487,6 +487,16 @@ class PublicSources:
 
     def quote(self, articles):
         observations = []
+        from pathlib import Path
+        path = Path(__file__).resolve().parent / 'donnees' / 'food-watch.sqlite'
+        if path.exists():
+            from food_watch import FoodStore
+            watch = FoodStore(path)
+            try:
+                for article in articles:
+                    observations.extend(watch.candidates(article))
+            finally:
+                watch.close()
         for reader in self.readers:
             print('Recherche fournisseur :', getattr(reader, 'name', 'Aswak Assalam'), flush=True)
             try:

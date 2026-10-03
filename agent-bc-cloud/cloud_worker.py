@@ -64,7 +64,15 @@ def main(once=False):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return 0
+        # Restore once before either process creates an empty SQLite database.
+        if os.environ.get('BC_STATE_CHECKPOINT') == '1':
+            from cloud_state import restore
+            print('État durable avant workers :', restore(DATA), flush=True)
+        watch = None
         while True:
+            if not once and os.environ.get('BC_FOOD_WATCH', '1') == '1':
+                if watch is None or watch.poll() is not None:
+                    watch = subprocess.Popen([sys.executable, '-u', str(ROOT / 'food_watch.py'), '--loop'], cwd=ROOT)
             started = time.monotonic()
             code = run_cycle()
             if once:
