@@ -9,6 +9,7 @@ import sys
 import unicodedata
 import io
 import zipfile
+import traceback
 from datetime import datetime
 from pathlib import Path
 from credentials import credential_store
@@ -458,6 +459,50 @@ def download_attachment(page, bc_id):
         return {'status': 'échec de récupération', 'error_type': type(exc).__name__}
 
 
+def error_details(exc, stage):
+    """Diagnose the stage without logging provider responses or secrets."""
+    frames = traceback.extract_tb(exc.__traceback__)
+    details = {'stage': stage, 'error_type': type(exc).__name__,
+               'frames': [{'file': Path(f.filename).name, 'line': f.lineno,
+                           'function': f.name} for f in frames]}
+    if frames and Path(frames[-1].filename).parent == ROOT and isinstance(exc, (RuntimeError, ValueError)):
+        message = str(exc)
+        for key, value in os.environ.items():
+            if value and len(value) >= 4 and any(word in key for word in ('PASSWORD', 'SECRET', 'TOKEN', 'PROFILE', 'LOGIN', 'MAIL_CONFIG')):
+                message = message.replace(value, '[masqué]')
+        details['reason'] = message[:240]
+    return details
+
+
+def finish_pricing(page, bc, quote, config, ledger, workflow):
+    """Persist prices and dispatch sourcing even when a portal write fails."""
+    public_bc = {k: v for k, v in bc.items() if k != 'text'}
+    policy = filling_policy(bc, quote)
+    quote['allow_partial'] = policy == 'partiel à H-24'
+    workflow.record(public_bc, quote, policy)
+    if (not quote.get('complete') or quote.get('needs_confirmation')) and not bc['extraction_errors']:
+        try:
+            quote['supplier_followup'] = publish_supplier_need(bc, quote, DATA)
+            print('Suivi Gmail BC', bc['id'], ':', quote['supplier_followup'], flush=True)
+        except Exception as exc:
+            quote['supplier_followup'] = 'transmission non confirmée'
+            quote['followup_error'] = error_details(exc, 'transfert des besoins')
+            print('BC_ERROR', bc['id'], json.dumps(quote['followup_error'], ensure_ascii=False), flush=True)
+    if policy in ('complet', 'partiel à H-24') and os.environ.get('BC_ALLOW_DRAFT_WRITES', '0') != '1':
+        status = 'lecture seule : prix disponibles, sauvegarde désactivée'
+    elif policy in ('complet', 'partiel à H-24'):
+        try:
+            status = save_draft(page, bc, quote, config.get('draft_adapter'), ledger)
+        except Exception as exc:
+            status = 'saisie bloquée : prix et suivi conservés'
+            quote['draft_error'] = error_details(exc, 'enregistrement du brouillon')
+            print('BC_ERROR', bc['id'], json.dumps(quote['draft_error'], ensure_ascii=False), flush=True)
+    else:
+        status = policy
+    workflow.record(public_bc, quote, status)
+    return status
+
+
 def run():
     DATA.mkdir(exist_ok=True)
     durable = os.environ.get('BC_STATE_CHECKPOINT', '0') == '1'
@@ -513,6 +558,7 @@ def run():
             print(len(urls), 'consultations à vérifier.', flush=True)
             for index, url in enumerate(urls, 1):
                 print('Consultation', index, '/', len(urls), ':', url.rsplit('/', 1)[-1], flush=True)
+                stage = 'lecture consultation'
                 try:
                     if url.rsplit('/', 1)[-1] == '387737' or url.rsplit('/', 1)[-1] in config.get('skip_bc_ids', []):
                         report['results'].append({'url': url, 'status': 'BC écarté : désignation ou conditionnement ambigu'})
@@ -523,6 +569,7 @@ def run():
                         continue
                     workflow.record({k: v for k, v in bc.items() if k != 'text'}, prices.quote(bc['articles']), 'recherche des prix')
                     print('  Recherche des prix publics...', flush=True)
+                    stage = 'recherche et comparaison des prix'
                     public = sources.quote(bc['articles']) if not bc['extraction_errors'] else []
                     prices.record_public(public)
                     quote = prices.quote(bc['articles'], public)
@@ -536,21 +583,8 @@ def run():
                         quote['complete'] = False
                         for key in ('sale_ht', 'sale_vat', 'sale_ttc', 'purchase_ttc'):
                             quote.pop(key, None)
-                    policy = filling_policy(bc, quote)
-                    quote['allow_partial'] = policy == 'partiel à H-24'
-                    if policy in ('complet', 'partiel à H-24') and os.environ.get('BC_ALLOW_DRAFT_WRITES', '0') != '1':
-                        status = 'lecture seule : prix disponibles, sauvegarde désactivée'
-                    elif policy in ('complet', 'partiel à H-24'):
-                        status = save_draft(page, bc, quote, config.get('draft_adapter'), ledger)
-                    else:
-                        status = policy
-                    workflow.record({k: v for k, v in bc.items() if k != 'text'}, quote, status)
-                    if not quote['complete'] and not bc['extraction_errors']:
-                        try:
-                            quote['supplier_followup'] = publish_supplier_need(bc, quote, DATA)
-                            print('Suivi Gmail BC',bc['id'],':',quote['supplier_followup'],flush=True)
-                        except Exception as exc:
-                            quote['supplier_followup'] = 'transmission non confirmée : '+type(exc).__name__
+                    stage = 'suivi et brouillon'
+                    status = finish_pricing(page, bc, quote, config, ledger, workflow)
                     print('  ', len(bc['articles']), 'lignes ;', status, flush=True)
                     # Diagnostics de texte uniquement sur une page de consultation, jamais le login.
                     snapshot = DATA / (bc['id'] + '.txt')
@@ -558,8 +592,9 @@ def run():
                     bc.pop('text')
                     report['results'].append({'bc': bc, 'quote': quote, 'public_search': public, 'status': status})
                 except Exception as exc:
-                    report['results'].append({'url': url, 'status': 'traitement interrompu',
-                                              'error_type': type(exc).__name__})
+                    diagnostic = error_details(exc, stage)
+                    print('BC_ERROR', url.rsplit('/', 1)[-1], json.dumps(diagnostic, ensure_ascii=False), flush=True)
+                    report['results'].append({'url': url, 'status': 'traitement interrompu', **diagnostic})
             report['source_errors'] = sources.events
             sources.close()
             context.close()
