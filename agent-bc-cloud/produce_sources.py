@@ -24,11 +24,20 @@ NAMES = {
     'haricots verts': ('haricot vert',),
     'aubergine': ('aubergine', 'aubergine blanche'),
     'choux blanc': ('chou blanc',),
-    'oignons secs': ('oignon sec rouge', 'oignon blanc sec'),
+    'oignons secs': ('oignon sec rouge', 'oignon blanc sec', 'oignon rouge', 'oignon blanc'),
     'oignons verts': ('oignon vert', 'oignons verts'),
     'potiron rouge': ('potiron rouge',),
-    'laitue salade vert': ('laitue', 'laitue verte', 'laitue sucrine'),
+    # Merchant product description identifies Salade Beldia as a traditional
+    # lettuce, sold per piece. It is not a mixed salad or a weight-priced bag.
+    'laitue salade vert': ('laitue', 'laitue verte', 'laitue sucrine', 'salade beldia'),
 }
+
+
+def titled_unit(title):
+    weights = re.findall(r'\b\d+(?:[.,]\d+)?(?:\s*/\s*\d+)?\s*(?:kg|gr|g)\b', title, re.I)
+    if len(weights) == 1:
+        return weights[0]
+    return 'botte' if re.search(r'\bbotte\b', canonical(title)) else ''
 
 
 def weight(value):

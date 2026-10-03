@@ -129,12 +129,14 @@ class WebSource(MerchantPage):
                         body = self.seller_page(lead['url'])
                     blocks = self.page.locator('script[type="application/ld+json"]').all_text_contents()
                     h1 = self.page.locator('h1:visible')
-                    if h1.count() != 1 or canonical(h1.inner_text()) != canonical(article['designation']):
+                    if h1.count() != 1:
                         continue
                     prices = []
                     for block in blocks:
                         try:
                             for product in products_from_json(json.loads(block)):
+                                if canonical(product.get('name', '')) != canonical(h1.inner_text()):
+                                    continue
                                 price = structured_price(article, product, body)
                                 if price is not None:
                                     prices.append(price)

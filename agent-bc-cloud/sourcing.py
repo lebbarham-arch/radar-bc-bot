@@ -358,12 +358,18 @@ def products_from_json(value):
 
 def structured_price(article, product, visible_text=''):
     # Exact title AND full requested specification, no keyword resemblance.
-    if canonical(product.get('name', '')) != canonical(article['designation']):
+    factor = Decimal(1)
+    if canonical(article['unit']) in ('kg', 'botte'):
+        from produce_sources import produce_factor, titled_unit
+        factor = produce_factor(article, product.get('name', ''), titled_unit(product.get('name', '')))
+        if factor is None:
+            return None
+    elif canonical(product.get('name', '')) != canonical(article['designation']):
         return None
     spec = canonical(article['specification'])
     if spec not in ('', canonical(article['designation'])) and spec not in canonical(product.get('description', '')):
         return None
-    if canonical(article['unit']) not in ('un', 'u', 'unite', 'piece'):
+    if canonical(article['unit']) not in ('un', 'u', 'unite', 'piece', 'kg', 'botte'):
         return None
     if re.search(r'\b(lot|pack|paquet|boite|coffret)\b', canonical(product.get('name', ''))):
         return None
@@ -385,7 +391,7 @@ def structured_price(article, product, visible_text=''):
                 prices.append(price)
         except (KeyError, ValueError, ArithmeticError):
             continue
-    return prices[0] if prices and len(set(prices)) == 1 else None
+    return prices[0] / factor if prices and len(set(prices)) == 1 else None
 
 
 class SearchMerchant(MerchantPage):
