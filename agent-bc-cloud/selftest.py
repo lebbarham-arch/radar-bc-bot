@@ -20,7 +20,7 @@ def run(with_browser=True):
               {'designation':'ARTICLE B TEST','specification':'REFERENCE EXACTE B', 'unit':'U','quantity':'2','vat':'20'}]
     bc={'id':'SIMULATION-INTERNE','deadline':(now+timedelta(days=3)).strftime('%d/%m/%Y %H:%M'),'articles':articles,'extraction_errors':[]}
     events=[{'article':a['designation'],'leads':[{'url':'https://specialiste%d.ma/article'%i,
-        'published_emails':['commercial@specialiste%d.ma'%i], 'morocco':True,'commercial_context':True} for i in range(4)]} for a in articles]
+        'published_emails':['commercial@specialiste%d.ma'%i], 'morocco':True,'commercial_context':True,'supplier_type':'spécialiste'} for i in range(4)]} for a in articles]
     sent=[]
     with tempfile.TemporaryDirectory(prefix='bc-chain-test-') as temp:
         root=Path(temp);prices=Prices(root/'prices.sqlite')
@@ -28,7 +28,7 @@ def run(with_browser=True):
         assert followup.consult(bc,prices.quote(articles),events,now)['sent']==4
         assert followup.consult(bc,prices.quote(articles),events,now)['sent']==0
         assert followup.remind(now+timedelta(hours=23))==0
-        assert followup.remind(now+timedelta(hours=25))==4
+        assert followup.remind(now+timedelta(hours=49))==4
         requests=[json.loads(x[0]) for x in followup.db.execute('SELECT data FROM requests ORDER BY token')]
         def reply(request,price,mid,article_indices=(0,),stock='OUI',available='100',as_pdf=True):
             message=EmailMessage();message['From']=request['email'];message['To']='simulation@example.invalid'

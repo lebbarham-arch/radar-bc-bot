@@ -45,8 +45,10 @@ def backup(folder):
     message=EmailMessage();message['From']=message['To']=account;message['Subject']=SUBJECT
     message.set_content('Checkpoint automatique chiffré de l’agent BC. Aucun mot de passe inclus.')
     message.add_attachment(encrypted,maintype='application',subtype='octet-stream',filename='checkpoint.enc')
-    with smtplib.SMTP_SSL('smtp.gmail.com',465,timeout=30) as smtp:
-        smtp.login(account,password);smtp.send_message(message)
+    with imaplib.IMAP4_SSL('imap.gmail.com',timeout=30) as mailbox:
+        mailbox.login(account,password)
+        status,_=mailbox.append('INBOX',None,None,message.as_bytes())
+        if status!='OK':raise RuntimeError('Checkpoint IMAP non sauvegardé')
 
 def restore(folder):
     folder=Path(folder)

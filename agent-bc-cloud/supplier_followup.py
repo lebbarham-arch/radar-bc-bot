@@ -5,6 +5,7 @@ retenus. Un devis sans référence, conformité, quantité ou disponibilité exp
 déclenche une clarification ; aucun prix n'est déduit d'une simple ressemblance.
 """
 import csv
+import os
 import hashlib
 import io
 import json
@@ -53,9 +54,14 @@ def verified_contacts(events, article):
                 if domain != host and not domain.endswith('.'+host):
                     continue
                 contacts.setdefault(host, {'email': address, 'supplier': host,
-                    'evidence_url': lead.get('contact_url', lead['url'])})
+                    'evidence_url': lead.get('contact_url', lead['url']),
+                    'supplier_type': lead.get('supplier_type', 'non classé')})
                 break
-    return list(contacts.values())[:4]
+    rank = {'fabricant': 0, 'grand distributeur': 1, 'spécialiste': 2}
+    candidates = list(contacts.values())
+    if os.environ.get('BC_REQUIRE_SPECIALIST', '0') == '1':
+        candidates = [c for c in candidates if c['supplier_type'] in rank]
+    return sorted(candidates, key=lambda c: rank.get(c['supplier_type'], 9))[:4]
 
 
 def build_request(bc, contact, indices, token, account, clarification=False):
@@ -158,12 +164,33 @@ def parse_offer(text, request, message_id, today=None):
 
 class SupplierFollowup:
     def __init__(self, data, account, send, mailbox=None):
-        self.data=Path(data);self.account=account;self.send=send;self.mailbox=mailbox
+        self.data=Path(data);self.account=account;self.transport=send;self.mailbox=mailbox
+        self.clock = lambda: datetime.now(MAROC)
         self.checkpoint = lambda: None
         self.db=sqlite3.connect(self.data/'supplier-followup.sqlite')
         self.db.execute('CREATE TABLE IF NOT EXISTS requests (token TEXT PRIMARY KEY, data TEXT, state TEXT, created TEXT, last_sent TEXT, attempts INTEGER, clarification INTEGER DEFAULT 0)')
         self.db.execute('CREATE TABLE IF NOT EXISTS replies (message_id TEXT PRIMARY KEY, token TEXT, result TEXT)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS outbound (id INTEGER PRIMARY KEY, address TEXT, domain TEXT, kind TEXT, at TEXT)')
         self.db.commit()
+
+    def allowed(self, address, kind, now):
+        domain=address.rsplit('@',1)[1].casefold()
+        recent=self.db.execute('SELECT address,domain,kind,at FROM outbound').fetchall()
+        day=[r for r in recent if now-datetime.fromisoformat(r[3]) < timedelta(hours=24)]
+        if len(day)>=8 or sum(r[1]==domain for r in day)>=2:return False
+        if kind=='demande' and any(r[1]==domain and r[2]=='demande' and now-datetime.fromisoformat(r[3])<timedelta(days=7) for r in recent):return False
+        return True
+
+    def send(self, message, kind='précision', now=None):
+        now=now or self.clock()
+        address=parseaddr(message['To'])[1].casefold()
+        if not self.allowed(address,kind,now):return False
+        self.db.execute('INSERT INTO outbound (address,domain,kind,at) VALUES (?,?,?,?)',
+            (address,address.rsplit('@',1)[1],kind,now.isoformat()));self.db.commit()
+        self.checkpoint() # Réserver durablement avant toute transmission, même incertaine.
+        self.transport(message)
+        self.checkpoint()
+        return True
 
     def consult(self, bc, quote, events, now=None):
         now=now or datetime.now(MAROC)
@@ -181,11 +208,12 @@ class SupplierFollowup:
             indices=sorted(set(item['indices']))
             token=hashlib.sha256(json.dumps([bc['id'],address,[(fingerprint(bc['articles'][i]),bc['articles'][i]['quantity']) for i in indices]],sort_keys=True).encode()).hexdigest()[:20]
             if self.db.execute('SELECT 1 FROM requests WHERE token=?',(token,)).fetchone():continue
+            if not self.allowed(address,'demande',now):continue
             request={**item['contact'],'token':token,'bc':{k:v for k,v in bc.items() if k!='text'},'indices':indices}
             self.db.execute('INSERT INTO requests VALUES (?,?,?,?,?,?,?)',(token,json.dumps(request), 'envoi en cours',now.isoformat(),now.isoformat(),1,0));self.db.commit()
             try:
                 self.checkpoint()
-                self.send(build_request(bc,item['contact'],indices,token,self.account))
+                self.send(build_request(bc,item['contact'],indices,token,self.account),'demande',now)
                 self.db.execute('UPDATE requests SET state=? WHERE token=?',('envoyé',token));self.db.commit();sent+=1
                 self.checkpoint()
             except Exception:
@@ -238,11 +266,12 @@ class SupplierFollowup:
         now=now or datetime.now(MAROC);count=0
         for token,data,state,created,last,attempts,clarification in self.db.execute('SELECT * FROM requests').fetchall():
             request=json.loads(data)
-            if state!='envoyé' or attempts>=3 or now>=deadline(request['bc']) or now-datetime.fromisoformat(last)<timedelta(hours=24):continue
+            if state!='envoyé' or attempts>=2 or now>=deadline(request['bc']) or now-datetime.fromisoformat(last)<timedelta(hours=48):continue
+            if not self.allowed(request['email'],'relance',now):continue
             self.db.execute('UPDATE requests SET state=?,attempts=?,last_sent=? WHERE token=?',('envoi en cours',attempts+1,now.isoformat(),token));self.db.commit()
             try:
                 self.checkpoint()
-                self.send(build_request(request['bc'],request,request['indices'],token,self.account))
+                self.send(build_request(request['bc'],request,request['indices'],token,self.account),'relance',now)
                 self.db.execute('UPDATE requests SET state=? WHERE token=?',('envoyé',token));self.db.commit();count+=1
                 self.checkpoint()
             except Exception:
@@ -271,6 +300,9 @@ def connected(data):
     def send(message):
         with smtplib.SMTP_SSL('smtp.gmail.com',465,timeout=30) as smtp:
             smtp.login(config['account'],password);smtp.send_message(message)
+    with smtplib.SMTP_SSL('smtp.gmail.com',465,timeout=20) as smtp:
+        smtp.login(config['account'],password)
+    print('SMTP_FOURNISSEURS: connexion authentifiée, aucun mail de test envoyé',flush=True)
     followup=SupplierFollowup(data,config['account'],send)
     def receive(prices):
         messages=[]

@@ -14,6 +14,7 @@ class CheckpointTest(unittest.TestCase):
             def login(self,*args):pass
             def send_message(self,message):sent.append(message.as_bytes())
         class IMAP(SMTP):
+            def append(self,folder,flags,when,raw):sent.append(raw);return ('OK',[b'1'])
             def select(self,*args,**kw):pass
             def uid(self,action,*args):
                 return ('OK',[b'1']) if action=='search' else ('OK',[(b'BODY',sent[-1])])

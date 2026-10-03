@@ -45,6 +45,8 @@ class WebSource(MerchantPage):
         folder.mkdir(exist_ok=True)
         self.db = sqlite3.connect(folder / 'web-search.sqlite')
         self.db.execute('CREATE TABLE IF NOT EXISTS searches (article_id TEXT PRIMARY KEY, at TEXT, offers TEXT, leads TEXT)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS discoveries (id TEXT PRIMARY KEY, article_id TEXT, at TEXT, offers TEXT, leads TEXT)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS supplier_directory (host TEXT PRIMARY KEY, evidence TEXT, verified_at TEXT)')
         self.db.commit()
 
     def seller_page(self, url):
@@ -107,6 +109,10 @@ class WebSource(MerchantPage):
                     lead['published_emails'] = sorted(set(emails))
                     relevant = any(word in canonical(body) for word in canonical(article['designation']).split() if len(word)>3)
                     lead['commercial_context'] = relevant and any(word in canonical(body) for word in ('produit','catalogue','devis','distributeur','fabricant','prix'))
+                    normalized=canonical(body)
+                    lead['supplier_type'] = ('fabricant' if re.search(r'(nous fabriquons|notre usine|fabricant de|fabrication de)', normalized) else
+                        'grand distributeur' if re.search(r'(distributeur agree|distributeur officiel|distribution nationale|importateur distributeur)',normalized) else
+                        'spécialiste' if re.search(r'(specialiste|specialise|specialisee)',normalized) else 'non classé')
                     lead['morocco'] = urlparse(lead['url']).hostname.endswith('.ma') or any(word in canonical(body) for word in ('maroc','rabat','casablanca','temara','sale'))
                     if lead['commercial_context'] and lead['morocco'] and not emails:
                         contact_links = self.page.locator('a[href]').evaluate_all('els=>els.filter(e=>e.getClientRects().length && /contact/i.test(e.innerText)).map(e=>e.href)')
@@ -144,6 +150,13 @@ class WebSource(MerchantPage):
             self.cache[key] = found
             self.db.execute('INSERT OR REPLACE INTO searches VALUES (?,?,?,?)',
                 (article_id, datetime.now(timezone.utc).isoformat(), json.dumps(found, ensure_ascii=False), json.dumps(leads, ensure_ascii=False)))
+            observed=datetime.now(timezone.utc).isoformat()
+            self.db.execute('INSERT OR IGNORE INTO discoveries VALUES (?,?,?,?,?)',
+                (hashlib.sha256((article_id+observed).encode()).hexdigest(),article_id,observed,json.dumps(found,ensure_ascii=False),json.dumps(leads,ensure_ascii=False)))
+            for lead in leads:
+                if lead.get('commercial_context') and lead.get('morocco') and lead.get('published_emails'):
+                    self.db.execute('INSERT OR REPLACE INTO supplier_directory VALUES (?,?,?)',
+                        (urlparse(lead['url']).hostname,json.dumps(lead,ensure_ascii=False),observed))
             self.db.commit()
             result.extend(found)
         return result
