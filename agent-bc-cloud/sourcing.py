@@ -164,6 +164,7 @@ class AswakSource:
 
 
 BRINGO_CATEGORIES = (
+    'https://www.bringo.ma/fr_MA/stores/carrefour-supermarket/legumes-au-kg',
     'https://www.bringo.ma/fr_MA/stores/carrefour-hypermarket/legumes-46',
     'https://www.bringo.ma/fr_MA/stores/carrefour-hypermarket/salades-et-herbes-1',
     'https://www.bringo.ma/fr_MA/stores/carrefour-supermarket/salades-herbes',
@@ -472,7 +473,8 @@ class SearchMerchant(MerchantPage):
 class PublicSources:
     def __init__(self, browser):
         from web_sources import WebSource
-        self.readers = [AswakSource(browser), CarrefourSource(browser),
+        from produce_sources import ProduceCatalogue
+        self.readers = [ProduceCatalogue(browser), AswakSource(browser), CarrefourSource(browser),
                         SearchMerchant(browser, 'Marjane Mall', 'https://www.marjanemall.ma'),
                         SearchMerchant(browser, 'Bricoma', 'https://www.bricoma.ma'), WebSource(browser)]
         self.events = []

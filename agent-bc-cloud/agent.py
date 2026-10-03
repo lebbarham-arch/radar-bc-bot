@@ -572,6 +572,7 @@ def run():
                     public = sources.quote(bc['articles']) if not bc['extraction_errors'] else []
                     prices.record_public(public)
                     quote = prices.quote(bc['articles'], public)
+                    print('  Couverture des sources :', sum(l.get('status') == 'chiffré' for l in quote['lines']), '/', len(bc['articles']), flush=True)
                     quote['needs_confirmation'] = any(line.get('source', {}).get('quantity_confirmed') is False for line in quote['lines'])
                     if followup and needs_consultation(quote) and not bc['extraction_errors']:
                         try:
@@ -584,6 +585,9 @@ def run():
                             quote.pop(key, None)
                     stage = 'suivi et brouillon'
                     status = finish_pricing(page, bc, quote, config, ledger, workflow)
+                    if status == 'brouillon enregistré et prix revérifiés':
+                        actual_count = sum(l.get('status') == 'chiffré' or str(i) in quote.get('protected_prices', {}) for i, l in enumerate(quote['lines']))
+                        print('  BC_COVERAGE', bc['id'], str(actual_count) + '/' + str(len(bc['articles'])), 'prix présents après sauvegarde et relecture', flush=True)
                     if durable and status == 'brouillon enregistré et prix revérifiés':
                         backup(DATA)
                         print('Checkpoint après brouillon vérifié.', flush=True)
