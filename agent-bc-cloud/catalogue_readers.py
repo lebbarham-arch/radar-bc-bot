@@ -32,7 +32,10 @@ RETAIL_CARDS = r'''els=>{
    const title=(heading?heading.innerText:a.innerText).trim();
    const clone=e.cloneNode(true);
    clone.querySelectorAll('del,s,[style*="line-through"]').forEach(n=>n.remove());
-   const clean=clone.innerText||clone.textContent;
+   const walker=document.createTreeWalker(clone,NodeFilter.SHOW_TEXT);
+   const parts=[];let node;
+   while((node=walker.nextNode()))parts.push(node.nodeValue.trim());
+   const clean=parts.join(' ');
    const vals=[...clean.matchAll(/(?<![\d.,])(\d+(?:[.,]\d{1,2})?)\s*(?:DH|MAD)\b/gi)].map(m=>m[1]);
    if(new Set(vals).size!==1)continue;
    rows.set(a.href,{title,url:a.href,price:vals[0],currency:'MAD',unit:'',raw,
