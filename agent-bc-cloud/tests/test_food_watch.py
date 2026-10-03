@@ -61,3 +61,11 @@ class WatchTests(unittest.TestCase):
         self.record(price_basis='non précisé')
         self.assertEqual(self.store.candidates(ARTICLE,now=self.now),[])
         self.assertEqual(self.store.db.execute('SELECT count(*) FROM food_observations').fetchone()[0],1)
+
+    def test_catalogue_limit_and_explicit_known_import_alias(self):
+        self.record(max_qty_displayed='2')
+        self.assertEqual(self.store.candidates(ARTICLE,now=self.now),[])
+        self.record(hours=0,title='BANANE IMPORT 1KG',unit='',price='16.95',url='https://example.ma/banane/')
+        rows=self.store.candidates({**ARTICLE,'designation':'BANANE'},now=self.now)
+        self.assertEqual(len(rows),1)
+        self.assertEqual(Decimal(rows[0]['purchase_unit_ttc']),Decimal('16.95'))

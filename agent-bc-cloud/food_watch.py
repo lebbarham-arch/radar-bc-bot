@@ -53,19 +53,20 @@ REGIONAL_EXTRACT = r'''els=>{
   if(!/\/(produit|product)\//.test(a.href)||/add-to-cart/.test(a.href))continue;
   let e=a.parentElement;
   for(let i=0;e&&i<7;i++,e=e.parentElement){
-   const amounts=e.querySelectorAll('.price .woocommerce-Price-amount');
+   const amounts=e.querySelectorAll('.offer-price .woocommerce-Price-amount,.price .woocommerce-Price-amount');
    const titles=[...e.querySelectorAll('a[href]')].filter(n=>n.href===a.href&&n.innerText.trim());
    if(!amounts.length)continue;
-   const price=e.querySelector('.price');
+   const price=e.querySelector('.offer-price,.price');
    const active=price&&(price.querySelector('ins .woocommerce-Price-amount')||(!price.querySelector('del')&&price.querySelector('.woocommerce-Price-amount')));
-   if(!active||e.querySelectorAll('.price').length!==1||!titles.length)break;
-   const heading=e.querySelector('.woocommerce-loop-product__title,.product-title,h2,h3');
+   if(!active||e.querySelectorAll('.offer-price,.price').length!==1||!titles.length)break;
+   const heading=e.querySelector('.woocommerce-loop-product__title,.product-title,h2,h3,h5');
    const title=(heading?heading.innerText:titles[0].innerText).trim().replace(/^-\d+%\s*/, '');
    const raw=e.innerText;
    found.set(a.href,{title,url:a.href,unit:'',price:active.innerText.replace(/MAD|DH/gi,'').trim(),
     currency:(active.querySelector('.woocommerce-Price-currencySymbol')||{}).innerText||'',
     available:!/(rupture|indisponible|épuisé)/i.test(raw)&&!!e.querySelector('[href*="add-to-cart"],.add_to_cart_button'),
-    promotion:!!price.querySelector('ins'),raw});
+    promotion:!!price.querySelector('ins'),raw,
+    max_qty_displayed:(e.querySelector('input[name="quantity"]')||{}).max||null});
    break;
   }
  }
@@ -157,9 +158,18 @@ class FoodStore:
             card = json.loads(row['raw'])
             if card.get('price_basis') != 'TTC':
                 continue
+            if card.get('max_qty_displayed') and amount(card['max_qty_displayed']) < amount(article['quantity']):
+                continue
             from produce_sources import titled_unit
             sale_unit = card.get('unit') or titled_unit(row['title'])
             factor = produce_factor(article,row['title'],sale_unit)
+            if factor is None:
+                from sourcing import RULES
+                aliases=RULES.get(canonical(article['designation']),())
+                if (canonical(row['title']) in {canonical(t) for t in aliases}
+                    and canonical(article.get('specification','')) in ('',canonical(article['designation']))
+                    and row['unit']==canonical(article['unit']) and row['factor']):
+                    factor=amount(row['factor'])
             if factor is None:
                 # Packaged groceries need an exact SKU/title and exact unit.
                 if (canonical(article['designation']) != canonical(row['title'])
@@ -184,9 +194,9 @@ def collect(limit=24):
     store=FoodStore(DATA/'food-watch.sqlite')
     for source in SOURCES:
         store.queue(*source)
-    if not store.db.execute("SELECT 1 FROM food_meta WHERE key='regional-parser-v2'").fetchone():
+    if not store.db.execute("SELECT 1 FROM food_meta WHERE key='regional-parser-v3'").fetchone():
         store.db.execute("UPDATE food_queue SET checked_at=NULL WHERE supplier LIKE 'Aswak%'")
-        store.db.execute("INSERT INTO food_meta VALUES ('regional-parser-v2','ready')")
+        store.db.execute("INSERT INTO food_meta VALUES ('regional-parser-v3','ready')")
         store.db.commit()
     cutoff=(datetime.now(timezone.utc)-timedelta(hours=24)).isoformat()
     # Rotate by least recently visited; a daily cycle does not restart at page 1.
@@ -217,7 +227,7 @@ def collect(limit=24):
                 for link in links:
                     parsed=urlparse(link['url'])
                     if (parsed.hostname==reader.host and parsed.scheme=='https' and not parsed.query
-                        and parsed.path.startswith(prefix)
+                        and not parsed.fragment and parsed.path.startswith(prefix)
                         and any(s in parsed.path for s in ('product-category/','categorie-produit/','/shop/page/','/boutique/page/'))):
                         # Food aisles only, excludes cleaning and non-food.
                         if any(t in canonical(parsed.path) for t in ('fruits','legumes','epicerie','boucherie','volaille','poisson','cremerie','lait','fromage','boisson','boulangerie','surgel','charcuterie','oeuf','biscuit','confiser','terroir','patisserie')) or '/shop/page/' in parsed.path or '/boutique/page/' in parsed.path:
