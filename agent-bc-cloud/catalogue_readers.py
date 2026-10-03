@@ -6,6 +6,7 @@ No messages, purchases or portal actions are performed by this module.
 import hashlib
 import io
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -82,6 +83,8 @@ def structured_products(documents, host):
 
 
 def read_cards(reader):
+    if os.environ.get('BC_RETAIL_READER_READY','1')!='1':
+        return []
     rows=reader.page.locator('a[href]').evaluate_all(RETAIL_CARDS)
     # Public structured data complements rendered cards without inventing a
     # local store, availability, format or tax classification.
