@@ -16,7 +16,7 @@ import tempfile
 from datetime import date
 from email import policy
 from email.parser import BytesParser
-from email.utils import parseaddr
+from email.utils import parseaddr, make_msgid
 from email.message import EmailMessage
 from pathlib import Path
 from pricing import amount, fingerprint
@@ -164,13 +164,15 @@ def publish(bc, quote, data_folder):
     message = EmailMessage()
     message['From'] = message['To'] = config['account']
     message['Subject'] = '[AGENT-BC-SUIVI] '+bc['id']
+    message['Message-ID'] = make_msgid(domain='gmail.com')
     message.set_content(json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(',', ':')))
     ledger.execute('INSERT INTO outbound VALUES (?,?)', (oid, 'en cours'))
     ledger.commit()
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=30) as smtp:
-            smtp.login(config['account'], password)
-            smtp.send_message(message)
+        with imaplib.IMAP4_SSL('imap.gmail.com', timeout=30) as mailbox:
+            mailbox.login(config['account'], password)
+            status,_=mailbox.append('INBOX',None,None,message.as_bytes())
+            if status!='OK':raise RuntimeError('Besoin de prix non déposé dans Gmail')
         ledger.execute('UPDATE outbound SET state=? WHERE id=?', ('envoyé', oid))
         ledger.commit()
     finally:

@@ -475,6 +475,9 @@ def run():
     except Exception as exc:
         mail_status = {'status': 'liaison Gmail bloquée', 'error_type': type(exc).__name__}
     print('Gmail :', mail_status['status'], flush=True)
+    if durable:
+        backup(DATA)
+        print('Checkpoint initial sauvegardé par IMAP.',flush=True)
     followup = None
     if os.environ.get('BC_SUPPLIER_AUTOMATION', '0') == '1':
         try:
@@ -545,6 +548,7 @@ def run():
                     if not quote['complete'] and not bc['extraction_errors']:
                         try:
                             quote['supplier_followup'] = publish_supplier_need(bc, quote, DATA)
+                            print('Suivi Gmail BC',bc['id'],':',quote['supplier_followup'],flush=True)
                         except Exception as exc:
                             quote['supplier_followup'] = 'transmission non confirmée : '+type(exc).__name__
                     print('  ', len(bc['articles']), 'lignes ;', status, flush=True)
