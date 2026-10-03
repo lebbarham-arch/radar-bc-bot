@@ -14,6 +14,39 @@ from supplier_followup import SupplierFollowup, line_ref
 from workflow import filling_policy, MAROC
 
 
+def verify_company_browser(browser):
+    from company import fill_company, PORTAL_SELECTORS
+    profile = {'expected_ice': '0'*15, 'bank_rib': '0'*24, 'professional_tax_number': '12345678'}
+    page = browser.new_page()
+    prefix = '<input id="entreprise_infos_devis_form_iceEntreprise" value="'+profile['expected_ice']+'"><input id="entreprise_infos_devis_form_numeroTaxeEntreprise">'
+    select = '<select id="entreprise_infos_devis_form_compteBancaire"><option value="'+profile['bank_rib']+'">RIB simulation</option></select>'
+    page.set_content(prefix + select)
+    fill_company(page, profile, PORTAL_SELECTORS)
+    assert page.locator(PORTAL_SELECTORS['rib_selector']).input_value() == profile['bank_rib']
+    # Existing free-entry mode, hidden select, different input ID, repeated calls.
+    free = '<input id="entreprise_infos_devis_form_compteBancaireLibre">'
+    page.set_content(prefix + select.replace('<select ', '<select style="display:none" ') + free)
+    fill_company(page, profile, PORTAL_SELECTORS)
+    fill_company(page, profile, PORTAL_SELECTORS)
+    assert page.locator('#entreprise_infos_devis_form_compteBancaireLibre').input_value() == profile['bank_rib']
+    # Transition from a list without the requested RIB to free entry.
+    page.set_content(prefix + '<select id="entreprise_infos_devis_form_compteBancaire"><option value="other">Autre</option></select>' + free.replace('<input ', '<input style="display:none" ') +
+        '<button id="esl-a" onclick="document.querySelector(\'#entreprise_infos_devis_form_compteBancaire\').style.display=\'none\';document.querySelector(\'#entreprise_infos_devis_form_compteBancaireLibre\').style.display=\'block\'">Activer la saisie libre</button>')
+    fill_company(page, profile, PORTAL_SELECTORS)
+    assert page.locator('#entreprise_infos_devis_form_compteBancaireLibre').input_value() == profile['bank_rib']
+    page.set_content(prefix + free + '<input name="compteBancaireSecond">')
+    try: fill_company(page, profile, PORTAL_SELECTORS)
+    except RuntimeError: pass
+    else: raise AssertionError('RIB ambigu accepté')
+    assert page.locator('#entreprise_infos_devis_form_compteBancaireLibre').input_value() == ''
+    page.set_content(prefix.replace(profile['expected_ice'], '1'*15) + free)
+    try: fill_company(page, profile, PORTAL_SELECTORS)
+    except RuntimeError: pass
+    else: raise AssertionError('ICE différent accepté')
+    page.close()
+    print('BC_COMPANY_SELFTEST_OK: liste, saisie libre existante, activation, ambiguïté et ICE vérifiés', flush=True)
+
+
 def run(with_browser=True):
     now=datetime.now(MAROC)
     articles=[{'designation':'ARTICLE A TEST','specification':'REFERENCE EXACTE A', 'unit':'U','quantity':'10','vat':'20'},
@@ -93,6 +126,7 @@ def run(with_browser=True):
                 try:fill_prices(new,complete,previous=complete)
                 except RuntimeError:pass
                 else:raise AssertionError('Prix manuel écrasé')
+                verify_company_browser(browser)
                 browser.close();browser_result='remplissage, sauvegarde, relecture nouvelle page réussis'
         result={'simulation':'réussie','demandes_initiales':4,'relances':4,'devis_PDF_lus':5,'prix_retenu_TTC':'95.00',
             'vente_HT':'104.50','H24':'ligne inconnue vide','mise_a_jour':'132.00 HT sur ligne B',

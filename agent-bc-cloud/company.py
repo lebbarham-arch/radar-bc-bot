@@ -21,6 +21,46 @@ def load_profile(path):
     return profile
 
 
+def resolve_rib(page, selector):
+    """Recognize both rendered modes; never infer a RIB from another field."""
+    configured = page.locator(selector)
+    if configured.count() == 1 and configured.is_visible() and configured.is_enabled():
+        return configured
+    # A saved draft can reopen directly in free-entry mode with the select hidden.
+    # Strong names/labels first, then a narrowly scoped sibling of the configured field.
+    selected = page.evaluate(r'''selector => {
+        document.querySelectorAll('[data-agent-bc-rib]').forEach(e => e.removeAttribute('data-agent-bc-rib'));
+        const visible = e => e.getClientRects().length && !e.disabled &&
+            ['text','tel',''].includes(e.type || '');
+        const normalized = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const matches = [...document.querySelectorAll('input,textarea')].filter(e => {
+            const label = [...(e.labels || [])].map(x => x.innerText).join(' ');
+            return visible(e) && /comptebancaire|\brib\b|compte bancaire|releve.{0,12}identite bancaire/.test(
+                normalized(e.id + ' ' + e.name + ' ' + label));
+        });
+        let candidates = matches;
+        if (!candidates.length) {
+            const anchor = document.querySelectorAll(selector);
+            if (anchor.length !== 1) return false;
+            let parent = anchor[0].parentElement;
+            for (let depth=0; parent && depth<3; depth++,parent=parent.parentElement) {
+                const found = [...parent.querySelectorAll('input,textarea')].filter(e => visible(e) &&
+                    !/adresseEntreprise|telephoneEntreprise|emailEntreprise|numeroTaxeEntreprise|iceEntreprise|cnssEntreprise/.test(e.id));
+                if (found.length) { candidates = found; break; }
+            }
+        }
+        if (candidates.length !== 1) return false;
+        candidates[0].setAttribute('data-agent-bc-rib', 'true');
+        return true;
+    }''', selector)
+    if selected:
+        return page.locator('[data-agent-bc-rib="true"]')
+    controls = page.locator('input,select,textarea').evaluate_all(
+        "els => els.filter(e => /compte|rib|bancaire/i.test(e.id+' '+e.name)).map(e => ({id:e.id,tag:e.tagName,type:e.type,visible:!!e.getClientRects().length,disabled:!!e.disabled}))")
+    print('RIB_CONTROLS', json.dumps(controls, ensure_ascii=False), flush=True)
+    raise RuntimeError('Champ RIB absent ou ambigu dans les deux modes')
+
+
 def fill_company(page, profile, selectors):
     def field(key):
         loc = page.locator(selectors[key])
@@ -29,7 +69,7 @@ def fill_company(page, profile, selectors):
         return loc
     if field('ice_selector').input_value().strip() != profile['expected_ice']:
         raise RuntimeError('ICE différent : profil entreprise non appliqué')
-    rib = field('rib_selector')
+    rib = resolve_rib(page, selectors['rib_selector'])
     if rib.evaluate('e => e.tagName.toLowerCase()') == 'select':
         matching = rib.locator('option').evaluate_all(
             '(els, rib) => els.filter(e => e.value === rib).length', profile['bank_rib'])
@@ -40,24 +80,9 @@ def fill_company(page, profile, selectors):
             if toggle.count() != 1 or not toggle.is_visible() or toggle.inner_text().strip() != 'Activer la saisie libre':
                 raise RuntimeError('Activation de la saisie libre RIB absente ou ambiguë')
             toggle.click()
-            # La liste reste dans le DOM ; la saisie libre peut avoir un autre ID.
-            marked = rib.evaluate('''select => {
-                const visible = e => e.getClientRects().length && !e.disabled;
-                let parent = select.parentElement;
-                for (let depth=0; parent && depth<3; depth++,parent=parent.parentElement) {
-                    const candidates = [...parent.querySelectorAll('input,textarea')]
-                        .filter(e=>visible(e) && ['text','tel',''].includes(e.type || '') &&
-                            !/adresseEntreprise|telephoneEntreprise|emailEntreprise|numeroTaxeEntreprise|iceEntreprise|cnssEntreprise/.test(e.id));
-                    if (candidates.length === 1) {
-                        candidates[0].setAttribute('data-agent-bc-rib','true'); return true;
-                    }
-                    if (candidates.length > 1) return false;
-                }
-                return false;
-            }''')
-            if not marked:
-                raise RuntimeError('Champ de saisie libre RIB absent ou ambigu après activation')
-            rib = page.locator('[data-agent-bc-rib="true"]')
+            rib = resolve_rib(page, selectors['rib_selector'])
+            if rib.evaluate('e => e.tagName.toLowerCase()') == 'select':
+                raise RuntimeError('Saisie libre RIB non activée')
     for key, value in [('rib_selector', profile['bank_rib']),
                        ('tax_selector', profile['professional_tax_number'])]:
         loc = rib if key == 'rib_selector' else field(key)
