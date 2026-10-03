@@ -12,7 +12,7 @@ class WatchTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory()
         self.store=FoodStore(Path(self.temp.name)/'food.sqlite')
         self.now=datetime.now(timezone.utc)
-        self.card={'title':'Poivron vert 500g','unit':'500g','price':'5.50','currency':'MAD','url':'https://example.ma/poivron/','available':True}
+        self.card={'title':'Poivron vert 500g','unit':'500g','price':'5.50','price_basis':'TTC','currency':'MAD','url':'https://example.ma/poivron/','available':True}
 
     def tearDown(self):
         self.store.close()
@@ -56,3 +56,8 @@ class WatchTests(unittest.TestCase):
         self.record()
         self.record(available=False)
         self.assertEqual(self.store.candidates(ARTICLE,now=self.now),[])
+
+    def test_unspecified_tax_stays_observation_not_purchase_ttc(self):
+        self.record(price_basis='non précisé')
+        self.assertEqual(self.store.candidates(ARTICLE,now=self.now),[])
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM food_observations').fetchone()[0],1)

@@ -27,6 +27,7 @@ SOURCES = [
     ('Marjane', 'non précisée', 'https://www.marjane.ma/'),
     ('Carrefour', 'non précisée', 'https://carrefour.ma/catalogues/'),
     ('BIM', 'non précisée', 'https://www.bim.ma/'),
+    ('Atacadao', 'non précisée', 'https://www.atacadao.ma/'),
 ]
 
 EXTRACT = r'''els=>els.map(e=>{
@@ -43,6 +44,33 @@ EXTRACT = r'''els=>els.map(e=>{
  available:e.classList.contains('instock') && !!e.querySelector('.add_to_cart_button'),
  raw:e.innerText};
 })'''
+
+# Regional Aswak uses div cards rather than li.product; find the smallest
+# ancestor pairing a product link with its own single current price.
+REGIONAL_EXTRACT = r'''els=>{
+ const found=new Map();
+ for(const a of els){
+  if(!/\/(produit|product)\//.test(a.href)||/add-to-cart/.test(a.href))continue;
+  let e=a.parentElement;
+  for(let i=0;e&&i<7;i++,e=e.parentElement){
+   const amounts=e.querySelectorAll('.price .woocommerce-Price-amount');
+   const titles=[...e.querySelectorAll('a[href]')].filter(n=>n.href===a.href&&n.innerText.trim());
+   if(!amounts.length)continue;
+   const price=e.querySelector('.price');
+   const active=price&&(price.querySelector('ins .woocommerce-Price-amount')||(!price.querySelector('del')&&price.querySelector('.woocommerce-Price-amount')));
+   if(!active||e.querySelectorAll('.price').length!==1||!titles.length)break;
+   const heading=e.querySelector('.woocommerce-loop-product__title,.product-title,h2,h3');
+   const title=(heading?heading.innerText:titles[0].innerText).trim().replace(/^-\d+%\s*/, '');
+   const raw=e.innerText;
+   found.set(a.href,{title,url:a.href,unit:'',price:active.innerText.replace(/MAD|DH/gi,'').trim(),
+    currency:(active.querySelector('.woocommerce-Price-currencySymbol')||{}).innerText||'',
+    available:!/(rupture|indisponible|épuisé)/i.test(raw)&&!!e.querySelector('[href*="add-to-cart"],.add_to_cart_button'),
+    promotion:!!price.querySelector('ins'),raw});
+   break;
+  }
+ }
+ return [...found.values()];
+}'''
 
 
 def normalized_unit(title, explicit=''):
@@ -84,6 +112,7 @@ class FoodStore:
           id TEXT PRIMARY KEY, observed_at TEXT, source_url TEXT, evidence BLOB);
         CREATE TABLE IF NOT EXISTS food_queue (
           url TEXT PRIMARY KEY, supplier TEXT, city TEXT, checked_at TEXT, status TEXT);
+        CREATE TABLE IF NOT EXISTS food_meta (key TEXT PRIMARY KEY,value TEXT);
         ''')
         self.db.commit()
 
@@ -103,12 +132,12 @@ class FoodStore:
             return False
         raw = json.dumps(card, ensure_ascii=False, sort_keys=True)
         oid = hashlib.sha256((supplier+city+observed_at+raw).encode()).hexdigest()
-        self.db.execute('INSERT OR IGNORE INTO food_observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+        cursor=self.db.execute('INSERT OR IGNORE INTO food_observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
             (oid,observed_at,supplier,city,card['url'],card['title'],
              conversion[0] if conversion else None,str(conversion[1]) if conversion else None,
              str(price),int(bool(card.get('available'))),int(bool(card.get('promotion'))),raw))
         self.db.commit()
-        return True
+        return cursor.rowcount == 1
 
     def candidates(self, article, cities=('Rabat','Salé','Témara','Casablanca'), now=None):
         now = now or datetime.now(timezone.utc)
@@ -126,6 +155,8 @@ class FoodStore:
             if len({(r['price'],r['available'],r['unit'],r['factor']) for r in peers})>1:
                 continue
             card = json.loads(row['raw'])
+            if card.get('price_basis') != 'TTC':
+                continue
             from produce_sources import titled_unit
             sale_unit = card.get('unit') or titled_unit(row['title'])
             factor = produce_factor(article,row['title'],sale_unit)
@@ -153,6 +184,10 @@ def collect(limit=24):
     store=FoodStore(DATA/'food-watch.sqlite')
     for source in SOURCES:
         store.queue(*source)
+    if not store.db.execute("SELECT 1 FROM food_meta WHERE key='regional-parser-v2'").fetchone():
+        store.db.execute("UPDATE food_queue SET checked_at=NULL WHERE supplier LIKE 'Aswak%'")
+        store.db.execute("INSERT INTO food_meta VALUES ('regional-parser-v2','ready')")
+        store.db.commit()
     cutoff=(datetime.now(timezone.utc)-timedelta(hours=24)).isoformat()
     # Rotate by least recently visited; a daily cycle does not restart at page 1.
     work=store.db.execute('SELECT * FROM food_queue WHERE checked_at IS NULL OR checked_at<? ORDER BY checked_at LIMIT ?', (cutoff,limit)).fetchall()
@@ -165,10 +200,13 @@ def collect(limit=24):
             entry={'supplier':task['supplier'],'city':task['city'],'url':task['url']}
             try:
                 body=reader.open(task['url'])
-                cards=reader.page.locator('li.product').evaluate_all(EXTRACT)
+                cards=reader.page.locator('.product').evaluate_all(EXTRACT)
+                if reader.host in ('www.aswakdelivery.com','www.aswakdrive.com'):
+                    cards=reader.page.locator('a[href]').evaluate_all(REGIONAL_EXTRACT)
                 count=0
                 for card in cards:
                     if urlparse(card['url']).hostname==reader.host:
+                        card['price_basis']='TTC' if re.search(r'prix[^\n]{0,70}(?:TTC|toutes taxes comprises)',body,re.I) else 'non précisé'
                         count+=int(store.record(task['supplier'],task['city'],card,now))
                 entry.update(cards=len(cards),observations=count,status='prix relevés' if count else 'aucun prix structuré : extraction à compléter')
                 evidence=json.dumps({'body':body[:120000],'cards':cards},ensure_ascii=False).encode()
@@ -182,7 +220,7 @@ def collect(limit=24):
                         and parsed.path.startswith(prefix)
                         and any(s in parsed.path for s in ('product-category/','categorie-produit/','/shop/page/','/boutique/page/'))):
                         # Food aisles only, excludes cleaning and non-food.
-                        if any(t in canonical(parsed.path) for t in ('fruits','legumes','epicerie','boucherie','volaille','poisson','cremerie','lait','fromage','boisson','boulangerie','surgel','charcuterie','oeuf')) or '/shop/page/' in parsed.path or '/boutique/page/' in parsed.path:
+                        if any(t in canonical(parsed.path) for t in ('fruits','legumes','epicerie','boucherie','volaille','poisson','cremerie','lait','fromage','boisson','boulangerie','surgel','charcuterie','oeuf','biscuit','confiser','terroir','patisserie')) or '/shop/page/' in parsed.path or '/boutique/page/' in parsed.path:
                             store.queue(task['supplier'],task['city'],link['url'])
                 summary['observations']+=count
             except Exception as exc:
