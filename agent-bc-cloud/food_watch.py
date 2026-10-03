@@ -215,6 +215,10 @@ class FoodStore:
             card = json.loads(row['raw'])
             if card.get('conditional') or card.get('review_required'):
                 continue
+            if card.get('valid_from'):
+                try:
+                    if datetime.fromisoformat(card['valid_from']).date()>now.date():continue
+                except ValueError:continue
             if card.get('valid_until'):
                 try:
                     if datetime.fromisoformat(card['valid_until']).date()<now.date():continue

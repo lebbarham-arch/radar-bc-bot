@@ -84,7 +84,7 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(result['distinct_products_24h'],1)
 
     def test_expired_conditional_or_review_prices_never_feed_offer(self):
-        for changes in [{'valid_until':'2020-01-01'},{'conditional':True},{'review_required':True}]:
+        for changes in [{'valid_until':'2020-01-01'},{'valid_from':'2099-01-01'},{'conditional':True},{'review_required':True}]:
             self.store.db.execute('DELETE FROM food_observations')
             self.record(**changes)
             self.assertEqual(self.store.candidates(ARTICLE,now=self.now),[])
