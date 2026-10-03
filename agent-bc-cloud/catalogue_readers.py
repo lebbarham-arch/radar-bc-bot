@@ -27,7 +27,7 @@ RETAIL_CARDS = r'''els=>{
    const urls=new Set([...e.querySelectorAll('a[href]')].filter(n=>/\/(?:products?|produits?|p)\//i.test(n.pathname)).map(n=>n.href));
    if(urls.size>1)break;
    const raw=e.innerText;
-   if(!/\b(?:DH|MAD)\b/i.test(raw))continue;
+   if(!/(?:DH|MAD)/i.test(raw))continue;
    const heading=e.querySelector('h2,h3,h4,.product-title');
    const title=(heading?heading.innerText:a.innerText).trim();
    const clone=e.cloneNode(true);
