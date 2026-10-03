@@ -22,7 +22,7 @@ from sourcing import PublicSources
 from workflow import Workflow, filling_policy
 from mail_bridge import receive as receive_supplier_prices, publish as publish_supplier_need
 from supplier_followup import connected as connect_followup, needs_consultation
-from portal_form import collect_rows, parse_rows, fill_prices, validate_quote
+from portal_form import collect_rows, parse_rows, fill_prices, validate_quote, saved_prices_match
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / 'donnees'
@@ -310,8 +310,10 @@ def save_observed_form(page, bc, quote, ledger):
     fill_company(page, load_profile(ROOT / 'company_profile.json'), PORTAL_SELECTORS)
     if previous:
         validate_quote(collect_rows(page), previous)
-    count = fill_prices(page, quote, previous)
+    count = fill_prices(page, quote, previous, preserve_existing=True)
     print('  ', count, 'prix saisis et relus.', flush=True)
+    if quote.get('protected_prices'):
+        print('  ', len(quote['protected_prices']), 'prix existants conservés sans écrasement.', flush=True)
     evidence = DATA / ('saisie-' + bc['id'] + '-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '.png')
     page.screenshot(path=str(evidence), full_page=True)
     # Écrit AVANT le clic : une réponse serveur incertaine ne déclenche pas un second envoi.
@@ -333,10 +335,7 @@ def save_observed_form(page, bc, quote, ledger):
         try:
             validate_quote(collect_rows(verification), quote)
             fields = verification.locator('tr:visible').filter(has=verification.locator('input[type="number"]')).locator('input[type="number"]')
-            verified = fields.count() == len(quote['lines']) and all(
-                (line.get('status') != 'chiffré' and (not fields.nth(i).input_value().strip() or amount(fields.nth(i).input_value()) == 0)) or
-                (line.get('status') == 'chiffré' and fields.nth(i).input_value().strip() and amount(fields.nth(i).input_value()) == amount(line['unit_sale_ht']))
-                for i, line in enumerate(quote['lines']))
+            verified = saved_prices_match(fields, quote)
         except (RuntimeError, ValueError):
             verified = False
         if verified:
@@ -585,6 +584,9 @@ def run():
                             quote.pop(key, None)
                     stage = 'suivi et brouillon'
                     status = finish_pricing(page, bc, quote, config, ledger, workflow)
+                    if durable and status == 'brouillon enregistré et prix revérifiés':
+                        backup(DATA)
+                        print('Checkpoint après brouillon vérifié.', flush=True)
                     print('  ', len(bc['articles']), 'lignes ;', status, flush=True)
                     # Diagnostics de texte uniquement sur une page de consultation, jamais le login.
                     snapshot = DATA / (bc['id'] + '.txt')
@@ -617,6 +619,10 @@ def run():
     report['eligible_count'] = sum('bc' in r for r in report['results'])
     report['article_count'] = sum(len(r.get('bc', {}).get('articles', [])) for r in report['results'])
     report['saved_drafts'] = sum(r.get('status') == 'brouillon enregistré et prix revérifiés' for r in report['results'])
+    report['blocked_count'] = sum(r.get('status') == 'traitement interrompu' or bool(r.get('quote', {}).get('draft_error')) or bool(r.get('quote', {}).get('followup_error')) for r in report['results'])
+    if report['status'] == 'terminé' and report['blocked_count']:
+        report['status'] = 'terminé avec blocages'
+    print('BC bloqués :', report['blocked_count'], flush=True)
     target = DATA / ('rapport-' + datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '.json')
     target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     print('Rapport :', target)
@@ -625,7 +631,7 @@ def run():
           '| Brouillons enregistrés :', report['saved_drafts'])
     if report.get('reason'):
         print(report['reason'])
-    return 1 if report['status'] == 'bloqué' else 0
+    return 1 if report['status'] in ('bloqué', 'terminé avec blocages') else 0
 
 
 if __name__ == '__main__':

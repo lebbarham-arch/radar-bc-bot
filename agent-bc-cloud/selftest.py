@@ -126,6 +126,21 @@ def run(with_browser=True):
                 try:fill_prices(new,complete,previous=complete)
                 except RuntimeError:pass
                 else:raise AssertionError('Prix manuel écrasé')
+                from portal_form import saved_prices_match
+                mixed = json.loads(json.dumps(complete))
+                assert fill_prices(new, mixed, previous=complete, preserve_existing=True) == 1
+                assert new.locator('input').first.input_value() == '999'
+                assert mixed['protected_prices'] == {'0': '999'}
+                assert saved_prices_match(new.locator('input'), mixed)
+                new.locator('#save').click()
+                reopened = context.new_page();reopened.goto(path.as_uri())
+                assert saved_prices_match(reopened.locator('input'), mixed)
+                # On the next pass, preserved manual values remain protected.
+                again = json.loads(json.dumps(complete))
+                assert fill_prices(reopened, again, previous=mixed, preserve_existing=True) == 1
+                assert reopened.locator('input').first.input_value() == '999'
+                assert 'sale_ht' not in again
+                print('BC_PRESERVATION_SELFTEST_OK: conflit isolé, autres lignes remplies, sauvegarde et relecture vérifiées', flush=True)
                 verify_company_browser(browser)
                 browser.close();browser_result='remplissage, sauvegarde, relecture nouvelle page réussis'
         result={'simulation':'réussie','demandes_initiales':4,'relances':4,'devis_PDF_lus':5,'prix_retenu_TTC':'95.00',

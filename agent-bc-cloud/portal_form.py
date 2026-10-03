@@ -60,32 +60,64 @@ def validate_quote(rows, quote):
     return articles
 
 
-def fill_prices(page, quote, previous=None):
+def fill_prices(page, quote, previous=None, preserve_existing=False):
     validate_quote(collect_rows(page), quote)
     rows = page.locator('tr:visible').filter(has=page.locator('input[type="number"]'))
     if rows.count() != len(quote['lines']):
         raise RuntimeError('Tableau ambigu : aucun prix saisi')
     # Contrôle de tous les champs avant de remplir le premier.
     fields = []
+    protected = {}
     for index in range(rows.count()):
         field = rows.nth(index).locator('input[type="number"]')
         if field.count() != 1 or not field.is_visible() or not field.is_enabled():
             raise RuntimeError('Champ de prix non modifiable')
         existing = field.input_value().strip()
         prior = previous['lines'][index] if previous else None
-        expected = amount(prior['unit_sale_ht']) if prior and prior.get('status') == 'chiffré' else Decimal(0)
+        previous_protected = (previous or {}).get('protected_prices', {}).get(str(index))
+        expected = amount(previous_protected) if previous_protected is not None else (
+            amount(prior['unit_sale_ht']) if prior and prior.get('status') == 'chiffré' else Decimal(0))
         actual = amount(existing) if existing else Decimal(0)
+        if preserve_existing and actual > 0 and (
+                actual != expected or previous_protected is not None or
+                quote['lines'][index].get('status') != 'chiffré'):
+            # Unknown provenance, manual edit, or older price whose source is
+            # temporarily unavailable: keep this row while processing other rows.
+            protected[str(index)] = str(actual)
+            fields.append(field)
+            continue
         if actual != expected:
             raise RuntimeError('Prix existant différent du dernier brouillon vérifié : conservé')
         if prior and prior.get('status') == 'chiffré' and quote['lines'][index].get('status') != 'chiffré':
             raise RuntimeError('Prix antérieur indisponible : conservé, actualisation bloquée')
         fields.append(field)
-    for field, line in zip(fields, quote['lines']):
-        if line.get('status') != 'chiffré':
+    if preserve_existing:
+        quote['protected_prices'] = protected
+        if protected:
+            # The proposed quote totals do not describe the saved mixed values.
+            for key in ('sale_ht', 'sale_vat', 'sale_ttc', 'purchase_ttc'):
+                quote.pop(key, None)
+    for index, (field, line) in enumerate(zip(fields, quote['lines'])):
+        if line.get('status') != 'chiffré' or str(index) in protected:
             # Ne saisit ni zéro ni un prix fictif dans les lignes manquantes.
             continue
         field.fill(line['unit_sale_ht'])
         field.press('Tab')
         if amount(field.input_value()) != amount(line['unit_sale_ht']):
             raise RuntimeError('Prix saisi différent : vérification nécessaire')
-    return sum(line.get('status') == 'chiffré' for line in quote['lines'])
+    return sum(line.get('status') == 'chiffré' and str(i) not in protected for i, line in enumerate(quote['lines']))
+
+
+def saved_prices_match(fields, quote):
+    """Verify the actual saved vector, including preserved pre-existing values."""
+    if fields.count() != len(quote['lines']):
+        return False
+    for i, line in enumerate(quote['lines']):
+        raw = fields.nth(i).input_value().strip()
+        actual = amount(raw) if raw else Decimal(0)
+        protected = quote.get('protected_prices', {}).get(str(i))
+        expected = amount(protected) if protected is not None else (
+            amount(line['unit_sale_ht']) if line.get('status') == 'chiffré' else Decimal(0))
+        if actual != expected:
+            return False
+    return True
