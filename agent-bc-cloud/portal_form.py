@@ -8,11 +8,11 @@ def compact(text):
     return ' '.join(norm(text).split())
 
 
-def parse_rows(rows):
+def parse_rows(rows, allow_readonly=False):
     articles = []
     for row in rows:
         cells = row['cells']
-        if len(cells) != 8 or row['inputs'] != 1 or not cells[0].strip().isdigit():
+        if len(cells) != 8 or row['inputs'] not in ((0, 1) if allow_readonly else (1,)) or not cells[0].strip().isdigit():
             raise RuntimeError('Tableau devis non reconnu')
         if int(cells[0]) != len(articles) + 1:
             raise RuntimeError('Ordre des articles non reconnu')
@@ -33,6 +33,13 @@ def collect_rows(page):
         .filter(e=>e.getClientRects().length && e.querySelector('input[type="number"]'))
         .map(e=>({cells:[...e.cells].map(c=>c.innerText.trim()),
              inputs:e.querySelectorAll('input[type="number"]').length}))''')
+
+
+def collect_readonly_rows(page):
+    return page.locator('tr').evaluate_all(r"""els=>els
+        .filter(e=>e.getClientRects().length && e.cells.length===8 &&
+            /^\d+$/.test(e.cells[0].textContent.trim()) && !e.querySelector('input'))
+        .map(e=>({cells:[...e.cells].map(c=>c.innerText.trim()),inputs:0}))""")
 
 
 def validate_quote(rows, quote):

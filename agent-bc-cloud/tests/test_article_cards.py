@@ -1,6 +1,7 @@
 import unittest
 from playwright.sync_api import sync_playwright
 from agent import collect_article_cards
+from portal_form import collect_readonly_rows, parse_rows
 
 
 def card(n, name='BANANE', qty='420', unit='kg'):
@@ -32,6 +33,16 @@ class ArticleCardsTests(unittest.TestCase):
         rows, errors, expected = self.read(''.join(card(i) for i in range(1, 26)))
         self.assertEqual((len(rows), errors, expected), (25, [], 25))
         self.assertEqual(rows[0]['quantity'], '420')
+
+    def test_readonly_quote_is_read_but_never_accepted_as_editable(self):
+        page = self.browser.new_page()
+        try:
+            page.set_content('<table><tr><td>01</td><td>BANANE\nCaractéristiques et spécifications :\nBANANE</td><td>kg</td><td>420</td><td>15,87</td><td>0</td><td>0</td><td>6665,40</td></tr></table>')
+            rows=collect_readonly_rows(page)
+            self.assertEqual(len(rows),1)
+            self.assertEqual(parse_rows(rows,allow_readonly=True)[0]['quantity'],'420')
+            with self.assertRaises(RuntimeError):parse_rows(rows)
+        finally:page.close()
 
     def test_units_and_multiline_specs_preserved(self):
         rows, errors, _ = self.read(card(1, 'PERSIL\nFRAIS', '120', 'botte'))

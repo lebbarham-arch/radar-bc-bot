@@ -23,7 +23,7 @@ from sourcing import PublicSources
 from workflow import Workflow, filling_policy, prioritize_urls
 from mail_bridge import receive as receive_supplier_prices, publish as publish_supplier_need
 from supplier_followup import connected as connect_followup, needs_consultation
-from portal_form import collect_rows, parse_rows, fill_prices, validate_quote, saved_prices_match, compact
+from portal_form import collect_rows, parse_rows, fill_prices, validate_quote, saved_prices_match, compact, collect_readonly_rows
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / 'donnees'
@@ -278,6 +278,16 @@ def read_bc(page, url, config):
             extraction_errors = []
         except RuntimeError as exc:
             extraction_errors = [{'reason': str(exc)}]
+    readonly_prices = None
+    if not rows:
+        readonly_rows = collect_readonly_rows(page)
+        if readonly_rows:
+            try:
+                articles = parse_rows(readonly_rows, allow_readonly=True)
+                readonly_prices = [str(amount(r['cells'][4])) if r['cells'][4].strip() not in ('', '-') else None for r in readonly_rows]
+                extraction_errors = []
+            except (RuntimeError, ValueError, ArithmeticError) as exc:
+                extraction_errors = [{'reason': 'tableau en lecture seule incomplet ou ambigu'}]
     if not articles:
         structure = page.locator('tr,button,a').evaluate_all('''els=>els.filter(e=>e.getClientRects().length && (e.tagName==='TR' || e.tagName==='BUTTON' || /devis|brouillon|modifier|particip/i.test(e.textContent))).map(e=>e.tagName==='TR'?{tag:e.tagName,cells:[...e.cells].map(c=>c.textContent.trim().slice(0,160)),inputs:[...e.querySelectorAll('input')].map(i=>({type:i.type,id:i.id}))}:{tag:e.tagName,text:e.textContent.trim().slice(0,120),id:e.id,href:e.getAttribute('href')}).slice(-100)''')
         print('BC_READ_STRUCTURE', url.rsplit('/',1)[-1], json.dumps(structure,ensure_ascii=False), flush=True)
@@ -285,7 +295,7 @@ def read_bc(page, url, config):
     return {'id': url.rsplit('/', 1)[-1], 'url': url, 'object': object_text,
             'location': location, 'deadline': deadline,
             'eligible': region and relevant and not expired and not excluded,
-            'articles': articles, 'extraction_errors': extraction_errors, 'text': text}
+            'articles': articles, 'extraction_errors': extraction_errors, 'readonly_prices': readonly_prices, 'text': text}
 
 
 def save_draft(page, bc, quote, adapter, ledger):
@@ -617,6 +627,17 @@ def run():
                     if not bc['eligible']:
                         report['results'].append({'url': url, 'status': 'écarté ou échéance/zone non confirmée'})
                         continue
+                    if bc.get('readonly_prices') is not None and not bc['extraction_errors']:
+                        existing = {'complete': all(p is not None and amount(p)>0 for p in bc['readonly_prices']),
+                                    'lines':[{'article':a,'status':'prix existant' if p is not None and amount(p)>0 else 'prix absent',
+                                              'unit_sale_ht':p} for a,p in zip(bc['articles'],bc['readonly_prices'])]}
+                        status = 'devis existant en lecture seule : conservé'
+                        count = sum(p is not None and amount(p)>0 for p in bc['readonly_prices'])
+                        print('BC_EXISTING_COVERAGE', bc['id'], str(count)+'/'+str(len(bc['articles'])), 'prix constatés en lecture seule',flush=True)
+                        bc.pop('text')
+                        workflow.record(bc, existing, status)
+                        report['results'].append({'bc':bc, 'quote':existing, 'status':status, 'existing_price_count':count})
+                        continue
                     workflow.record({k: v for k, v in bc.items() if k != 'text'}, prices.quote(bc['articles']), 'recherche des prix')
                     print('  Recherche des prix publics...', flush=True)
                     stage = 'recherche et comparaison des prix'
@@ -675,9 +696,12 @@ def run():
     report['eligible_count'] = sum('bc' in r for r in report['results'])
     report['article_count'] = sum(len(r.get('bc', {}).get('articles', [])) for r in report['results'])
     report['saved_drafts'] = sum(r.get('status') == 'brouillon enregistré et prix revérifiés' for r in report['results'])
+    report['existing_quotes'] = sum(r.get('status') == 'devis existant en lecture seule : conservé' for r in report['results'])
+    report['existing_prices'] = sum(r.get('existing_price_count',0) for r in report['results'])
     report['blocked_count'] = sum(r.get('status') == 'traitement interrompu' or bool(r.get('bc', {}).get('extraction_errors')) or bool(r.get('quote', {}).get('draft_error')) or bool(r.get('quote', {}).get('followup_error')) for r in report['results'])
     if report['status'] == 'terminé' and report['blocked_count']:
         report['status'] = 'terminé avec blocages'
+    print('Devis existants en lecture seule :', report['existing_quotes'], '| Prix constatés :', report['existing_prices'], flush=True)
     print('BC bloqués :', report['blocked_count'], flush=True)
     target = DATA / ('rapport-' + datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '.json')
     target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
