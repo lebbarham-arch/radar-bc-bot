@@ -278,6 +278,9 @@ def read_bc(page, url, config):
             extraction_errors = []
         except RuntimeError as exc:
             extraction_errors = [{'reason': str(exc)}]
+    if not articles:
+        structure = page.locator('tr,button,a').evaluate_all('''els=>els.filter(e=>e.getClientRects().length && (e.tagName==='TR' || e.tagName==='BUTTON' || /devis|brouillon|modifier|particip/i.test(e.textContent))).map(e=>e.tagName==='TR'?{tag:e.tagName,cells:[...e.cells].map(c=>c.textContent.trim().slice(0,160)),inputs:[...e.querySelectorAll('input')].map(i=>({type:i.type,id:i.id}))}:{tag:e.tagName,text:e.textContent.trim().slice(0,120),id:e.id,href:e.getAttribute('href')}).slice(-100)''')
+        print('BC_READ_STRUCTURE', url.rsplit('/',1)[-1], json.dumps(structure,ensure_ascii=False), flush=True)
     print('BC_EXTRACTION', url.rsplit('/', 1)[-1], json.dumps({'expected': expected_count, 'extracted': len(articles), 'errors': extraction_errors}, ensure_ascii=False), flush=True)
     return {'id': url.rsplit('/', 1)[-1], 'url': url, 'object': object_text,
             'location': location, 'deadline': deadline,
