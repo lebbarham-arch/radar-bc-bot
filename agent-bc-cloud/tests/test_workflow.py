@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, date
 from pathlib import Path
-from workflow import filling_policy, Workflow, MAROC
+from workflow import filling_policy, Workflow, MAROC, prioritize_urls
 from portal_form import validate_quote, fill_prices
 from mail_bridge import signed_payload, validate_payload
 from web_sources import destination
@@ -20,6 +20,13 @@ QUOTE = {'complete': False, 'lines': [{'article': A, 'status': 'chiffré', 'unit
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_nearest_open_deadline_before_lexical_id_and_unknown(self):
+        known = [{'url': 'z', 'deadline': '05/10/2026 10:00'},
+                 {'url': 'b', 'deadline': '03/10/2026 16:00'},
+                 {'url': 'a', 'deadline': '02/10/2026 16:00'}]
+        self.assertEqual(prioritize_urls(['a', 'b', 'z', 'c', 'b'], known,
+            datetime(2026, 10, 3, 2, tzinfo=MAROC)), ['b', 'z', 'a', 'c'])
+
     def test_h24_boundary_and_expiration(self):
         deadline = datetime(2026, 10, 5, 10, tzinfo=MAROC)
         self.assertEqual(filling_policy(BC, QUOTE, deadline-timedelta(hours=24, seconds=1)), 'attente des devis')

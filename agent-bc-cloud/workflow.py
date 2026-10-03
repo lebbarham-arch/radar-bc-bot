@@ -7,6 +7,21 @@ from zoneinfo import ZoneInfo
 MAROC = ZoneInfo('Africa/Casablanca')
 
 
+def prioritize_urls(urls, known, now=None):
+    """Allocate finite research capacity to the nearest open deadlines first."""
+    now = now or datetime.now(MAROC)
+    deadlines = {}
+    for bc in known:
+        try:
+            end = datetime.strptime(bc['deadline'], '%d/%m/%Y %H:%M').replace(tzinfo=MAROC)
+            if end > now:
+                deadlines[bc['url']] = end
+        except (KeyError, ValueError):
+            continue
+    last = datetime.max.replace(tzinfo=MAROC)
+    return sorted(set(urls), key=lambda url: (deadlines.get(url, last), url))
+
+
 def filling_policy(bc, quote, now=None):
     now = now or datetime.now(MAROC)
     if now.tzinfo is None:
@@ -53,3 +68,6 @@ class Workflow:
     def pending(self):
         return [json.loads(row[0]) for row in self.db.execute(
             "SELECT bc FROM bc_workflow WHERE phase NOT IN ('expiré','brouillon enregistré et prix revérifiés')")]
+
+    def known(self):
+        return [json.loads(row[0]) for row in self.db.execute('SELECT bc FROM bc_workflow')]

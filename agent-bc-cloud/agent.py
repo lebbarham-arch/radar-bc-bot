@@ -19,7 +19,7 @@ from pricing import Prices, amount
 from parsing import extract_articles
 from company import load_profile, fill_company, PORTAL_SELECTORS
 from sourcing import PublicSources
-from workflow import Workflow, filling_policy
+from workflow import Workflow, filling_policy, prioritize_urls
 from mail_bridge import receive as receive_supplier_prices, publish as publish_supplier_need
 from supplier_followup import connected as connect_followup, needs_consultation
 from portal_form import collect_rows, parse_rows, fill_prices, validate_quote, saved_prices_match
@@ -552,7 +552,7 @@ def run():
             report['bdc_login'] = 'confirmée'
             report['login'] = 'confirmée'
             sources = PublicSources(browser)
-            urls = sorted(set(discover(page, config)) | {bc['url'] for bc in workflow.pending()} | {ORIGIN + '/bdc/entreprise/consultation/show/382678'})
+            urls = prioritize_urls(set(discover(page, config)) | {bc['url'] for bc in workflow.pending()} | {ORIGIN + '/bdc/entreprise/consultation/show/382678'}, workflow.known())
             report['consultations_seen'] = len(urls)
             print(len(urls), 'consultations à vérifier.', flush=True)
             for index, url in enumerate(urls, 1):
