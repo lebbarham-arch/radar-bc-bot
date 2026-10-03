@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from food_watch import FoodStore, normalized_unit
+from food_watch import FoodStore, normalized_unit, validate_feed
+from mail_bridge import signed_payload
 
 ARTICLE={'designation':'POIVRON VERT','specification':'','unit':'kg','quantity':'10','vat':'0'}
 
@@ -57,6 +58,37 @@ class WatchTests(unittest.TestCase):
         self.record(available=False)
         self.assertEqual(self.store.candidates(ARTICLE,now=self.now),[])
 
+    def test_queue_strips_fragments_and_rotates_suppliers(self):
+        for i in range(100):self.store.queue('Aswak','Rabat',f'https://example.ma/page/{i}')
+        self.store.queue('BIM','non précisée','https://www.bim.ma/')
+        self.store.queue('BIM','non précisée','https://www.bim.ma/#')
+        due=self.store.due(now=self.now,limit=6,per_supplier=3)
+        self.assertIn('BIM',{r['supplier'] for r in due})
+        self.assertLessEqual(sum(r['supplier']=='Aswak' for r in due),3)
+        self.assertEqual(self.store.db.execute("SELECT count(*) FROM food_queue WHERE supplier='BIM'").fetchone()[0],1)
+
+    def test_failure_backoff_and_success_daily(self):
+        self.store.queue('Aswak','Rabat',self.card['url'])
+        self.store.finish_page(self.card['url'],'accès ou extraction bloqué',self.now)
+        self.assertEqual(self.store.due(now=self.now+timedelta(minutes=59)),[])
+        self.assertEqual(len(self.store.due(now=self.now+timedelta(hours=1))),1)
+        self.store.finish_page(self.card['url'],'prix relevés',self.now)
+        self.assertEqual(self.store.due(now=self.now+timedelta(hours=23)),[])
+        self.assertEqual(len(self.store.due(now=self.now+timedelta(hours=24))),1)
+
+    def test_coverage_counts_products_not_repeated_observations(self):
+        self.store.queue('Aswak','Rabat',self.card['url'])
+        self.record(hours=1)
+        self.record()
+        result=self.store.coverage(self.now)[0]
+        self.assertEqual(result['distinct_products_24h'],1)
+
+    def test_expired_conditional_or_review_prices_never_feed_offer(self):
+        for changes in [{'valid_until':'2020-01-01'},{'conditional':True},{'review_required':True}]:
+            self.store.db.execute('DELETE FROM food_observations')
+            self.record(**changes)
+            self.assertEqual(self.store.candidates(ARTICLE,now=self.now),[])
+
     def test_unspecified_tax_stays_observation_not_purchase_ttc(self):
         self.record(price_basis='non précisé')
         self.assertEqual(self.store.candidates(ARTICLE,now=self.now),[])
@@ -69,3 +101,15 @@ class WatchTests(unittest.TestCase):
         rows=self.store.candidates({**ARTICLE,'designation':'BANANE'},now=self.now)
         self.assertEqual(len(rows),1)
         self.assertEqual(Decimal(rows[0]['purchase_unit_ttc']),Decimal('16.95'))
+
+    def test_signed_feed_rejects_tampering_future_dates_and_unknown_tax_is_retained(self):
+        payload={'schema':'food-watch-v1','observations':[{**self.card,'supplier':'Aswak','city':'Rabat',
+            'observed_at':self.now.isoformat(),'evidence':'prix et titre dans le catalogue','price_basis':'non précisé'}]}
+        payload['signature']=signed_payload(payload,'test-only')
+        rows=validate_feed(payload,'test-only',now=self.now)
+        self.assertEqual(rows[0]['price_basis'],'non précisé')
+        payload['observations'][0]['price']='1'
+        with self.assertRaises(ValueError):validate_feed(payload,'test-only',now=self.now)
+        payload['observations'][0]['observed_at']=(self.now+timedelta(hours=1)).isoformat()
+        payload['signature']=signed_payload(payload,'test-only')
+        with self.assertRaises(ValueError):validate_feed(payload,'test-only',now=self.now)
